@@ -333,25 +333,21 @@ export function useSpeech() {
     // wait until you actually stop, then reply to everything).
     const flush = () => {
       const raw = buffer.current.trim()
-      const hasWake = WAKE.test(raw)
       buffer.current = ""
       setHeard("")
-      // CONVERSATION TRACKER: when idle (ambient), Summer only responds to someone
-      // who addresses her by name ("Hey Summer …"). All other nearby talk — other
-      // students chatting, background noise — is ignored. After she's addressed (or
-      // just replied), a short ACTIVE window lets you follow up without repeating
-      // the wake word; then she goes back to waiting for her name.
-      if (vstate.current !== "active" && !hasWake) return
+      // Responsive: once the mic is on, just talk — a wake word is optional, not
+      // required (requiring it made Summer feel unresponsive because browser
+      // wake-word detection is unreliable). The wake word is still stripped if
+      // present, and Summer stays muted while she's speaking so she never hears
+      // herself. (For a noisy public kiosk a strict "Hey Summer only" mode can be
+      // turned on later.)
       const cmd = raw.replace(WAKE, "").trim()
-      if (cmd.length < 2) {
-        if (hasWake) openWindow() // "Hey Summer" alone → start listening for the request
-        return
-      }
+      if (cmd.length < 2) return
       if (ENDRE.test(cmd) && cmd.split(/\s+/).length <= 3) {
-        vstate.current = "ambient" // "thanks/done" → stop the follow-up window
+        vstate.current = "ambient" // "thanks/done" — wind down the follow-up window
         return
       }
-      openWindow() // allow a brief hands-free follow-up
+      openWindow()
       onCmd.current(cmd)
     }
     const scheduleFlush = () => {

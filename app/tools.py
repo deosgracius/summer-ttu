@@ -317,6 +317,43 @@ async def elective_catalog(args, db, user):
     return {"matches": rows} if rows else {"matches": [], "note": "No matching catalog entry on file."}
 
 
+async def course_prerequisites(args, db, user):
+    q = (args.get("query") or "").strip()
+    if not q:
+        return {"error": "which course? (e.g. 'ECE 3312' or 'Microelectronics')"}
+    from . import graph_sync
+    res = graph_sync.prerequisites(db, q)
+    if res.get("graph") is False:
+        return {"note": "The prerequisite graph isn't configured; use elective_catalog/find_course for listed prereqs instead."}
+    if not res.get("matched"):
+        return {"matches": [], "note": f"No course matching '{q}' is in the graph."}
+    return res
+
+
+async def course_unlocks(args, db, user):
+    q = (args.get("query") or "").strip()
+    if not q:
+        return {"error": "which course? (e.g. 'ECE 2372')"}
+    from . import graph_sync
+    res = graph_sync.unlocks(db, q)
+    if res.get("graph") is False:
+        return {"note": "The prerequisite graph isn't configured; use elective_catalog/find_course instead."}
+    if not res.get("matched"):
+        return {"matches": [], "note": f"No course matching '{q}' is in the graph."}
+    return res
+
+
+async def course_search(args, db, user):
+    q = (args.get("query") or "").strip()
+    if not q:
+        return {"error": "what topic or kind of course are you looking for?"}
+    from . import vector_store
+    res = vector_store.hybrid_search(db, q)
+    if not res.get("matches"):
+        return {"matches": [], "note": f"Nothing matched '{q}'."}
+    return res
+
+
 async def tech_conferences(args, db, user):
     q = (args.get("query") or "upcoming technology and engineering conferences").strip()
     return await web_research(f"upcoming tech / engineering conferences {q}")
@@ -375,6 +412,9 @@ TOOLS = {
     "campus_service_hours": _t("Look up hours and policy for a campus service or facility (e.g. the stockroom, a lab, a help desk) by name or location.", ALL, {"query": {"type": "string"}}, ["query"], campus_service_hours),
     "building_info": _t("Look up a campus building by name or code — returns address, hours, and description.", ALL, {"query": {"type": "string"}}, ["query"], building_info),
     "elective_catalog": _t("Look up which courses count as approved electives (and their prerequisites) from the departmental catalog/master list, by code, title, or category.", ALL, {"query": {"type": "string"}}, ["query"], elective_catalog),
+    "course_prerequisites": _t("Trace the FULL prerequisite chain a student must clear BEFORE a course — not just the directly listed prereq but its prereqs too (e.g. 'what do I need before ECE 3312?'). Returns each required course with how many levels deep it sits. Use this for 'what do I need first / before' questions; it does NOT advise which courses to take, only states the prerequisite facts.", ALL, {"query": {"type": "string"}}, ["query"], course_prerequisites),
+    "course_unlocks": _t("Show which later courses a given course OPENS UP — every course that lists it (directly or further down the chain) as a prerequisite (e.g. 'what does ECE 2372 unlock?'). States facts only, never tells the student what to take.", ALL, {"query": {"type": "string"}}, ["query"], course_unlocks),
+    "course_search": _t("Meaning-based ('semantic') course search — hybrid retrieval that blends keyword matching with vector embeddings. Use this when the student describes a TOPIC, interest, or what they want to learn in their own words ('classes about robotics', 'anything with machine learning', 'a course on circuits') rather than giving an exact code or title. Returns the closest-matching courses; still facts-only, never advises what to take.", ALL, {"query": {"type": "string"}}, ["query"], course_search),
 }
 
 

@@ -353,6 +353,25 @@ class TutorAvailability(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class CourseEmbedding(Base):
+    """One semantic vector per course, for meaning-based ('vector') search.
+
+    `vector` is the embedding stored as a JSON list of floats — portable across
+    SQLite (dev) and Postgres (prod). `text_hash` lets us skip re-embedding a course
+    whose text hasn't changed (embeddings cost an API call each). In production on
+    Postgres you'd swap `vector` for a real pgvector `VECTOR(1536)` column and let
+    the database do the nearest-neighbour search with the `<=>` operator; here the
+    similarity is computed in Python (the dataset is ~100 courses)."""
+    __tablename__ = "course_embeddings"
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, nullable=False, default="", index=True)  # canonical "ECE 3306"
+    text = Column(String, nullable=False, default="")              # the doc that was embedded
+    vector = Column(String, nullable=False, default="[]")          # JSON list[float]
+    model = Column(String, nullable=False, default="")             # which embedding model produced it
+    text_hash = Column(String, nullable=False, default="", index=True)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class ServiceHours(Base):
     """Generic facility/service availability — stockroom, labs, help desks, etc."""
     __tablename__ = "service_hours"

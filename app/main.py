@@ -132,9 +132,15 @@ _seed_events()
 _seed_campus()
 _seed_central_admin()
 
+# Hide the interactive API docs / OpenAPI schema in production (set DISABLE_DOCS=1)
+# so the full endpoint surface isn't published to the public internet.
+_docs = None if os.getenv("DISABLE_DOCS") == "1" else "/docs"
 app = FastAPI(title="Summer API", version="2.8.0",
               description="Summer: a role-scoped assistant that teaches, remembers context, and acts "
-                          "(tasks, reminders, events, email, music, weather, research, Google Calendar).")
+                          "(tasks, reminders, events, email, music, weather, research, Google Calendar).",
+              docs_url=_docs,
+              redoc_url=(None if _docs is None else "/redoc"),
+              openapi_url=(None if _docs is None else "/openapi.json"))
 # CORS allowlist — restrict to known origins instead of "*". Override in prod via
 # CORS_ORIGINS (comma-separated). Default covers the local dev frontend + API.
 _cors = os.getenv("CORS_ORIGINS",

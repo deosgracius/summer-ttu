@@ -1,0 +1,27 @@
+# Fly.io config for the Summer backend (FastAPI). Always-on so the email poller
+# and kiosk/dashboard API stay up 24/7. Points at external Neon (Postgres),
+# Neo4j Aura, and the LLM/voice APIs via `fly secrets` (never committed here).
+app = "summer-ttu"
+primary_region = "iad"  # Ashburn, VA — closest to Neon us-east-1
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  # Keep at least one machine running so the background email poller never sleeps.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "15s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

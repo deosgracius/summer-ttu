@@ -1,0 +1,28 @@
+"""Tiny in-memory per-key sliding-window rate limiter.
+
+An abuse / brute-force guard for public endpoints (login, registration, the
+kiosk). Per-process — fine for a single instance; for multiple instances back it
+with a shared store (Redis). Raises HTTP 429 when the limit is exceeded."""
+import time
+from collections import defaultdict
+from fastapi import HTTPException, Request
+
+_HITS: dict[str, list[float]] = defaultdict(list)
+
+
+def client_ip(request: Request) -> str:
+    """Best-effort client IP, honoring the proxy's X-Forwarded-For (Fly sets it)."""
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def check(key: str, limit: int, window: float = 60.0):
+    """Allow up to `limit` hits per `window` seconds for `key`; else raise 429."""
+    now = time.time()
+    hits = [t for t in _HITS[key] if now - t < window]
+    if len(hits) >= limit:
+        raise HTTPException(429, "Too many attempts — please wait a moment and try again.")
+    hits.append(now)
+    _HITS[key] = hits

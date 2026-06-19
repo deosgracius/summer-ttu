@@ -89,6 +89,16 @@ def _memories(db, user):
     return "\nThings you remember about the user: " + "; ".join(r.text for r in rows[:30]) + "."
 
 
+_ROLE_DESC = {
+    "central_admin": "the CENTRAL ADMIN (the top administrator \u2014 full access to every feature)",
+    "admin": "an ADMIN (full administrative access)",
+    "client": "a staff member",
+    "officer": "a student officer",
+    "tutor": "a tutor",
+    "customer": "a student",
+}
+
+
 def _context(user):
     tz = getattr(user, "timezone", None) or "UTC"
     now = datetime.datetime.now()
@@ -97,7 +107,13 @@ def _context(user):
             now = datetime.datetime.now(ZoneInfo(tz))
         except Exception:
             pass
-    return (f"\nContext \u2014 user timezone: {tz}; current local time: {now.strftime('%A %Y-%m-%d %H:%M')}; "
+    role = getattr(user, "role", "customer") or "customer"
+    who = _ROLE_DESC.get(role, role)
+    name = (user.email or "").split("@")[0]
+    return (f"\nContext \u2014 you are talking to {name} ({user.email}), who is {who} (role id: {role}). "
+            f"This is their verified, authenticated role from the system \u2014 treat it as fact, never guess, "
+            f"invent, or doubt their role, and never tell them they are a different role than this. "
+            f"User timezone: {tz}; current local time: {now.strftime('%A %Y-%m-%d %H:%M')}; "
             f"location: {getattr(user, 'location', None) or 'unknown'}.")
 
 

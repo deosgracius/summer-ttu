@@ -493,6 +493,12 @@ export function useSpeech() {
       ctx.createMediaStreamSource(stream).connect(analyser)
       const data = new Uint8Array(analyser.frequencyBinCount)
       let spoke = false
+      // Calibrate to the room's background noise for the first few frames, then set
+      // the speech threshold just above it — so normal (even quiet) talking counts
+      // as speech and you don't have to raise your voice.
+      let frames = 0
+      let floorSum = 0
+      let thresh = 6 // sensible default until calibrated
       const tick = () => {
         analyser.getByteTimeDomainData(data)
         let max = 0
@@ -500,14 +506,21 @@ export function useSpeech() {
           const v = Math.abs(data[i] - 128)
           if (v > max) max = v
         }
-        if (max > 8) {
+        frames++
+        if (frames <= 12) {
+          floorSum += max
+          if (frames === 12) thresh = Math.max(3, Math.round(floorSum / 12) + 4)
+          vadRaf.current = requestAnimationFrame(tick)
+          return // don't detect speech while still calibrating
+        }
+        if (max > thresh) {
           spoke = true
           if (silenceTimer.current) {
             clearTimeout(silenceTimer.current)
             silenceTimer.current = undefined
           }
         } else if (spoke && silenceTimer.current === undefined) {
-          silenceTimer.current = window.setTimeout(onSilence, 1400)
+          silenceTimer.current = window.setTimeout(onSilence, 1500)
         }
         vadRaf.current = requestAnimationFrame(tick)
       }

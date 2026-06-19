@@ -38,6 +38,51 @@ def _basic():
     return base64.b64encode(f"{cid}:{sec}".encode()).decode()
 
 
+# ---- App-level search (Client Credentials): no user login, no redirect URI ----
+_app_tok = {"token": None, "exp": datetime.datetime.min}
+
+
+async def _app_token():
+    """Cached app-only access token (client-credentials). Lets us search Spotify's
+    catalog without any user login."""
+    now = datetime.datetime.utcnow()
+    if _app_tok["token"] and _app_tok["exp"] > now:
+        return _app_tok["token"]
+    if not is_configured():
+        return None
+    async with httpx.AsyncClient(timeout=15) as c:
+        r = await c.post(TOKEN_URL, headers={"Authorization": f"Basic {_basic()}"},
+                         data={"grant_type": "client_credentials"})
+    j = r.json()
+    tok = j.get("access_token")
+    if tok:
+        _app_tok["token"] = tok
+        _app_tok["exp"] = now + datetime.timedelta(seconds=int(j.get("expires_in", 3600)) - 60)
+    return tok
+
+
+async def search_track(query: str):
+    """Find the best-matching track and return its name, artist, and Spotify link
+    (and a 30s preview if Spotify still provides one). No user login required."""
+    tok = await _app_token()
+    if not tok:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.get(f"{API}/search", headers={"Authorization": f"Bearer {tok}"},
+                            params={"q": query, "type": "track", "limit": 1})
+        items = (r.json().get("tracks", {}) or {}).get("items", [])
+        if not items:
+            return None
+        t = items[0]
+        return {"track": t.get("name"),
+                "artist": (t.get("artists") or [{}])[0].get("name"),
+                "spotify_url": (t.get("external_urls") or {}).get("spotify"),
+                "preview_url": t.get("preview_url")}
+    except Exception:
+        return None
+
+
 async def exchange_code(code):
     _, _, redirect = _cfg()
     async with httpx.AsyncClient(timeout=15) as c:

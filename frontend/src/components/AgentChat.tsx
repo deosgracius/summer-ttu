@@ -58,9 +58,10 @@ export default function AgentChat({ onChanged }: Props) {
       for (const a of data.actions ?? []) {
         const r = a.result
         if (!r) continue
-        if (a.tool === "play_music" && r.url) {
-          if (r.spotify) found.push({ label: "▶ Spotify", href: String(r.spotify) })
-          found.push({ label: "▶ YouTube", href: String(r.url) })
+        if (a.tool === "play_music") {
+          if (r.spotify) found.push({ label: "▶ Open in Spotify", href: String(r.spotify) })
+          if (r.preview) found.push({ label: "▶ Preview (30s)", href: String(r.preview) })
+          if (r.url) found.push({ label: "▶ YouTube", href: String(r.url) })
         }
         if (a.tool === "play_apple_music") {
           if (r.preview) found.push({ label: "▶ Preview (30s)", href: String(r.preview) })

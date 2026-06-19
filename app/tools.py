@@ -10,7 +10,8 @@ from .extra_service import (create_reminder as _create_reminder, list_reminders 
                             create_draft as _create_draft, music_link as _music_link,
                             weather as _weather, sports_update as _sports_update)
 from .google_cal import add_event as _cal_add, list_upcoming as _cal_upcoming, is_connected as _cal_connected
-from .spotify import is_connected as _sp_connected, play as _sp_play, play_playlist as _sp_playlist, control as _sp_control
+from .spotify import (is_connected as _sp_connected, play as _sp_play, play_playlist as _sp_playlist,
+                      control as _sp_control, search_track as _sp_search)
 from .itunes import search as _itunes_search
 from . import gmail as _gmail, outlook as _outlook
 from .local_events import suggest_events as _suggest_events
@@ -118,12 +119,21 @@ async def draft_email(args, db, user):
 async def play_music(args, db, user):
     query = args.get("query", "")
     artist = args.get("artist", "")
-    links = _music_link((query + " " + artist).strip())
+    q = (query + " " + artist).strip()
+    links = _music_link(q)
     if _sp_connected(db, user.id):
         res = await _sp_play(db, user, query, artist)
         res["links"] = links
         return res
-    links["note"] = "Spotify isn't connected — connect it to play directly; for now here are links."
+    # Not connected for playback control — find the exact track via app-level
+    # search (no user login needed) and return an open-in-Spotify link.
+    found = await _sp_search(q)
+    if found and found.get("spotify_url"):
+        return {"found": f"{found['track']} by {found['artist']}",
+                "spotify": found["spotify_url"],
+                "preview": found.get("preview_url"),
+                "note": "Opens the song in Spotify. Connect Spotify (Premium) for in-app play/pause control."}
+    links["note"] = "Connect Spotify (Premium) for direct playback; here are search links."
     return links
 
 

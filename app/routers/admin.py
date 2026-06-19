@@ -182,6 +182,42 @@ def set_music_access(data: MusicAccess, db: Session = Depends(get_db),
     return {"unlocked_roles": roles}
 
 
+# --- Per-user service grants (central admin enables a service for one person) ---
+
+@router.get("/users/{uid}/services")
+def get_user_services(uid: int, db: Session = Depends(get_db),
+                      actor: models.User = Depends(require_roles("central_admin"))):
+    """The services enabled for this individual + the full catalog to choose from."""
+    from ..tools import SERVICES
+    granted = [g.service for g in db.query(models.ServiceGrant).filter_by(user_id=uid).all()]
+    available = [{"key": k, "label": v["label"]} for k, v in SERVICES.items()]
+    return {"granted": granted, "available": available}
+
+
+class ServiceGrants(BaseModel):
+    services: list[str] = []
+
+
+@router.put("/users/{uid}/services")
+def set_user_services(uid: int, data: ServiceGrants, db: Session = Depends(get_db),
+                      actor: models.User = Depends(require_roles("central_admin"))):
+    """Replace the set of services enabled for this individual user."""
+    from ..tools import SERVICES
+    from .. import audit
+    target = db.get(models.User, uid)
+    if not target:
+        raise HTTPException(404, "User not found.")
+    keys = [s for s in (data.services or []) if s in SERVICES]
+    db.query(models.ServiceGrant).filter_by(user_id=uid).delete()
+    for k in keys:
+        db.add(models.ServiceGrant(user_id=uid, service=k))
+    audit.log(db, actor, "service_grant",
+              f"Services for {target.email}: {', '.join(keys) if keys else 'none'}",
+              {"user": target.email, "services": keys})
+    db.commit()
+    return {"granted": keys}
+
+
 # --- Approval queue & audit log ------------------------------------------
 
 def _pc_out(pc: models.PendingChange):

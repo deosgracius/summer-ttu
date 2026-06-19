@@ -1,4 +1,4 @@
-"""Extra skills: reminders, email drafts (+ real SMTP send), music links, weather, football."""
+"""Extra skills: reminders, email drafts (+ real SMTP send), music links, weather, sports."""
 import os
 import ssl
 import smtplib
@@ -114,17 +114,74 @@ async def weather(location):
         return {"error": f"Weather lookup failed: {e}"}
 
 
-# ---- Football ----
-async def football_update(team_id=81):
-    key = os.getenv("SPORTS_API_KEY")
-    if not key:
-        return {"error": "Live football data needs a free football-data.org key in SPORTS_API_KEY."}
+# ---- Sports: American football (NFL), college football, and NBA ----
+# Uses ESPN's free public API — no API key required. Defaults to the campus team
+# (Texas Tech) for college football; NFL/NBA favorites are optional env overrides.
+_LEAGUES = {
+    "nfl": ("football", "nfl"),
+    "college-football": ("football", "college-football"),
+    "nba": ("basketball", "nba"),
+}
+_LEAGUE_ALIASES = {
+    "ncaaf": "college-football", "cfb": "college-football", "college": "college-football",
+    "american football": "nfl", "basketball": "nba",
+}
+
+
+def _default_team(league):
+    return {
+        "college-football": os.getenv("FAVORITE_CFB_TEAM", "Texas Tech"),
+        "nfl": os.getenv("FAVORITE_NFL_TEAM", ""),
+        "nba": os.getenv("FAVORITE_NBA_TEAM", ""),
+    }.get(league, "")
+
+
+async def _espn_find_team(client, sport, league, name):
+    # limit=1000 so the full list is returned (college football has 700+ teams).
+    r = await client.get(f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/teams",
+                         params={"limit": 1000})
+    teams = (r.json().get("sports", [{}])[0].get("leagues", [{}])[0].get("teams", []))
+    nl = name.lower().strip()
+    for t in teams:  # exact match first (abbreviation or full name)
+        ti = t.get("team", {})
+        if nl in ((ti.get("abbreviation") or "").lower(), (ti.get("displayName") or "").lower()):
+            return ti.get("id"), ti.get("displayName")
+    for t in teams:  # then a substring match (e.g. "cowboys", "texas tech")
+        ti = t.get("team", {})
+        hay = " ".join([ti.get("displayName", ""), ti.get("shortDisplayName", ""),
+                        ti.get("name", ""), ti.get("location", "")]).lower()
+        if nl in hay:
+            return ti.get("id"), ti.get("displayName")
+    return None, None
+
+
+async def sports_update(query=None, league=None):
+    """Recent + upcoming games for an NFL, college-football, or NBA team (ESPN, no
+    key). With no team named, defaults to the campus team (Texas Tech)."""
+    q = (query or "").strip()
+    want = (league or "").strip().lower()
+    want = _LEAGUE_ALIASES.get(want, want)
+    leagues = [want] if want in _LEAGUES else ["college-football", "nfl", "nba"]
     try:
-        async with httpx.AsyncClient(timeout=10, headers={"X-Auth-Token": key}) as c:
-            r = await c.get(f"https://api.football-data.org/v4/teams/{team_id}/matches", params={"limit": 3})
-            ms = r.json().get("matches", [])
-            out = [{"home": m["homeTeam"]["name"], "away": m["awayTeam"]["name"],
-                    "date": m.get("utcDate"), "status": m.get("status")} for m in ms]
-            return {"team": "FC Barcelona", "matches": out} if out else {"error": "No matches found."}
+        async with httpx.AsyncClient(timeout=12) as c:
+            for lg in leagues:
+                sport, lgkey = _LEAGUES[lg]
+                name = q or _default_team(lg)
+                if not name:
+                    continue
+                tid, tname = await _espn_find_team(c, sport, lgkey, name)
+                if not tid:
+                    continue
+                sr = (await c.get(
+                    f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{lgkey}/teams/{tid}/schedule")).json()
+                past, future = [], []
+                for e in sr.get("events", []):
+                    comp = (e.get("competitions") or [{}])[0]
+                    st = (comp.get("status") or e.get("status") or {}).get("type", {})
+                    g = {"date": e.get("date"), "game": e.get("shortName") or e.get("name"),
+                         "status": st.get("description")}
+                    (past if st.get("completed") else future).append(g)
+                return {"team": tname, "league": lg, "recent": past[-2:], "upcoming": future[:3]}
+        return {"error": "Couldn't find that team — try an NFL, college-football, or NBA team name."}
     except Exception as e:
-        return {"error": f"Football lookup failed: {e}"}
+        return {"error": f"Sports lookup failed: {e}"}

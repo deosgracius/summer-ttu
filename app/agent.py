@@ -17,6 +17,12 @@ def _music_unlocked_for(db, role: str) -> bool:
     roles = {r.strip() for r in raw.split(",") if r.strip()}
     return role in roles
 
+
+def _granted_services_for(db, user_id: int):
+    """Service keys the central admin has enabled for THIS individual user
+    (rows in service_grants)."""
+    return {g.service for g in db.query(models.ServiceGrant).filter_by(user_id=user_id).all()}
+
 try:
     from zoneinfo import ZoneInfo
 except Exception:
@@ -46,7 +52,7 @@ SYSTEM = (
     "tutors, or officers): play_music / play_playlist / music_control on Spotify; system_control to sleep, lock, "
     "shut down, or restart this computer (confirm before shutdown/restart); weather; suggest_events for local "
     "concerts, sports, theatre, and tech events near Lubbock, Dallas, Austin, Houston, Amarillo, Albuquerque, "
-    "Oklahoma City, and Midland; football_update for the admin's favorite team; tech_conferences; and ieee_info. "
+    "Oklahoma City, and Midland; sports_update for NFL, college football (NCAA), or NBA scores and schedules (e.g. the Cowboys, Texas Tech, or the Lakers — defaults to Texas Tech); tech_conferences; and ieee_info. "
     "CAMPUS HELP: for any question about a class, room, schedule, professor, office or office hours, advisor, "
     "building, departmental electives/prerequisites, or a service like the stockroom, ALWAYS call the campus "
     "tools (find_course, find_professor, find_advisor, building_info, campus_service_hours, elective_catalog) "
@@ -113,7 +119,8 @@ async def run_agent(goal, db, user, provider=None, voice=False):
         model = DEFAULT_MODEL.get("anthropic", "claude-haiku-4-5")
     if provider == "openai" and not (str(model).startswith("gpt") or str(model).startswith("o")):
         model = DEFAULT_MODEL.get("openai", "gpt-4o-mini")
-    avail = available_tools(user.role, music_unlocked=_music_unlocked_for(db, user.role))
+    avail = available_tools(user.role, music_unlocked=_music_unlocked_for(db, user.role),
+                            granted_services=_granted_services_for(db, user.id))
     system = SYSTEM + _context(user) + _memories(db, user)
     if voice:
         system += (" The user is speaking to you hands-free by voice, so keep replies brief (1–2 sentences), "

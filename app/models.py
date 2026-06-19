@@ -411,3 +411,14 @@ class ServiceHours(Base):
     policy = Column(String, nullable=False, default="")
     semester = Column(String, nullable=False, default="")
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class ServiceGrant(Base):
+    """Per-user grant of an otherwise admin-only service (music, weather, sports,
+    etc.). The central admin enables these from a user's row in User Access, so an
+    individual can use a specific service without being a full admin."""
+    __tablename__ = "service_grants"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    service = Column(String, nullable=False)   # a service key (see tools.SERVICES)
+    __table_args__ = (UniqueConstraint("user_id", "service", name="uq_user_service"),)

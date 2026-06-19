@@ -170,7 +170,7 @@ Summer's agent now has these tools, scoped by role:
 | Research | "teach me about the moon landing" | Wikipedia, no key needed |
 | Music | "play some lofi" | returns a YouTube link to open |
 | Email (draft → approve) | "email alex that I'll be late" | Summer drafts; you click **Approve & Send** |
-| Barca matches | "when does Barcelona play next?" | needs FOOTBALL_API_KEY |
+| Sports (NFL / NCAA / NBA) | "when do the Cowboys play next?" / "Texas Tech football schedule" | ESPN, no key needed |
 | Create event | "create an event called Workshop, 20 seats" | **client/admin** only |
 | List users | "list all users" | **admin** only |
 
@@ -187,8 +187,9 @@ $env:LLM_PROVIDER = "anthropic"; $env:ANTHROPIC_API_KEY = "sk-ant-..."; $env:LLM
 $env:SMTP_HOST = "smtp.gmail.com"; $env:SMTP_PORT = "587"
 $env:SMTP_USER = "you@gmail.com"; $env:SMTP_PASS = "your-app-password"; $env:SMTP_FROM = "you@gmail.com"
 
-# Barca match updates (optional — free key at football-data.org)
-$env:FOOTBALL_API_KEY = "your-key"
+# Sports (NFL / college football / NBA) — no key needed (ESPN public API).
+# Optionally set favorite teams used when no team is named:
+$env:FAVORITE_CFB_TEAM = "Texas Tech"; $env:FAVORITE_NFL_TEAM = "Cowboys"; $env:FAVORITE_NBA_TEAM = "Mavericks"
 ```
 
 Everything runs without the optional keys — those features just report they need configuration.

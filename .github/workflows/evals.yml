@@ -31,7 +31,9 @@ jobs:
         run: python -m app.eval_harness
 
       - name: Deterministic test suites
-        run: pytest tests/test_graph.py tests/test_vector.py tests/test_evals.py -q
+        # `python -m pytest` (not bare `pytest`) so the repo root is on sys.path
+        # and `import app` resolves.
+        run: python -m pytest tests/test_graph.py tests/test_vector.py tests/test_evals.py -q
 
       - name: Upload eval report
         if: always()

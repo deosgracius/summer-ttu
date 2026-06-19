@@ -1,10 +1,11 @@
+import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 from sqlalchemy import inspect, text
 from .database import Base, engine, SessionLocal
-from .routers import auth, tasks, events, reminders, emails, memories, admin, oauth, spotify, outlook, vision, agent, payments, content, voice, campus, security, kiosk
+from .routers import auth, tasks, events, reminders, emails, memories, admin, oauth, spotify, outlook, vision, agent, payments, content, voice, campus, security, kiosk, docs
 from .realtime import manager
 from . import models
 
@@ -134,7 +135,14 @@ _seed_central_admin()
 app = FastAPI(title="Summer API", version="2.8.0",
               description="Summer: a role-scoped assistant that teaches, remembers context, and acts "
                           "(tasks, reminders, events, email, music, weather, research, Google Calendar).")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+# CORS allowlist — restrict to known origins instead of "*". Override in prod via
+# CORS_ORIGINS (comma-separated). Default covers the local dev frontend + API.
+_cors = os.getenv("CORS_ORIGINS",
+                  "http://localhost:5173,http://127.0.0.1:5173,"
+                  "http://localhost:8000,http://127.0.0.1:8000")
+_origins = [o.strip() for o in _cors.split(",") if o.strip()]
+app.add_middleware(CORSMiddleware, allow_origins=_origins,
+                   allow_methods=["*"], allow_headers=["*"])
 
 
 @app.middleware("http")
@@ -147,7 +155,7 @@ async def _no_cache_ui(request, call_next):
         resp.headers["Expires"] = "0"
     return resp
 for r in (auth.router, tasks.router, events.router, reminders.router, emails.router,
-          memories.router, admin.router, oauth.router, spotify.router, outlook.router, vision.router, agent.router, payments.router, content.router, voice.router, campus.router, security.router, kiosk.router):
+          memories.router, admin.router, oauth.router, spotify.router, outlook.router, vision.router, agent.router, payments.router, content.router, voice.router, campus.router, security.router, kiosk.router, docs.router):
     app.include_router(r)
 
 

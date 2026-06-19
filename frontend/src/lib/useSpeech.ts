@@ -16,6 +16,28 @@ type AnyRec = any
 const WAKE = /^\s*(ok |okay |hey |hi |yo )?summer[\s,.:!?-]*/i
 const ENDRE = /\b(thank you|thanks summer|thank you summer|we'?re done|that'?s all|that'?s it|i'?m done|stop|goodbye|good bye|bye summer|never ?mind)\b/i
 
+// SHARED across every useSpeech instance: the welcome-briefing hook and the chat
+// hook are two separate instances, but there is only ONE Summer voice. This
+// module-level object lets the chat's mic know the briefing is talking (and vice
+// versa) so it never transcribes Summer's own audio and replies to itself.
+// (A const object mutated via module-scope helpers — not a reassigned variable —
+// so it stays clean under the react-hooks lint rules.)
+const VOICE = { speaking: false, text: "" }
+function voiceStart(text: string) {
+  VOICE.speaking = true
+  VOICE.text = text
+}
+function voiceEnd() {
+  VOICE.speaking = false
+}
+function voiceClearText() {
+  VOICE.text = ""
+}
+function voiceStop() {
+  VOICE.speaking = false
+  VOICE.text = ""
+}
+
 function forSpeech(t: string): string {
   return t.replace(/[*_`#>[\]|]/g, "").replace(/\s+/g, " ").trim()
 }
@@ -155,6 +177,7 @@ export function useSpeech() {
     const myTurn = ++speakSeq.current
     speaking.current = true
     currentSpeech.current = clean.toLowerCase()
+    voiceStart(clean.toLowerCase())
     const cancelled = () => myTurn !== speakSeq.current
 
     const chunks = splitSentences(clean)
@@ -182,10 +205,12 @@ export function useSpeech() {
     }
     if (cancelled()) return // a newer speak/stop took over
     speaking.current = false
+    voiceEnd()
     // Keep the echo reference briefly so the trailing tail of Summer's audio
     // (still being transcribed) is filtered out instead of becoming a "command".
     window.setTimeout(() => {
       currentSpeech.current = ""
+      voiceClearText()
     }, 1500)
     afterSpeak()
   }
@@ -216,11 +241,12 @@ export function useSpeech() {
     }
     speaking.current = false
     currentSpeech.current = ""
+    voiceStop()
   }
 
   // ---- conversational state ----
   function isEcho(txt: string) {
-    const cs = currentSpeech.current
+    const cs = VOICE.text || currentSpeech.current
     if (!cs) return false
     const w = txt.toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter((x) => x.length > 2)
     if (!w.length) return false
@@ -284,7 +310,7 @@ export function useSpeech() {
       // While Summer is talking, ONLY a deliberate "Summer"/"Hey Summer" barges
       // in. Everything else is ignored — this stops Summer hearing its own audio
       // through the speakers and replying to itself (the feedback loop).
-      if (speaking.current) {
+      if (speaking.current || VOICE.speaking) {
         if (!WAKE.test(live)) return
         stopSpeaking()
       }

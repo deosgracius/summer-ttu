@@ -5,8 +5,22 @@ from .. import models
 from ..database import get_db
 from ..auth import get_current_user
 from ..agent import run_agent
+from ..welcome import compose_welcome
+from .. import orchestrator
 
 router = APIRouter(prefix="/agent", tags=["agent"])
+
+
+@router.get("/welcome")
+async def welcome(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """Spoken 'welcome back' briefing (email, calendar, tasks, nearby events)."""
+    try:
+        return await compose_welcome(db, user)
+    except Exception as e:
+        # Log server-side; don't leak internal exception detail to the client.
+        import logging
+        logging.getLogger("summer").warning("welcome briefing failed: %s", e)
+        return {"text": "Welcome back. I'm ready whenever you are."}
 
 
 class AgentRequest(BaseModel):
@@ -21,4 +35,24 @@ async def agent(req: AgentRequest, db: Session = Depends(get_db),
     try:
         return await run_agent(req.goal, db, user, provider=req.provider, voice=req.voice)
     except Exception as e:
-        return {"reply": f"Agent error: {e}", "actions": []}
+        import logging
+        logging.getLogger("summer").warning("agent run failed: %s", e)
+        return {"reply": "Sorry — something went wrong on my end. Please try again.", "actions": []}
+
+
+class OrchestrateRequest(BaseModel):
+    question: str
+
+
+@router.post("/orchestrate")
+def orchestrate(req: OrchestrateRequest, db: Session = Depends(get_db),
+                user: models.User = Depends(get_current_user)):
+    """Run the multi-agent orchestrator (route -> retrieve -> synthesize -> validate,
+    with a grounding-driven retry loop) and return the grounded answer + citations."""
+    try:
+        return orchestrator.run_orchestrator(db, req.question)
+    except Exception as e:
+        import logging
+        logging.getLogger("summer").warning("orchestrator failed: %s", e)
+        return {"answer": "Sorry — something went wrong on my end. Please try again.",
+                "grounded": False, "citations": []}

@@ -3,10 +3,19 @@ Per-user memory + time/timezone/location context. Provider (brain) selectable
 per request: Anthropic (Claude) or OpenAI (GPT)."""
 import os
 import json
+import time
 import datetime
 from collections import defaultdict, deque
 from .tools import available_tools
-from . import models
+from . import models, tracing, appsettings
+
+
+def _music_unlocked_for(db, role: str) -> bool:
+    """True if the central admin has unlocked music control for this role.
+    Stored as a comma-separated role list in the AppSetting 'music_unlocked_roles'."""
+    raw = appsettings.get(db, "music_unlocked_roles", "")
+    roles = {r.strip() for r in raw.split(",") if r.strip()}
+    return role in roles
 
 try:
     from zoneinfo import ZoneInfo
@@ -18,8 +27,13 @@ SYSTEM = (
     "your tools, and you ANSWER QUESTIONS and TEACH directly from your own knowledge. Be genuinely "
     "helpful and do not refuse reasonable requests. "
     "Answer directly, with no tool, for explanations, teaching, tutoring, math, definitions, advice, or "
-    "general conversation. Format longer answers in clean Markdown (short paragraphs, '-' bullet lists, "
-    "'**bold**' for key terms). Use the research tool only to look up specific facts you are unsure about. "
+    "general conversation. "
+    "WRITING STYLE — always reply in clean, professional, well-formatted text: open with the direct answer, "
+    "then keep it tidy. Use short paragraphs; use '-' bullet lists for multiple items; use '**bold**' only "
+    "for key terms; use '##' headings ONLY for genuinely long, multi-section answers. Do not over-format — "
+    "no clutter, no decorative separators, no emoji spam, no tables for one or two facts, no half-finished or "
+    "ragged formatting. The result should always read like a thoughtful, professional message to the user. "
+    "Use the research tool only to look up specific facts you are unsure about. "
     "Use tools to ACT: set_reminder(text, in_minutes) \u2014 convert any specific time into minutes from the "
     "current local time in your context; create_task/list_tasks/complete_task; list_events then "
     "book_event/cancel_event_booking; draft_email writes a DRAFT the user must approve before sending, so "
@@ -27,6 +41,7 @@ SYSTEM = (
     "the user's timezone or location; calendar_add_event adds an event to the user's Google Calendar "
     "(compute the start as a local ISO datetime like 2026-06-16T10:00:00 from your context; if it says not "
     "connected, tell them to click Connect Google Calendar). For a 'daily audit' or 'what's my day', call daily_brief, then summarize the day and explicitly flag any conflicts or overloaded times with concrete suggested fixes. When the user names a specific clock time for a reminder, set it to alert about one minute before that time so they get a heads-up. "
+    "EMAIL MANAGEMENT: read with read_emails but surface ONLY what matters — important, time-sensitive, or from a real person; briefly summarize those and skip newsletters, promotions, and no-reply senders. Before you classify, label, or reorganize someone's mail, ASK for their consent first. For any message that needs a response, draft a suggested reply with email_reply and show it for the user's APPROVAL before sending — never send without an explicit yes. If a message looks like spam, say so and ASK permission before using email_delete to trash it; do not delete anything without confirmation. For a clearly high-priority email, lead with it and have a ready-to-send draft prepared for the user to approve. "
     "ADMIN-ONLY abilities (only central admin / assigned admin can use these — never offer them to students, "
     "tutors, or officers): play_music / play_playlist / music_control on Spotify; system_control to sleep, lock, "
     "shut down, or restart this computer (confirm before shutdown/restart); weather; suggest_events for local "
@@ -35,7 +50,15 @@ SYSTEM = (
     "CAMPUS HELP: for any question about a class, room, schedule, professor, office or office hours, advisor, "
     "building, departmental electives/prerequisites, or a service like the stockroom, ALWAYS call the campus "
     "tools (find_course, find_professor, find_advisor, building_info, campus_service_hours, elective_catalog) "
-    "and answer ONLY from what they return — this data was loaded by the campus admin. Never guess or invent a "
+    "and answer ONLY from what they return — this data was loaded by the campus admin. For 'what do I need "
+    "before / what are the prerequisites for X' use course_prerequisites (it traces the WHOLE chain, not just "
+    "the directly listed prereq); for 'what does X open up / lead to' use course_unlocks. When the student "
+    "describes a TOPIC or interest in their own words instead of a code/title ('classes about robotics', "
+    "'something with signal processing'), use course_search (semantic/hybrid search). For questions whose "
+    "answer lives in a policy, handbook, syllabus, or FAQ rather than the course schedule (procedures, rules, "
+    "deadlines, 'how do I…'), use search_documents and answer ONLY from the returned passages, citing the "
+    "document and section. Report those as facts "
+    "only — never tell the student which courses to take. Never guess or invent a "
     "room number, office, time, instructor, prerequisite, or permit rule; if the tool returns no match or a "
     "blank field, say it isn't in the data and suggest who to contact (e.g. the listed advisor or the permit "
     "contact in the course record). When a class needs a permit, relay the exact instruction from the record "
@@ -90,18 +113,20 @@ async def run_agent(goal, db, user, provider=None, voice=False):
         model = DEFAULT_MODEL.get("anthropic", "claude-haiku-4-5")
     if provider == "openai" and not (str(model).startswith("gpt") or str(model).startswith("o")):
         model = DEFAULT_MODEL.get("openai", "gpt-4o-mini")
-    avail = available_tools(user.role)
+    avail = available_tools(user.role, music_unlocked=_music_unlocked_for(db, user.role))
     system = SYSTEM + _context(user) + _memories(db, user)
     if voice:
         system += (" The user is speaking to you hands-free by voice, so keep replies brief (1–2 sentences), "
                    "natural and conversational — no markdown, no bullet lists. Answer exactly what was asked.")
     hist = list(_HISTORY[user.id])
+    t0 = time.perf_counter()
     if provider == "anthropic":
         result = await _run_anthropic(goal, db, user, avail, system, hist, model)
     elif provider == "openai":
         result = await _run_openai(goal, db, user, avail, system, hist, model)
     else:
         result = {"reply": f"Unknown provider '{provider}'. Use 'anthropic' or 'openai'.", "actions": []}
+    tracing.record("agent", goal, result, (time.perf_counter() - t0) * 1000)
     _HISTORY[user.id].append({"role": "user", "content": goal})
     _HISTORY[user.id].append({"role": "assistant", "content": result.get("reply", "")})
     u = result.get("usage")
@@ -121,7 +146,9 @@ async def run_agent(goal, db, user, provider=None, voice=False):
 # calendar, system control, or any data-editing tool from here.
 # ---------------------------------------------------------------------------
 KIOSK_TOOLS = ("find_course", "find_professor", "find_advisor",
-               "campus_service_hours", "building_info", "elective_catalog")
+               "campus_service_hours", "building_info", "elective_catalog",
+               "course_prerequisites", "course_unlocks", "course_search",
+               "search_documents")
 
 KIOSK_SYSTEM = (
     "You are Summer, a friendly help kiosk in a university department hallway. Anyone walking by can "
@@ -139,6 +166,13 @@ KIOSK_SYSTEM = (
     "refer to the project/Capstone labs; 'ECE' is Electrical & Computer Engineering. If an exact term "
     "finds nothing, search a broader keyword (e.g. just 'electronics' or 'lab') and offer the closest "
     "matches instead of a flat 'not found'. "
+    "For 'what do I need before / what are the prerequisites for' a class, use course_prerequisites (it traces "
+    "the entire chain, not just the first prereq); for 'what does this class lead to / unlock', use "
+    "course_unlocks. When the student describes a TOPIC or interest in their own words rather than a code or "
+    "title ('classes about robots', 'something with circuits'), use course_search (meaning-based search). "
+    "For questions answered by a department handbook, policy, syllabus, or FAQ (procedures, rules, deadlines, "
+    "'how do I…'), use search_documents and answer ONLY from the returned passages, citing the document. "
+    "Relay those as plain facts — never advise which courses to take. "
     "You are an information kiosk, NOT an academic advisor and NOT a replacement for a professor: do not "
     "tell students which courses to take, build degree plans, or judge eligibility — give the facts and "
     "point them to the right person. "
@@ -150,12 +184,14 @@ KIOSK_SYSTEM = (
 )
 
 
-async def run_kiosk_agent(goal, db, provider=None):
-    """One anonymous Q&A turn for the public kiosk — no user, no memory, no history,
-    campus tools only."""
+async def run_kiosk_traced(goal, db, provider=None):
+    """The full kiosk run INCLUDING the internal tool trace, token usage, and latency.
+    The eval harness and observability use this; the public kiosk uses
+    run_kiosk_agent below, which strips the trace down to just the spoken answer."""
     goal = (goal or "").strip()[:500]  # cap input length (public endpoint)
     if not goal:
-        return {"reply": "Ask me about a class, professor, office hours, a room, or the stockroom!", "actions": []}
+        return {"reply": "Ask me about a class, professor, office hours, a room, or the stockroom!",
+                "actions": [], "latency_ms": 0.0}
     provider = (provider or os.getenv("LLM_PROVIDER", "anthropic")).lower()
     # Kiosk answers are quick lookups — use the FAST model for snappy replies,
     # regardless of the (possibly slower) dashboard model in LLM_MODEL.
@@ -163,12 +199,14 @@ async def run_kiosk_agent(goal, db, provider=None):
     from .tools import TOOLS
     avail = {n: TOOLS[n] for n in KIOSK_TOOLS if n in TOOLS}
     system = KIOSK_SYSTEM + f"\nToday's date: {datetime.date.today().isoformat()}."
+    t0 = time.perf_counter()
     if provider == "anthropic":
         result = await _run_anthropic(goal, db, None, avail, system, [], model)
     elif provider == "openai":
         result = await _run_openai(goal, db, None, avail, system, [], model)
     else:
-        return {"reply": "The kiosk assistant isn't configured.", "actions": []}
+        return {"reply": "The kiosk assistant isn't configured.", "actions": [], "latency_ms": 0.0}
+    result["latency_ms"] = (time.perf_counter() - t0) * 1000
     u = result.get("usage")
     if u and (u.get("input") or u.get("output")):
         try:
@@ -177,7 +215,14 @@ async def run_kiosk_agent(goal, db, provider=None):
             db.commit()
         except Exception:
             db.rollback()
-    # the kiosk only needs the spoken answer, not the internal tool trace
+    tracing.record("kiosk", goal, result, result["latency_ms"])
+    return result
+
+
+async def run_kiosk_agent(goal, db, provider=None):
+    """One anonymous Q&A turn for the public kiosk — no user, no memory, no history,
+    campus tools only. Returns only the spoken answer (no internal tool trace)."""
+    result = await run_kiosk_traced(goal, db, provider)
     return {"reply": result.get("reply", "")}
 
 

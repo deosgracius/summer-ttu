@@ -44,7 +44,7 @@ export default function PeoplePanel({ reloadKey }: { reloadKey?: number }) {
   }
   useEffect(() => {
     if (isAdmin && open) load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [isAdmin, open, reloadKey])
 
   const groups = useMemo(() => {

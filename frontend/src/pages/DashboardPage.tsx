@@ -12,7 +12,9 @@ import UserAccessPanel from "@/components/panels/UserAccessPanel"
 import ApprovalsPanel from "@/components/panels/ApprovalsPanel"
 import SecurityPanel from "@/components/panels/SecurityPanel"
 import VoiceSettingsPanel from "@/components/panels/VoiceSettingsPanel"
+import MusicAccessPanel from "@/components/panels/MusicAccessPanel"
 import MyAvailabilityPanel from "@/components/panels/MyAvailabilityPanel"
+import WelcomeBriefing from "@/components/WelcomeBriefing"
 import SplineRobot from "@/components/SplineRobot"
 import SpaceBackground from "@/components/SpaceBackground"
 
@@ -48,6 +50,8 @@ export default function DashboardPage() {
       </header>
 
       <main className="relative z-10 mx-auto max-w-5xl px-4 sm:px-6 py-8 space-y-6">
+        <WelcomeBriefing />
+
         <AgentChat onChanged={refreshAll} />
 
         <MyAvailabilityPanel reloadKey={reloadKey} />
@@ -63,6 +67,8 @@ export default function DashboardPage() {
         <SecurityPanel reloadKey={reloadKey} />
 
         <VoiceSettingsPanel reloadKey={reloadKey} />
+
+        <MusicAccessPanel reloadKey={reloadKey} />
 
         <div className="grid gap-6 md:grid-cols-2">
           <TasksPanel reloadKey={reloadKey} />

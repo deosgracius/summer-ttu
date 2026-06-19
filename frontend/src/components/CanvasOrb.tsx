@@ -53,7 +53,7 @@ export default function CanvasOrb({
         const a = (i / N) * Math.PI * 2
         const r = R + amp * Math.sin(a * 6 + time * sp * 3) + amp * 0.5 * Math.sin(a * 3 - time * sp * 2)
         const x = Math.cos(a) * r, y = Math.sin(a) * r
-        i ? cx.lineTo(x, y) : cx.moveTo(x, y)
+        if (i) cx.lineTo(x, y); else cx.moveTo(x, y)
       }
       cx.closePath()
       cx.strokeStyle = col

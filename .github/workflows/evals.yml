@@ -1,0 +1,64 @@
+name: evals
+
+# Gate every push / PR on the assistant's guardrail evals + deterministic tests.
+# The structural eval harness needs no API key, so this runs for free on every commit
+# and fails the build if a change weakens a guardrail (e.g. exposes a dangerous tool
+# on the kiosk, breaks the prereq parser, or breaks retrieval fusion).
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: sqlite:///./ci.db   # ephemeral DB; structural evals don't touch it
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Structural eval gate (no API key needed)
+        run: python -m app.eval_harness
+
+      - name: Deterministic test suites
+        # `python -m pytest` (not bare `pytest`) so the repo root is on sys.path
+        # and `import app` resolves.
+        run: python -m pytest tests/test_graph.py tests/test_vector.py tests/test_evals.py -q
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: eval_report.json
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # Optional: behavioral evals that actually drive the LLM. These need a real API
+  # key + loaded data, so they're disabled by default. To enable: add the repo
+  # secret OPENAI_API_KEY (or ANTHROPIC_API_KEY), import the campus data into the
+  # CI DB, then uncomment.
+  # ---------------------------------------------------------------------------
+  # behavioral-evals:
+  #   runs-on: ubuntu-latest
+  #   env:
+  #     DATABASE_URL: sqlite:///./ci.db
+  #     LLM_PROVIDER: openai
+  #     OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-python@v5
+  #       with: { python-version: "3.12", cache: pip }
+  #     - run: pip install -r requirements.txt
+  #     # - run: <load campus data into ci.db here>
+  #     - run: python -m app.eval_harness --live --provider openai

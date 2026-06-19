@@ -5,8 +5,15 @@ import httpx
 
 TM = "https://app.ticketmaster.com/discovery/v2/events.json"
 
+# Lubbock, TX — the campus's home coordinates, used as the default centre for the
+# "events within N miles" search when no other location is given.
+LUBBOCK_LATLONG = "33.5779,-101.8552"
 
-async def suggest_events(location, interests=None, days=14):
+
+async def suggest_events(location, interests=None, days=14, radius=None, latlong=None):
+    """Ticketmaster events. With `radius` (miles) it searches a circle around
+    `latlong` (defaults to campus) — e.g. everything within 600 mi over the next
+    `days`; otherwise it filters by city name."""
     key = os.getenv("TICKETMASTER_API_KEY")
     if not key:
         return {"error": "Local events aren't enabled yet. Add a free TICKETMASTER_API_KEY "
@@ -15,7 +22,11 @@ async def suggest_events(location, interests=None, days=14):
     params = {"apikey": key, "size": 12, "sort": "date,asc", "countryCode": "US",
               "startDateTime": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
               "endDateTime": (now + datetime.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")}
-    if location:
+    if radius:
+        params["latlong"] = latlong or LUBBOCK_LATLONG
+        params["radius"] = str(min(int(radius), 19999))  # TM caps radius at 19,999
+        params["unit"] = "miles"
+    elif location:
         params["city"] = location.split(",")[0].strip()
     if interests:
         params["classificationName"] = interests

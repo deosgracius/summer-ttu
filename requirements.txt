@@ -18,3 +18,7 @@ webauthn
 python-dateutil
 stripe
 psycopg2-binary
+neo4j
+mcp
+pypdf
+langgraph

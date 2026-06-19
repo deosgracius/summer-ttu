@@ -32,7 +32,7 @@ export default function VoiceSettingsPanel({ reloadKey }: { reloadKey?: number }
   }
   useEffect(() => {
     if (isCentral) load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [isCentral, reloadKey])
 
   if (!isCentral) return null

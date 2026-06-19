@@ -2,7 +2,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from .. import models, auth, approvals, security
+from .. import models, auth, approvals, security, tracing
 from ..database import get_db
 from ..auth import require_roles
 
@@ -33,6 +33,19 @@ def usage(db: Session = Depends(get_db), user: models.User = Depends(require_rol
         out.append({"provider": p, "calls": a["calls"], "input_tokens": a["input"],
                     "output_tokens": a["output"], "est_cost": cost})
     return {"by_provider": out, "total_est_cost": round(total, 4), "calls": len(rows)}
+
+
+@router.get("/observability")
+def observability(user: models.User = Depends(require_roles("admin"))):
+    """Aggregate tracing stats — run counts, latency p50/p95, tokens, and which tools
+    the assistant actually calls. Empty until TRACE_FILE/TRACE_ENABLED is set."""
+    return tracing.summary()
+
+
+@router.get("/traces")
+def traces(limit: int = 50, user: models.User = Depends(require_roles("admin"))):
+    """The most recent agent-run trace spans (newest first)."""
+    return {"traces": tracing.read_recent(limit=limit)}
 
 
 @router.get("/usage-series")
@@ -133,6 +146,40 @@ def assign_role(data: AssignRole, db: Session = Depends(get_db),
               {"target": target.email, "from": old_role, "to": new_role})
     db.commit()
     return {"email": target.email, "role": target.role, "by": actor.email}
+
+
+# --- Music access (central-admin privilege; unlockable for other roles) ---
+
+MUSIC_GRANTABLE_ROLES = ["customer", "tutor", "officer", "client", "admin"]
+
+
+@router.get("/music-access")
+def get_music_access(db: Session = Depends(get_db),
+                     user: models.User = Depends(require_roles("admin"))):
+    """Which roles (besides central admin) may control music. Central admin
+    always can; others only if unlocked here."""
+    from .. import appsettings
+    raw = appsettings.get(db, "music_unlocked_roles", "")
+    roles = [r.strip() for r in raw.split(",") if r.strip()]
+    return {"unlocked_roles": roles, "grantable_roles": MUSIC_GRANTABLE_ROLES}
+
+
+class MusicAccess(BaseModel):
+    roles: list[str] = []
+
+
+@router.put("/music-access")
+def set_music_access(data: MusicAccess, db: Session = Depends(get_db),
+                     actor: models.User = Depends(require_roles("central_admin"))):
+    """Central admin unlocks (or re-locks) music control for a set of roles."""
+    from .. import appsettings, audit
+    roles = [r.strip() for r in (data.roles or []) if r.strip() in MUSIC_GRANTABLE_ROLES]
+    appsettings.set(db, "music_unlocked_roles", ",".join(roles))
+    audit.log(db, actor, "music_access",
+              f"Music control unlocked for: {', '.join(roles) if roles else 'central admin only'}",
+              {"roles": roles})
+    db.commit()
+    return {"unlocked_roles": roles}
 
 
 # --- Approval queue & audit log ------------------------------------------

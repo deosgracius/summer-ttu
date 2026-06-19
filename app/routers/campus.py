@@ -9,7 +9,7 @@ supports filtering by `?semester=` and admins can bulk-clear a semester.
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session
-from .. import models, schemas, approvals, audit, people
+from .. import models, schemas, approvals, audit, people, graph, graph_sync, vector_store
 from ..database import get_db
 from ..auth import get_current_user, require_roles
 from ..campus_import import parse_workbook
@@ -183,6 +183,47 @@ def update_person(person_id: int, data: dict, db: Session = Depends(get_db),
 def sync_people_now(db: Session = Depends(get_db),
                     actor: models.User = Depends(require_roles("admin"))):
     return {"people": people.sync_people(db)}
+
+
+# --- Prerequisite graph (Neo4j graph-RAG, admin only) --------------------
+
+@router.get("/graph/status")
+def graph_status(actor: models.User = Depends(require_roles("admin"))):
+    """Is the graph database configured/reachable, and how big is it?"""
+    return graph.status()
+
+
+@router.post("/graph/sync")
+def graph_sync_now(db: Session = Depends(get_db),
+                   actor: models.User = Depends(require_roles("admin"))):
+    """(Re)build the course-prerequisite graph from the current SQL data. Run this
+    after importing a new semester. No-ops with a clear message if Neo4j is off."""
+    res = graph_sync.sync_graph(db)
+    if res.get("graph"):
+        audit.log(db, actor, "change", "Rebuild prerequisite graph", res)
+        db.commit()
+    return res
+
+
+# --- Semantic search index (embeddings / vector, admin only) -------------
+
+@router.get("/embeddings/status")
+def embeddings_status(db: Session = Depends(get_db),
+                      actor: models.User = Depends(require_roles("admin"))):
+    """Is embedding configured, and how many courses are indexed?"""
+    return vector_store.status(db)
+
+
+@router.post("/embeddings/sync")
+def embeddings_sync_now(db: Session = Depends(get_db),
+                        actor: models.User = Depends(require_roles("admin"))):
+    """(Re)embed courses whose text changed (skips unchanged ones to save API calls).
+    Run after importing a new semester. No-ops clearly if OPENAI_API_KEY is unset."""
+    res = vector_store.sync_embeddings(db)
+    if res.get("embeddings"):
+        audit.log(db, actor, "change", "Sync course embeddings", res)
+        db.commit()
+    return res
 
 
 # --- Per-semester maintenance --------------------------------------------

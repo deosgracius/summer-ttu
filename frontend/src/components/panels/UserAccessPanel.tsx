@@ -38,7 +38,7 @@ export default function UserAccessPanel({ reloadKey }: { reloadKey?: number }) {
   }
   useEffect(() => {
     if (canManage) load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [reloadKey, canManage])
 
   if (!canManage) return null

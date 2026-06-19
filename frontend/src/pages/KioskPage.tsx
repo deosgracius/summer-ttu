@@ -26,7 +26,7 @@ export default function KioskPage() {
   const [turns, setTurns] = useState<Turn[]>([])
   const [loading, setLoading] = useState(false)
   const [muted, setMuted] = useState(false)
-  const { supported: voiceIn, canSpeak, listening, wakeActive, heard, listen, speak, stopSpeaking, startWakeWord, stopWakeWord, primeAudio } =
+  const { supported: voiceIn, canSpeak, listening, wakeActive, awake, heard, listen, speak, stopSpeaking, startWakeWord, stopWakeWord, primeAudio } =
     useSpeech()
   const idleTimer = useRef<number | undefined>(undefined)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -130,7 +130,7 @@ export default function KioskPage() {
         {voiceIn && wakeActive && (
           <div className="flex items-center justify-center gap-2 text-xs text-primary/80 pb-1 min-h-5">
             <span className="inline-block size-2 rounded-full bg-emerald-400 animate-pulse" />
-            {heard ? <span className="text-foreground italic">“{heard}”</span> : <>Listening — just talk, or tap the mic to ask</>}
+            {heard ? <span className="text-foreground italic">“{heard}”</span> : awake ? <>Listening — just talk</> : <>Say <b>“Hey Summer”</b> to start, or tap the mic</>}
           </div>
         )}
 

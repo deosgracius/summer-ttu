@@ -20,7 +20,7 @@ export default function AgentChat({ onChanged }: Props) {
   const [links, setLinks] = useState<{ label: string; href: string }[]>([])
   const [state, setState] = useState<"idle" | "thinking">("idle")
   const [muted, setMuted] = useState(false)
-  const { supported: voiceIn, canSpeak, listening, wakeActive, heard, listen, speak, stopSpeaking, startWakeWord, stopWakeWord, primeAudio } =
+  const { supported: voiceIn, canSpeak, listening, wakeActive, awake, heard, listen, speak, stopSpeaking, startWakeWord, stopWakeWord, primeAudio } =
     useSpeech()
   const sendRef = useRef<(q?: string) => void>(() => {})
 
@@ -95,7 +95,7 @@ export default function AgentChat({ onChanged }: Props) {
           </div>
           {voiceIn && wakeActive && state !== "thinking" && (
             <div className="text-xs text-primary/70 min-h-4">
-              {heard ? <span className="text-foreground italic normal-case">“{heard}”</span> : "listening — just talk, or tap the mic"}
+              {heard ? <span className="text-foreground italic normal-case">“{heard}”</span> : awake ? "listening — just talk" : "say “Hey Summer” to start, or tap the mic"}
             </div>
           )}
         </div>

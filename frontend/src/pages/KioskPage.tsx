@@ -130,7 +130,7 @@ export default function KioskPage() {
         {voiceIn && wakeActive && (
           <div className="flex items-center justify-center gap-2 text-xs text-primary/80 pb-1 min-h-5">
             <span className="inline-block size-2 rounded-full bg-emerald-400 animate-pulse" />
-            {heard ? <span className="text-foreground italic">“{heard}”</span> : <>Listening — just talk, or say <b>“Hey Summer”</b></>}
+            {heard ? <span className="text-foreground italic">“{heard}”</span> : <>Say <b>“Hey Summer”</b> to ask a question — or tap the mic</>}
           </div>
         )}
 

@@ -13,6 +13,11 @@ import { getToken } from "@/lib/api"
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyRec = any
 
+// A tiny silent clip used to "unlock" audio playback inside a tap on mobile
+// (iOS/Android block programmatic audio until the user has played something).
+const SILENT_AUDIO =
+  "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA="
+
 const WAKE = /^\s*(ok |okay |hey |hi |yo )?summer[\s,.:!?-]*/i
 const ENDRE = /\b(thank you|thanks summer|thank you summer|we'?re done|that'?s all|that'?s it|i'?m done|stop|goodbye|good bye|bye summer|never ?mind)\b/i
 
@@ -120,23 +125,36 @@ export function useSpeech() {
     return URL.createObjectURL(blob)
   }
 
+  // One reused audio element. Created lazily; unlocked by primeAudio() inside a
+  // user gesture so mobile browsers allow programmatic playback afterward.
+  function ensureAudio(): HTMLAudioElement {
+    if (!audioRef.current) {
+      const a = new Audio()
+      a.preload = "auto"
+      ;(a as HTMLAudioElement & { playsInline?: boolean }).playsInline = true
+      audioRef.current = a
+    }
+    return audioRef.current
+  }
+
   function playUrl(objUrl: string): Promise<void> {
     return new Promise<void>((resolve) => {
-      if (audioRef.current) {
-        try {
-          audioRef.current.pause()
-        } catch {
-          /* ignore */
-        }
-      }
-      const a = new Audio(objUrl)
-      audioRef.current = a
+      const a = ensureAudio()
+      a.muted = false
       const done = () => {
         URL.revokeObjectURL(objUrl)
+        a.onended = null
+        a.onerror = null
         resolve()
+      }
+      try {
+        a.pause()
+      } catch {
+        /* ignore */
       }
       a.onended = done
       a.onerror = done
+      a.src = objUrl
       a.play().catch(done)
     })
   }
@@ -223,6 +241,7 @@ export function useSpeech() {
   }
 
   // Call inside a user gesture (a tap) to unlock audio playback + speech.
+  // Must run on the FIRST tap on mobile, or Summer's voice stays silent.
   function primeAudio() {
     try {
       if (canSpeak) {
@@ -230,6 +249,28 @@ export function useSpeech() {
         u.volume = 0
         window.speechSynthesis.resume()
         window.speechSynthesis.speak(u)
+      }
+    } catch {
+      /* ignore */
+    }
+    // Unlock the HTMLAudioElement used for ElevenLabs speech (mobile requirement).
+    try {
+      const a = ensureAudio()
+      a.muted = true
+      a.src = SILENT_AUDIO
+      const p = a.play()
+      if (p && typeof p.then === "function") {
+        p.then(() => {
+          try {
+            a.pause()
+            a.currentTime = 0
+          } catch {
+            /* ignore */
+          }
+          a.muted = false
+        }).catch(() => {
+          a.muted = false
+        })
       }
     } catch {
       /* ignore */
@@ -269,9 +310,11 @@ export function useSpeech() {
   function openWindow() {
     vstate.current = "active"
     clearFollow()
+    // Short follow-up window — long enough for a natural reply, short enough that
+    // background chatter doesn't get treated as a command in a busy hallway.
     followTimer.current = window.setTimeout(() => {
       if (micOn.current) vstate.current = "ambient"
-    }, 12000)
+    }, 8000)
   }
   function afterSpeak() {
     if (micOn.current) openWindow() // keep listening for a follow-up after Summer talks
@@ -289,11 +332,26 @@ export function useSpeech() {
     // Send the full accumulated utterance once you've paused (good rhythm:
     // wait until you actually stop, then reply to everything).
     const flush = () => {
-      const cmd = buffer.current.replace(WAKE, "").trim()
+      const raw = buffer.current.trim()
+      const hasWake = WAKE.test(raw)
       buffer.current = ""
       setHeard("")
-      if (cmd.length < 2) return
-      if (ENDRE.test(cmd) && cmd.split(/\s+/).length <= 3) return
+      // CONVERSATION TRACKER: when idle (ambient), Summer only responds to someone
+      // who addresses her by name ("Hey Summer …"). All other nearby talk — other
+      // students chatting, background noise — is ignored. After she's addressed (or
+      // just replied), a short ACTIVE window lets you follow up without repeating
+      // the wake word; then she goes back to waiting for her name.
+      if (vstate.current !== "active" && !hasWake) return
+      const cmd = raw.replace(WAKE, "").trim()
+      if (cmd.length < 2) {
+        if (hasWake) openWindow() // "Hey Summer" alone → start listening for the request
+        return
+      }
+      if (ENDRE.test(cmd) && cmd.split(/\s+/).length <= 3) {
+        vstate.current = "ambient" // "thanks/done" → stop the follow-up window
+        return
+      }
+      openWindow() // allow a brief hands-free follow-up
       onCmd.current(cmd)
     }
     const scheduleFlush = () => {
@@ -471,6 +529,7 @@ export function useSpeech() {
   // everywhere. Tap again (or pause) to finish.
   async function listen(onText: (text: string) => void) {
     onCmd.current = onText
+    primeAudio() // this tap is our chance to unlock Summer's voice on mobile
     if (recording.current) {
       stopListening()
       return

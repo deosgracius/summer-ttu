@@ -60,8 +60,11 @@ export default function WelcomeBriefing() {
       return
     }
     setStatus("playing")
-    fade(audio, 0.12, 700) // quiet bed so the spoken briefing stays clear
     setText(r.text)
+    // Let the music play on its own for ~3s, then duck it and let Summer speak.
+    fade(audio, 0.3, 800)
+    await new Promise((res) => setTimeout(res, 3000))
+    fade(audio, 0.12, 600) // quiet bed so the spoken briefing stays clear
     await speak(r.text)
     fade(audio, 0, 1400, () => audio.pause())
     setStatus("done")

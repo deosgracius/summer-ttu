@@ -11,6 +11,7 @@ from .extra_service import (create_reminder as _create_reminder, list_reminders 
                             weather as _weather, sports_update as _sports_update)
 from .google_cal import add_event as _cal_add, list_upcoming as _cal_upcoming, is_connected as _cal_connected
 from .spotify import is_connected as _sp_connected, play as _sp_play, play_playlist as _sp_playlist, control as _sp_control
+from .itunes import search as _itunes_search
 from . import gmail as _gmail, outlook as _outlook
 from .local_events import suggest_events as _suggest_events
 from .web_tools import fetch_page as _fetch_page
@@ -32,7 +33,7 @@ MUSIC_TOOLS = ("play_music", "play_playlist", "music_control")
 SERVICES = {
     "daily_update":     {"label": "Daily briefing",         "tools": ("daily_brief",)},
     "email":            {"label": "Email assistant",        "tools": ("read_emails", "email_reply", "email_send", "email_delete")},
-    "music":            {"label": "Music (Spotify)",        "tools": MUSIC_TOOLS},
+    "music":            {"label": "Music (Spotify & Apple)", "tools": MUSIC_TOOLS + ("play_apple_music",)},
     "weather":          {"label": "Weather",                "tools": ("weather",)},
     "sports":           {"label": "Sports (NFL/NCAA/NBA)",  "tools": ("sports_update",)},
     "local_events":     {"label": "Local events",           "tools": ("suggest_events",)},
@@ -139,6 +140,17 @@ async def play_playlist(args, db, user):
     if not _sp_connected(db, user.id):
         return {"error": "Connect Spotify first to play your playlists."}
     return await _sp_playlist(db, user, name)
+
+
+async def play_apple_music(args, db, user):
+    res = await _itunes_search(args.get("query", ""), 5)
+    if "tracks" not in res:
+        return res  # error/info
+    top = res["tracks"][0]
+    return {"found": f"{top['track']} by {top['artist']}",
+            "preview": top.get("preview_url"),         # 30s clip the UI can play
+            "apple_music": top.get("apple_music_url"),  # opens the full song in Apple Music
+            "more": [f"{t['track']} — {t['artist']}" for t in res["tracks"][1:4]]}
 
 
 async def weather(args, db, user):
@@ -431,6 +443,7 @@ TOOLS = {
     "play_music": _t("Play a song on Spotify (or return links). Put the song title in 'query' and the performer in 'artist'. Central admin only (may be unlocked for others by the central admin).", CENTRAL, {"query": {"type": "string"}, "artist": {"type": "string"}}, ["query"], play_music),
     "play_playlist": _t("Play one of the user's Spotify playlists by name (shuffled). Central admin only (may be unlocked for others by the central admin).", CENTRAL, {"name": {"type": "string"}}, ["name"], play_playlist),
     "music_control": _t("Control Spotify playback: pause, resume, next, previous, or volume (volume_percent 0-100). Central admin only (may be unlocked for others by the central admin).", CENTRAL, {"action": {"type": "string"}, "volume_percent": {"type": "integer"}}, ["action"], music_control),
+    "play_apple_music": _t("Find a song on Apple Music / iTunes and return a 30-second preview to play plus a link to open the full song in Apple Music. Use this when the user mentions Apple Music or iTunes, or as a fallback when Spotify isn't connected. Put the song and/or artist in 'query'. Part of the music service (central admin / granted users).", CENTRAL, {"query": {"type": "string"}}, ["query"], play_apple_music),
     "system_control": _t("Control THIS computer: sleep, lock, shutdown, restart, or cancel a pending shutdown. Confirm before shutdown/restart. Admin only.", ADMINS, {"action": {"type": "string", "enum": ["sleep", "lock", "shutdown", "restart", "cancel"]}}, ["action"], system_control),
     "weather": _t("Get current weather; uses the user's saved location if none given. Admin only.", ADMINS, {"location": {"type": "string"}}, [], weather),
     "suggest_events": _t("Suggest real upcoming local events (concerts, sports, theatre, comedy, tech) near the user via Ticketmaster. Covers the West-Texas/region cities within ~600 miles — Lubbock, Dallas, Amarillo, Austin, Houston, Albuquerque, Oklahoma City, Midland; call once per city if needed. Admin only.", ADMINS, {"location": {"type": "string"}, "interests": {"type": "string"}}, [], suggest_events),

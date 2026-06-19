@@ -148,6 +148,40 @@ def assign_role(data: AssignRole, db: Session = Depends(get_db),
     return {"email": target.email, "role": target.role, "by": actor.email}
 
 
+# --- Music access (central-admin privilege; unlockable for other roles) ---
+
+MUSIC_GRANTABLE_ROLES = ["customer", "tutor", "officer", "client", "admin"]
+
+
+@router.get("/music-access")
+def get_music_access(db: Session = Depends(get_db),
+                     user: models.User = Depends(require_roles("admin"))):
+    """Which roles (besides central admin) may control music. Central admin
+    always can; others only if unlocked here."""
+    from .. import appsettings
+    raw = appsettings.get(db, "music_unlocked_roles", "")
+    roles = [r.strip() for r in raw.split(",") if r.strip()]
+    return {"unlocked_roles": roles, "grantable_roles": MUSIC_GRANTABLE_ROLES}
+
+
+class MusicAccess(BaseModel):
+    roles: list[str] = []
+
+
+@router.put("/music-access")
+def set_music_access(data: MusicAccess, db: Session = Depends(get_db),
+                     actor: models.User = Depends(require_roles("central_admin"))):
+    """Central admin unlocks (or re-locks) music control for a set of roles."""
+    from .. import appsettings, audit
+    roles = [r.strip() for r in (data.roles or []) if r.strip() in MUSIC_GRANTABLE_ROLES]
+    appsettings.set(db, "music_unlocked_roles", ",".join(roles))
+    audit.log(db, actor, "music_access",
+              f"Music control unlocked for: {', '.join(roles) if roles else 'central admin only'}",
+              {"roles": roles})
+    db.commit()
+    return {"unlocked_roles": roles}
+
+
 # --- Approval queue & audit log ------------------------------------------
 
 def _pc_out(pc: models.PendingChange):

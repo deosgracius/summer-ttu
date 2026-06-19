@@ -1,4 +1,36 @@
-# Deploying Summer to the cloud with Supabase
+# Deploying Summer
+
+## Run the whole stack locally with Docker (one command)
+
+The repo ships a containerized full stack — FastAPI backend, React frontend (nginx),
+Postgres (pgvector image), and Neo4j — wired together in `docker-compose.yml`:
+
+```bash
+docker compose up --build
+```
+
+| Service | URL | Notes |
+|---|---|---|
+| Web app (React + nginx) | http://localhost:8080 | nginx serves the SPA and proxies API calls to the backend |
+| API (FastAPI) | http://localhost:8000/docs | Swagger UI |
+| Postgres + pgvector | localhost:5432 | data persisted in the `pgdata` volume |
+| Neo4j Browser | http://localhost:7474 | bolt on 7687; login `neo4j` / `changeme123` |
+
+Your LLM API keys flow in from `.env` (via `env_file`); the compose file overrides
+`DATABASE_URL` and `NEO4J_URI` to point at the containers, so the graph and vector
+features work out of the box. After the stack is up, build the indexes once:
+
+```bash
+# import campus data (admin), then:
+curl -X POST http://localhost:8000/campus/graph/sync       -H "Authorization: Bearer <token>"
+curl -X POST http://localhost:8000/campus/embeddings/sync  -H "Authorization: Bearer <token>"
+```
+
+Change the default Postgres/Neo4j passwords and `SECRET_KEY` before any real deployment.
+
+---
+
+## Deploying to the cloud with Supabase
 
 Summer already reads `DATABASE_URL` (SQLite locally, Postgres in production), and Supabase **is** Postgres — so going live is mostly configuration.
 

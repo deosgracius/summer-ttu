@@ -20,6 +20,12 @@ import json as _json
 
 ALL = ("customer", "tutor", "officer", "client", "admin", "central_admin")
 ADMINS = ("admin", "central_admin")  # admin-level only (central admin + assigned admin)
+CENTRAL = ("central_admin",)  # central admin ONLY (e.g. music) — can be unlocked for others
+
+# Music is a central-admin privilege. The central admin can UNLOCK it for other
+# roles via the AppSetting "music_unlocked_roles" (a comma-separated role list);
+# available_tools() then adds these tools for those roles at request time.
+MUSIC_TOOLS = ("play_music", "play_playlist", "music_control")
 
 
 async def _bt(action, task):
@@ -343,6 +349,17 @@ async def course_unlocks(args, db, user):
     return res
 
 
+async def search_documents(args, db, user):
+    q = (args.get("query") or "").strip()
+    if not q:
+        return {"error": "what should I look up in the documents?"}
+    from . import docs_rag
+    res = docs_rag.search_documents(db, q)
+    if not res.get("matches"):
+        return {"matches": [], "note": res.get("note", f"Nothing in the uploaded documents matched '{q}'.")}
+    return res
+
+
 async def course_search(args, db, user):
     q = (args.get("query") or "").strip()
     if not q:
@@ -397,9 +414,9 @@ TOOLS = {
     "email_send": _t("Send a brand-new email. Show the user the draft and confirm before sending.", ALL, {"provider": {"type": "string"}, "to": {"type": "string"}, "subject": {"type": "string"}, "body": {"type": "string"}}, ["to", "body"], email_send),
     "list_users": _t("List all users (admin only).", ADMINS, {}, [], list_users),
     # ----- Admin-level only (central admin + assigned admin) -----
-    "play_music": _t("Play a song on Spotify (or return links). Put the song title in 'query' and the performer in 'artist'. Admin only.", ADMINS, {"query": {"type": "string"}, "artist": {"type": "string"}}, ["query"], play_music),
-    "play_playlist": _t("Play one of the user's Spotify playlists by name (shuffled). Admin only.", ADMINS, {"name": {"type": "string"}}, ["name"], play_playlist),
-    "music_control": _t("Control Spotify playback: pause, resume, next, previous, or volume (volume_percent 0-100). Admin only.", ADMINS, {"action": {"type": "string"}, "volume_percent": {"type": "integer"}}, ["action"], music_control),
+    "play_music": _t("Play a song on Spotify (or return links). Put the song title in 'query' and the performer in 'artist'. Central admin only (may be unlocked for others by the central admin).", CENTRAL, {"query": {"type": "string"}, "artist": {"type": "string"}}, ["query"], play_music),
+    "play_playlist": _t("Play one of the user's Spotify playlists by name (shuffled). Central admin only (may be unlocked for others by the central admin).", CENTRAL, {"name": {"type": "string"}}, ["name"], play_playlist),
+    "music_control": _t("Control Spotify playback: pause, resume, next, previous, or volume (volume_percent 0-100). Central admin only (may be unlocked for others by the central admin).", CENTRAL, {"action": {"type": "string"}, "volume_percent": {"type": "integer"}}, ["action"], music_control),
     "system_control": _t("Control THIS computer: sleep, lock, shutdown, restart, or cancel a pending shutdown. Confirm before shutdown/restart. Admin only.", ADMINS, {"action": {"type": "string", "enum": ["sleep", "lock", "shutdown", "restart", "cancel"]}}, ["action"], system_control),
     "weather": _t("Get current weather; uses the user's saved location if none given. Admin only.", ADMINS, {"location": {"type": "string"}}, [], weather),
     "suggest_events": _t("Suggest real upcoming local events (concerts, sports, theatre, comedy, tech) near the user via Ticketmaster. Covers the West-Texas/region cities within ~600 miles — Lubbock, Dallas, Amarillo, Austin, Houston, Albuquerque, Oklahoma City, Midland; call once per city if needed. Admin only.", ADMINS, {"location": {"type": "string"}, "interests": {"type": "string"}}, [], suggest_events),
@@ -415,8 +432,14 @@ TOOLS = {
     "course_prerequisites": _t("Trace the FULL prerequisite chain a student must clear BEFORE a course — not just the directly listed prereq but its prereqs too (e.g. 'what do I need before ECE 3312?'). Returns each required course with how many levels deep it sits. Use this for 'what do I need first / before' questions; it does NOT advise which courses to take, only states the prerequisite facts.", ALL, {"query": {"type": "string"}}, ["query"], course_prerequisites),
     "course_unlocks": _t("Show which later courses a given course OPENS UP — every course that lists it (directly or further down the chain) as a prerequisite (e.g. 'what does ECE 2372 unlock?'). States facts only, never tells the student what to take.", ALL, {"query": {"type": "string"}}, ["query"], course_unlocks),
     "course_search": _t("Meaning-based ('semantic') course search — hybrid retrieval that blends keyword matching with vector embeddings. Use this when the student describes a TOPIC, interest, or what they want to learn in their own words ('classes about robotics', 'anything with machine learning', 'a course on circuits') rather than giving an exact code or title. Returns the closest-matching courses; still facts-only, never advises what to take.", ALL, {"query": {"type": "string"}}, ["query"], course_search),
+    "search_documents": _t("Search the admin-uploaded reference DOCUMENTS (department handbook, policies, syllabi, FAQs) for passages relevant to a question, via RAG. Use this for questions whose answer would live in a document rather than the course schedule — e.g. policies, procedures, deadlines, 'how do I…', 'what is the rule on…'. Returns the most relevant passages each WITH A CITATION (document title + section); answer ONLY from those passages and cite them, and if nothing relevant comes back, say so.", ALL, {"query": {"type": "string"}}, ["query"], search_documents),
 }
 
 
-def available_tools(role):
-    return {n: t for n, t in TOOLS.items() if role in t["roles"]}
+def available_tools(role, music_unlocked=False):
+    avail = {n: t for n, t in TOOLS.items() if role in t["roles"]}
+    # Central admin can grant music to other roles; add those tools on the fly.
+    if music_unlocked and role != "central_admin":
+        for n in MUSIC_TOOLS:
+            avail[n] = TOOLS[n]
+    return avail

@@ -42,7 +42,8 @@ def get_driver():
     try:
         from neo4j import GraphDatabase  # imported lazily so the dep is optional
         uri = os.environ["NEO4J_URI"]
-        user = os.getenv("NEO4J_USER", "neo4j")
+        # Aura's downloaded creds use NEO4J_USERNAME; accept either name.
+        user = os.getenv("NEO4J_USER") or os.getenv("NEO4J_USERNAME") or "neo4j"
         password = os.getenv("NEO4J_PASSWORD", "")
         drv = GraphDatabase.driver(uri, auth=(user, password))
         drv.verify_connectivity()

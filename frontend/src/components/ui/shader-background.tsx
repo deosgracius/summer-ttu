@@ -182,7 +182,7 @@ const ShaderBackground = ({ className = "fixed top-0 left-0 w-full h-full -z-10"
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
 
-    let startTime = Date.now();
+    const startTime = Date.now();
     let rafId;
     const render = () => {
       const currentTime = (Date.now() - startTime) / 1000;

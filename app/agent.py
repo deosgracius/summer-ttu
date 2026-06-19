@@ -7,7 +7,15 @@ import time
 import datetime
 from collections import defaultdict, deque
 from .tools import available_tools
-from . import models, tracing
+from . import models, tracing, appsettings
+
+
+def _music_unlocked_for(db, role: str) -> bool:
+    """True if the central admin has unlocked music control for this role.
+    Stored as a comma-separated role list in the AppSetting 'music_unlocked_roles'."""
+    raw = appsettings.get(db, "music_unlocked_roles", "")
+    roles = {r.strip() for r in raw.split(",") if r.strip()}
+    return role in roles
 
 try:
     from zoneinfo import ZoneInfo
@@ -19,8 +27,13 @@ SYSTEM = (
     "your tools, and you ANSWER QUESTIONS and TEACH directly from your own knowledge. Be genuinely "
     "helpful and do not refuse reasonable requests. "
     "Answer directly, with no tool, for explanations, teaching, tutoring, math, definitions, advice, or "
-    "general conversation. Format longer answers in clean Markdown (short paragraphs, '-' bullet lists, "
-    "'**bold**' for key terms). Use the research tool only to look up specific facts you are unsure about. "
+    "general conversation. "
+    "WRITING STYLE — always reply in clean, professional, well-formatted text: open with the direct answer, "
+    "then keep it tidy. Use short paragraphs; use '-' bullet lists for multiple items; use '**bold**' only "
+    "for key terms; use '##' headings ONLY for genuinely long, multi-section answers. Do not over-format — "
+    "no clutter, no decorative separators, no emoji spam, no tables for one or two facts, no half-finished or "
+    "ragged formatting. The result should always read like a thoughtful, professional message to the user. "
+    "Use the research tool only to look up specific facts you are unsure about. "
     "Use tools to ACT: set_reminder(text, in_minutes) \u2014 convert any specific time into minutes from the "
     "current local time in your context; create_task/list_tasks/complete_task; list_events then "
     "book_event/cancel_event_booking; draft_email writes a DRAFT the user must approve before sending, so "
@@ -28,6 +41,7 @@ SYSTEM = (
     "the user's timezone or location; calendar_add_event adds an event to the user's Google Calendar "
     "(compute the start as a local ISO datetime like 2026-06-16T10:00:00 from your context; if it says not "
     "connected, tell them to click Connect Google Calendar). For a 'daily audit' or 'what's my day', call daily_brief, then summarize the day and explicitly flag any conflicts or overloaded times with concrete suggested fixes. When the user names a specific clock time for a reminder, set it to alert about one minute before that time so they get a heads-up. "
+    "EMAIL MANAGEMENT: read with read_emails but surface ONLY what matters — important, time-sensitive, or from a real person; briefly summarize those and skip newsletters, promotions, and no-reply senders. Before you classify, label, or reorganize someone's mail, ASK for their consent first. For any message that needs a response, draft a suggested reply with email_reply and show it for the user's APPROVAL before sending — never send without an explicit yes. If a message looks like spam, say so and ASK permission before using email_delete to trash it; do not delete anything without confirmation. For a clearly high-priority email, lead with it and have a ready-to-send draft prepared for the user to approve. "
     "ADMIN-ONLY abilities (only central admin / assigned admin can use these — never offer them to students, "
     "tutors, or officers): play_music / play_playlist / music_control on Spotify; system_control to sleep, lock, "
     "shut down, or restart this computer (confirm before shutdown/restart); weather; suggest_events for local "
@@ -40,7 +54,10 @@ SYSTEM = (
     "before / what are the prerequisites for X' use course_prerequisites (it traces the WHOLE chain, not just "
     "the directly listed prereq); for 'what does X open up / lead to' use course_unlocks. When the student "
     "describes a TOPIC or interest in their own words instead of a code/title ('classes about robotics', "
-    "'something with signal processing'), use course_search (semantic/hybrid search). Report those as facts "
+    "'something with signal processing'), use course_search (semantic/hybrid search). For questions whose "
+    "answer lives in a policy, handbook, syllabus, or FAQ rather than the course schedule (procedures, rules, "
+    "deadlines, 'how do I…'), use search_documents and answer ONLY from the returned passages, citing the "
+    "document and section. Report those as facts "
     "only — never tell the student which courses to take. Never guess or invent a "
     "room number, office, time, instructor, prerequisite, or permit rule; if the tool returns no match or a "
     "blank field, say it isn't in the data and suggest who to contact (e.g. the listed advisor or the permit "
@@ -96,7 +113,7 @@ async def run_agent(goal, db, user, provider=None, voice=False):
         model = DEFAULT_MODEL.get("anthropic", "claude-haiku-4-5")
     if provider == "openai" and not (str(model).startswith("gpt") or str(model).startswith("o")):
         model = DEFAULT_MODEL.get("openai", "gpt-4o-mini")
-    avail = available_tools(user.role)
+    avail = available_tools(user.role, music_unlocked=_music_unlocked_for(db, user.role))
     system = SYSTEM + _context(user) + _memories(db, user)
     if voice:
         system += (" The user is speaking to you hands-free by voice, so keep replies brief (1–2 sentences), "
@@ -130,7 +147,8 @@ async def run_agent(goal, db, user, provider=None, voice=False):
 # ---------------------------------------------------------------------------
 KIOSK_TOOLS = ("find_course", "find_professor", "find_advisor",
                "campus_service_hours", "building_info", "elective_catalog",
-               "course_prerequisites", "course_unlocks", "course_search")
+               "course_prerequisites", "course_unlocks", "course_search",
+               "search_documents")
 
 KIOSK_SYSTEM = (
     "You are Summer, a friendly help kiosk in a university department hallway. Anyone walking by can "
@@ -152,6 +170,8 @@ KIOSK_SYSTEM = (
     "the entire chain, not just the first prereq); for 'what does this class lead to / unlock', use "
     "course_unlocks. When the student describes a TOPIC or interest in their own words rather than a code or "
     "title ('classes about robots', 'something with circuits'), use course_search (meaning-based search). "
+    "For questions answered by a department handbook, policy, syllabus, or FAQ (procedures, rules, deadlines, "
+    "'how do I…'), use search_documents and answer ONLY from the returned passages, citing the document. "
     "Relay those as plain facts — never advise which courses to take. "
     "You are an information kiosk, NOT an academic advisor and NOT a replacement for a professor: do not "
     "tell students which courses to take, build degree plans, or judge eligibility — give the facts and "

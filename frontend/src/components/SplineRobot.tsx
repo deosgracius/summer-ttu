@@ -51,10 +51,10 @@ export default function SplineRobot() {
       const o = { clientX: e.clientX, clientY: e.clientY, bubbles: true, cancelable: true, view: window }
       try {
         k.dispatchEvent(new PointerEvent("pointermove", { pointerType: "mouse", isPrimary: true, ...o }))
-      } catch {}
+      } catch { /* ignore */ }
       try {
         k.dispatchEvent(new MouseEvent("mousemove", o))
-      } catch {}
+      } catch { /* ignore */ }
     }
     window.addEventListener("pointermove", onMove, { passive: true, capture: true })
     return () => window.removeEventListener("pointermove", onMove, { capture: true })

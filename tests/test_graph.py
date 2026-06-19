@@ -4,11 +4,6 @@ The prereq parser is pure Python (the interesting bit that turns registrar free
 text into clean course codes), and the query helpers must degrade gracefully when
 no graph database is configured. Both are tested here with Neo4j absent.
 """
-import os
-
-# Make sure no graph is configured for these tests — we assert the no-op behavior.
-os.environ.pop("NEO4J_URI", None)
-
 from app.graph_sync import parse_prereq_codes
 from app import graph
 
@@ -41,7 +36,12 @@ def test_bare_number_ignored_without_default_subject():
     assert parse_prereq_codes("3372") == []
 
 
-def test_graph_off_is_graceful():
+def test_graph_off_is_graceful(monkeypatch):
+    # Force the unconfigured path even if .env defines NEO4J_URI (app/__init__ loads
+    # it); monkeypatch auto-restores after the test so it doesn't leak.
+    monkeypatch.delenv("NEO4J_URI", raising=False)
+    monkeypatch.setattr(graph, "_driver", None, raising=False)
+    monkeypatch.setattr(graph, "_unavailable", False, raising=False)
     # With NEO4J_URI unset, everything reports "not configured" instead of crashing.
     assert graph.is_configured() is False
     assert graph.get_driver() is None

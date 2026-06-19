@@ -3,10 +3,6 @@
 The cosine similarity and Reciprocal Rank Fusion are pure functions (the core of the
 retrieval logic), and the embedding layer must degrade gracefully when no key is set.
 """
-import os
-
-os.environ.pop("OPENAI_API_KEY", None)  # assert the no-op path
-
 from app.vector_store import cosine, reciprocal_rank_fusion
 from app import embeddings
 
@@ -41,7 +37,10 @@ def test_rrf_empty():
     assert reciprocal_rank_fusion([[], []]) == []
 
 
-def test_embeddings_off_is_graceful():
+def test_embeddings_off_is_graceful(monkeypatch):
+    # Force the no-key path even if .env provides OPENAI_API_KEY (app/__init__ loads
+    # it); monkeypatch auto-restores after the test.
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     assert embeddings.is_configured() is False
     assert embeddings.embed_text("anything") is None
     # hashing still works without a key (used to dedupe before calling the API)

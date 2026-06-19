@@ -15,10 +15,32 @@ Run it (stdio transport, the default MCP clients expect):
 Register it with an MCP client by pointing the client at that command — see the
 recipe card in docs/mcp-campus-recipe-card.md for the exact config block.
 """
-from mcp.server.fastmcp import FastMCP
+import os
+import re
+from pathlib import Path
 
-from .database import SessionLocal
-from . import campus_service, graph_sync, vector_store
+
+def _load_env():
+    """Load the project .env so an MCP client (Claude Desktop) that launches this
+    server gets the same DB path, OpenAI key, and Neo4j credentials the web app
+    uses. Must run BEFORE importing .database (which reads DATABASE_URL at import)."""
+    p = Path(__file__).resolve().parent.parent / ".env"
+    if not p.exists():
+        return
+    for line in p.read_text(encoding="utf-8").splitlines():
+        s = line.strip()
+        if not s or s.startswith("#") or "=" not in s:
+            continue
+        k, v = s.split("=", 1)
+        os.environ.setdefault(k.strip(), re.sub(r"\s+#.*$", "", v.strip()))
+
+
+_load_env()
+
+from mcp.server.fastmcp import FastMCP  # noqa: E402
+
+from .database import SessionLocal  # noqa: E402
+from . import campus_service, graph_sync, vector_store  # noqa: E402
 
 mcp = FastMCP("ttu-campus")
 

@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Response
+import logging
+from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from .. import models, voice, usage, appsettings
@@ -8,6 +9,24 @@ from ..auth import get_current_user, require_roles
 router = APIRouter(prefix="/voice", tags=["voice"])
 
 VOICE_KEY = "voice_id"
+MAX_AUDIO = 25 * 1024 * 1024  # 25 MB (Whisper's limit)
+
+
+@router.post("/stt")
+def stt(file: UploadFile = File(...), user: models.User = Depends(get_current_user)):
+    """Transcribe recorded mic audio (Whisper). Sync so it runs in a threadpool."""
+    if not voice.stt_enabled():
+        raise HTTPException(400, "Transcription not configured")
+    data = file.file.read()
+    if not data:
+        raise HTTPException(400, "empty audio")
+    if len(data) > MAX_AUDIO:
+        raise HTTPException(413, "audio too large")
+    try:
+        return {"text": voice.transcribe(data, file.filename or "audio.webm")}
+    except Exception as e:  # noqa
+        logging.getLogger("summer").warning("stt failed: %s", e)
+        raise HTTPException(502, "transcription failed")
 
 
 def active_voice(db) -> str:

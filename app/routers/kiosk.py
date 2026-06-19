@@ -8,7 +8,7 @@ any personal, admin, or data-editing capability. No login, no stored state.
 import os
 import time
 from collections import defaultdict
-from fastapi import APIRouter, Depends, HTTPException, Response, Request
+from fastapi import APIRouter, Depends, HTTPException, Response, Request, UploadFile, File
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from ..database import get_db
@@ -51,6 +51,25 @@ class Ask(BaseModel):
 async def ask(data: Ask, request: Request, db: Session = Depends(get_db)):
     _rate_limit(request, "ask", ASK_MAX)
     return await run_kiosk_agent(data.question, db)
+
+
+@router.post("/stt")
+def kiosk_stt(request: Request, file: UploadFile = File(...)):
+    """Public mic transcription for the kiosk (Whisper). Rate-limited like /ask."""
+    _rate_limit(request, "ask", ASK_MAX)
+    if not voice.stt_enabled():
+        raise HTTPException(400, "Transcription not configured")
+    data = file.file.read()
+    if not data:
+        raise HTTPException(400, "empty audio")
+    if len(data) > 25 * 1024 * 1024:
+        raise HTTPException(413, "audio too large")
+    try:
+        return {"text": voice.transcribe(data, file.filename or "audio.webm")}
+    except Exception as e:  # noqa
+        import logging
+        logging.getLogger("summer").warning("kiosk stt failed: %s", e)
+        raise HTTPException(502, "transcription failed")
 
 
 class KioskTTS(BaseModel):

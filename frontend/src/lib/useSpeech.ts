@@ -72,6 +72,13 @@ export function useSpeech() {
 
   const recRef = useRef<AnyRec | null>(null)
   const micOn = useRef(false)
+  // Server-side STT (Whisper) recording state — the reliable mic path.
+  const mediaRec = useRef<MediaRecorder | null>(null)
+  const audioChunks = useRef<Blob[]>([])
+  const recording = useRef(false)
+  const audioCtx = useRef<AudioContext | null>(null)
+  const silenceTimer = useRef<number | undefined>(undefined)
+  const vadRaf = useRef<number | undefined>(undefined)
   const vstate = useRef<"off" | "ambient" | "active">("off")
   const speaking = useRef(false)
   const currentSpeech = useRef("")
@@ -305,6 +312,7 @@ export function useSpeech() {
       }
       const live = (final || interim).trim()
       if (!live) return
+      if (recording.current) return // tap-to-talk (Whisper) is capturing — don't double-handle
       if (isEcho(live)) return // ignore Summer's own voice (echo)
 
       // While Summer is talking, ONLY a deliberate "Summer"/"Hey Summer" barges
@@ -386,40 +394,141 @@ export function useSpeech() {
     setWakeActive(false)
   }
 
-  // Tap-to-talk: if wake mode is running, just arm "active" (speak now, no wake
-  // word needed). Otherwise do a one-shot listen.
-  function listen(onText: (text: string) => void) {
-    onCmd.current = onText
-    if (micOn.current) {
-      stopSpeaking()
-      openWindow()
-      return
-    }
-    const rec = getSR()
-    if (!rec) return
-    rec.lang = "en-US"
-    rec.interimResults = false
-    rec.maxAlternatives = 1
-    rec.continuous = false
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    rec.onresult = (e: any) => onText(e.results[0][0].transcript)
-    rec.onend = () => setListening(false)
-    rec.onerror = () => setListening(false)
-    setListening(true)
+  // Send recorded audio to the backend for Whisper transcription. Works on any
+  // network/browser, unlike the browser's Web Speech API.
+  async function transcribeBlob(blob: Blob): Promise<string> {
+    const token = getToken()
+    const url = token ? "/voice/stt" : "/kiosk/stt"
+    const ext = blob.type.includes("mp4") ? "mp4" : blob.type.includes("ogg") ? "ogg" : "webm"
+    const fd = new FormData()
+    fd.append("file", blob, `audio.${ext}`)
+    const r = await fetch(url, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: fd,
+    })
+    if (!r.ok) throw new Error("stt " + r.status)
+    const j = await r.json()
+    return (j.text || "").trim()
+  }
+
+  function stopVad() {
+    if (vadRaf.current) cancelAnimationFrame(vadRaf.current)
+    if (silenceTimer.current) clearTimeout(silenceTimer.current)
+    vadRaf.current = undefined
+    silenceTimer.current = undefined
     try {
-      rec.start()
+      audioCtx.current?.close()
     } catch {
       /* ignore */
+    }
+    audioCtx.current = null
+  }
+
+  // Auto-stop ~1.4s after you stop talking, so you don't have to tap again.
+  function watchSilence(stream: MediaStream, onSilence: () => void) {
+    try {
+      const ctx = new AudioContext()
+      audioCtx.current = ctx
+      const analyser = ctx.createAnalyser()
+      analyser.fftSize = 512
+      ctx.createMediaStreamSource(stream).connect(analyser)
+      const data = new Uint8Array(analyser.frequencyBinCount)
+      let spoke = false
+      const tick = () => {
+        analyser.getByteTimeDomainData(data)
+        let max = 0
+        for (let i = 0; i < data.length; i++) {
+          const v = Math.abs(data[i] - 128)
+          if (v > max) max = v
+        }
+        if (max > 8) {
+          spoke = true
+          if (silenceTimer.current) {
+            clearTimeout(silenceTimer.current)
+            silenceTimer.current = undefined
+          }
+        } else if (spoke && silenceTimer.current === undefined) {
+          silenceTimer.current = window.setTimeout(onSilence, 1400)
+        }
+        vadRaf.current = requestAnimationFrame(tick)
+      }
+      vadRaf.current = requestAnimationFrame(tick)
+    } catch {
+      /* VAD optional — tap again to stop */
     }
   }
 
   function stopListening() {
     try {
-      recRef.current?.stop()
+      if (mediaRec.current && mediaRec.current.state !== "inactive") mediaRec.current.stop()
     } catch {
       /* ignore */
     }
-    setListening(false)
+  }
+
+  // Tap-to-talk: record the mic, then transcribe server-side (Whisper). Reliable
+  // everywhere. Tap again (or pause) to finish.
+  async function listen(onText: (text: string) => void) {
+    onCmd.current = onText
+    if (recording.current) {
+      stopListening()
+      return
+    }
+    try {
+      recRef.current?.abort() // free the mic from any wake-word recognizer
+    } catch {
+      /* ignore */
+    }
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch {
+      setHeard("⚠ microphone blocked — allow it in the address bar 🔒")
+      return
+    }
+    stopSpeaking() // never record over Summer's own voice
+    let mime = ""
+    for (const m of ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"]) {
+      if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(m)) {
+        mime = m
+        break
+      }
+    }
+    const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
+    mediaRec.current = rec
+    audioChunks.current = []
+    rec.ondataavailable = (e) => {
+      if (e.data && e.data.size) audioChunks.current.push(e.data)
+    }
+    rec.onstop = async () => {
+      recording.current = false
+      setListening(false)
+      stopVad()
+      stream.getTracks().forEach((t) => t.stop())
+      const blob = new Blob(audioChunks.current, { type: rec.mimeType || "audio/webm" })
+      if (blob.size < 1500) {
+        setHeard("")
+        return
+      }
+      setHeard("… transcribing")
+      try {
+        const text = await transcribeBlob(blob)
+        setHeard("")
+        if (text) onText(text)
+        else setHeard("⚠ didn't catch that — try again")
+      } catch {
+        setHeard("⚠ couldn't transcribe — check connection")
+      }
+    }
+    recording.current = true
+    setListening(true)
+    setHeard("listening — speak, then pause")
+    rec.start()
+    watchSilence(stream, stopListening)
+    window.setTimeout(() => {
+      if (recording.current) stopListening()
+    }, 20000) // hard cap
   }
 
   return {

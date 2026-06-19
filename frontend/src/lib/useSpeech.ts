@@ -1,0 +1,413 @@
+import { useRef, useState } from "react"
+import { getToken } from "@/lib/api"
+
+/**
+ * Voice, ported from the original summer_app (app/static/index.html):
+ *  - SPEAK: ElevenLabs server TTS (reliable audio) with browser-speech fallback.
+ *  - LISTEN: continuous recognition with a "Hey Summer" wake word; after the
+ *    wake word it stays "active" for a follow-up window, then drops to ambient.
+ *    Echo-suppression + barge-in so it doesn't hear itself, and auto-restart.
+ * Works in Chrome/Edge.
+ */
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyRec = any
+
+const WAKE = /^\s*(ok |okay |hey |hi |yo )?summer[\s,.:!?-]*/i
+const ENDRE = /\b(thank you|thanks summer|thank you summer|we'?re done|that'?s all|that'?s it|i'?m done|stop|goodbye|good bye|bye summer|never ?mind)\b/i
+
+function forSpeech(t: string): string {
+  return t.replace(/[*_`#>[\]|]/g, "").replace(/\s+/g, " ").trim()
+}
+
+// Rough language guess so the browser-fallback voice matches the reply.
+// (ElevenLabs is multilingual and handles this automatically; this is only for
+// the fallback when ElevenLabs is unavailable.)
+function guessLang(t: string): string {
+  t = t || ""
+  if (/[ñ¿¡]|\b(hola|gracias|qué|cómo|estás|por favor|buenos|días)\b/i.test(t)) return "es"
+  if (/[àâçéèêëîïôûœ]|\b(bonjour|merci|vous|c'est|je suis|salut|s'il)\b/i.test(t)) return "fr"
+  if (/[äöüß]|\b(hallo|danke|ich|nicht|und|bitte|guten)\b/i.test(t)) return "de"
+  if (/\b(ciao|grazie|prego|sono|come stai)\b/i.test(t)) return "it"
+  if (/\b(olá|obrigado|você|bom dia|tudo bem)\b/i.test(t)) return "pt"
+  return "en"
+}
+
+function getSR(): AnyRec | null {
+  const w = window as unknown as { SpeechRecognition?: new () => AnyRec; webkitSpeechRecognition?: new () => AnyRec }
+  const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition
+  return Ctor ? new Ctor() : null
+}
+
+export function useSpeech() {
+  const supported =
+    typeof window !== "undefined" &&
+    ("SpeechRecognition" in window || "webkitSpeechRecognition" in window)
+  const canSpeak = typeof window !== "undefined" && "speechSynthesis" in window
+  const [listening, setListening] = useState(false)
+  const [wakeActive, setWakeActive] = useState(false)
+  const [heard, setHeard] = useState("") // live transcript for on-screen feedback
+
+  const recRef = useRef<AnyRec | null>(null)
+  const micOn = useRef(false)
+  const vstate = useRef<"off" | "ambient" | "active">("off")
+  const speaking = useRef(false)
+  const currentSpeech = useRef("")
+  const followTimer = useRef<number | undefined>(undefined)
+  const onCmd = useRef<(s: string) => void>(() => {})
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const speakSeq = useRef(0) // bumped to cancel an in-progress streamed reply
+  const buffer = useRef("") // accumulates your speech until you pause
+  const flushTimer = useRef<number | undefined>(undefined)
+  const SILENCE_MS = 600 // wait this long after you stop before replying
+
+  // ---- TTS: ElevenLabs first, browser fallback ----
+  // Split a reply into sentence chunks so we can start speaking the first one
+  // while the rest are still being synthesized (streamed speech).
+  function splitSentences(t: string): string[] {
+    const parts = t.match(/[^.!?]+[.!?]+|\S[^.!?]*$/g) || [t]
+    const out: string[] = []
+    for (const p of parts) {
+      const s = p.trim()
+      if (!s) continue
+      // merge very short fragments into the previous chunk
+      if (out.length && out[out.length - 1].length < 40) out[out.length - 1] += " " + s
+      else out.push(s)
+    }
+    return out
+  }
+
+  async function synthChunk(text: string): Promise<string> {
+    const token = getToken()
+    const url = token ? "/voice/tts" : "/kiosk/tts"
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ text }),
+    })
+    if (!r.ok) throw new Error("tts " + r.status)
+    const blob = await r.blob()
+    if (!blob.size) throw new Error("empty audio")
+    return URL.createObjectURL(blob)
+  }
+
+  function playUrl(objUrl: string): Promise<void> {
+    return new Promise<void>((resolve) => {
+      if (audioRef.current) {
+        try {
+          audioRef.current.pause()
+        } catch {
+          /* ignore */
+        }
+      }
+      const a = new Audio(objUrl)
+      audioRef.current = a
+      const done = () => {
+        URL.revokeObjectURL(objUrl)
+        resolve()
+      }
+      a.onended = done
+      a.onerror = done
+      a.play().catch(done)
+    })
+  }
+
+  function browserTTS(clean: string): Promise<void> {
+    return new Promise<void>((resolve) => {
+      if (!canSpeak) {
+        resolve()
+        return
+      }
+      const synth = window.speechSynthesis
+      const u = new SpeechSynthesisUtterance(clean)
+      const code = guessLang(clean) // match the reply's language
+      u.lang = code
+      const vs = synth.getVoices()
+      const inLang = vs.filter((v) => v.lang.toLowerCase().startsWith(code))
+      const pool = inLang.length ? inLang : vs.filter((v) => /^en/i.test(v.lang))
+      // Prefer a female voice in that language to match the ElevenLabs voice.
+      const female = pool.find((v) => /female|zira|aria|jenny|samantha|eva|hazel|susan|fiona|google/i.test(v.name))
+      const v = female || pool[0]
+      if (v) {
+        u.voice = v
+        u.lang = v.lang
+      }
+      u.onend = () => resolve()
+      u.onerror = () => resolve()
+      synth.cancel()
+      synth.speak(u)
+      window.setTimeout(() => {
+        try {
+          if (synth.paused) synth.resume()
+        } catch {
+          /* ignore */
+        }
+      }, 200)
+    })
+  }
+
+  async function speak(text: string) {
+    const clean = forSpeech(text)
+    if (!clean) {
+      afterSpeak()
+      return
+    }
+    const myTurn = ++speakSeq.current
+    speaking.current = true
+    currentSpeech.current = clean.toLowerCase()
+    const cancelled = () => myTurn !== speakSeq.current
+
+    const chunks = splitSentences(clean)
+    try {
+      // Pipeline: synth the next chunk while the current one is playing, so
+      // Summer starts talking after just the first sentence, not the whole reply.
+      // (.catch -> "" so a failed/cancelled prefetch never throws unhandled.)
+      let nextSynth = synthChunk(chunks[0]).catch(() => "")
+      for (let i = 0; i < chunks.length; i++) {
+        const objUrl = await nextSynth
+        if (!objUrl) {
+          if (i === 0) await browserTTS(clean) // ElevenLabs down → browser voice
+          break
+        }
+        if (cancelled()) {
+          URL.revokeObjectURL(objUrl)
+          break
+        }
+        nextSynth = i + 1 < chunks.length ? synthChunk(chunks[i + 1]).catch(() => "") : Promise.resolve("")
+        await playUrl(objUrl)
+        if (cancelled()) break
+      }
+    } catch {
+      /* ignore */
+    }
+    if (cancelled()) return // a newer speak/stop took over
+    speaking.current = false
+    // Keep the echo reference briefly so the trailing tail of Summer's audio
+    // (still being transcribed) is filtered out instead of becoming a "command".
+    window.setTimeout(() => {
+      currentSpeech.current = ""
+    }, 1500)
+    afterSpeak()
+  }
+
+  // Call inside a user gesture (a tap) to unlock audio playback + speech.
+  function primeAudio() {
+    try {
+      if (canSpeak) {
+        const u = new SpeechSynthesisUtterance(" ")
+        u.volume = 0
+        window.speechSynthesis.resume()
+        window.speechSynthesis.speak(u)
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function stopSpeaking() {
+    speakSeq.current++ // cancel any streamed reply in progress
+    if (canSpeak) window.speechSynthesis.cancel()
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause()
+      } catch {
+        /* ignore */
+      }
+    }
+    speaking.current = false
+    currentSpeech.current = ""
+  }
+
+  // ---- conversational state ----
+  function isEcho(txt: string) {
+    const cs = currentSpeech.current
+    if (!cs) return false
+    const w = txt.toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter((x) => x.length > 2)
+    if (!w.length) return false
+    const hit = w.filter((x) => cs.includes(x)).length
+    return hit / w.length > 0.55
+  }
+  function clearFollow() {
+    if (followTimer.current) {
+      clearTimeout(followTimer.current)
+      followTimer.current = undefined
+    }
+  }
+  function openWindow() {
+    vstate.current = "active"
+    clearFollow()
+    followTimer.current = window.setTimeout(() => {
+      if (micOn.current) vstate.current = "ambient"
+    }, 12000)
+  }
+  function afterSpeak() {
+    if (micOn.current) openWindow() // keep listening for a follow-up after Summer talks
+  }
+
+  function startWakeWord(onCommand: (cmd: string) => void) {
+    onCmd.current = onCommand
+    if (micOn.current) return
+    const rec = getSR()
+    if (!rec) return
+    rec.lang = "en-US"
+    rec.interimResults = true // live feedback so the user can see it's hearing them
+    rec.maxAlternatives = 1
+    rec.continuous = true
+    // Send the full accumulated utterance once you've paused (good rhythm:
+    // wait until you actually stop, then reply to everything).
+    const flush = () => {
+      const cmd = buffer.current.replace(WAKE, "").trim()
+      buffer.current = ""
+      setHeard("")
+      if (cmd.length < 2) return
+      if (ENDRE.test(cmd) && cmd.split(/\s+/).length <= 3) return
+      onCmd.current(cmd)
+    }
+    const scheduleFlush = () => {
+      if (flushTimer.current) clearTimeout(flushTimer.current)
+      flushTimer.current = window.setTimeout(flush, SILENCE_MS)
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rec.onresult = (e: any) => {
+      let interim = ""
+      let final = ""
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i]
+        if (r.isFinal) final += r[0].transcript
+        else interim += r[0].transcript
+      }
+      const live = (final || interim).trim()
+      if (!live) return
+      if (isEcho(live)) return // ignore Summer's own voice (echo)
+
+      // While Summer is talking, ONLY a deliberate "Summer"/"Hey Summer" barges
+      // in. Everything else is ignored — this stops Summer hearing its own audio
+      // through the speakers and replying to itself (the feedback loop).
+      if (speaking.current) {
+        if (!WAKE.test(live)) return
+        stopSpeaking()
+      }
+
+      // Hearing you → hold any pending reply until you pause.
+      if (flushTimer.current) clearTimeout(flushTimer.current)
+      if (final) buffer.current = (buffer.current + " " + final).trim()
+      setHeard((buffer.current + " " + interim).trim())
+      // Only start the reply countdown once we have a finalized segment.
+      if (final) scheduleFlush()
+    }
+    // Surface real problems (so it's not a silent failure). 'no-speech' and
+    // 'aborted' are normal background events — ignore those.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rec.onerror = (e: any) => {
+      const err = e?.error || "error"
+      if (err === "no-speech" || err === "aborted") return
+      const msg: Record<string, string> = {
+        "not-allowed": "microphone blocked — allow it in the address bar 🔒",
+        "service-not-allowed": "microphone blocked — allow it in the address bar 🔒",
+        "audio-capture": "no microphone found",
+        network: "speech service unreachable — check your connection",
+      }
+      setHeard("⚠ " + (msg[err] || err))
+    }
+    rec.onend = () => {
+      // Only the CURRENT recognizer restarts itself — prevents the StrictMode
+      // double-mount from leaving two recognizers fighting each other.
+      if (micOn.current && recRef.current === rec) {
+        window.setTimeout(() => {
+          if (micOn.current && recRef.current === rec) {
+            try {
+              rec.start()
+            } catch {
+              /* already started */
+            }
+          }
+        }, 300)
+      }
+    }
+    // Kill any previous recognizer before taking over.
+    if (recRef.current && recRef.current !== rec) {
+      try {
+        recRef.current.abort()
+      } catch {
+        /* ignore */
+      }
+    }
+    recRef.current = rec
+    micOn.current = true
+    vstate.current = "ambient"
+    try {
+      rec.start()
+    } catch {
+      /* ignore */
+    }
+    setWakeActive(true)
+  }
+
+  function stopWakeWord() {
+    micOn.current = false
+    vstate.current = "off"
+    buffer.current = ""
+    if (flushTimer.current) clearTimeout(flushTimer.current)
+    setHeard("")
+    clearFollow()
+    try {
+      recRef.current?.abort()
+    } catch {
+      /* ignore */
+    }
+    stopSpeaking()
+    setWakeActive(false)
+  }
+
+  // Tap-to-talk: if wake mode is running, just arm "active" (speak now, no wake
+  // word needed). Otherwise do a one-shot listen.
+  function listen(onText: (text: string) => void) {
+    onCmd.current = onText
+    if (micOn.current) {
+      stopSpeaking()
+      openWindow()
+      return
+    }
+    const rec = getSR()
+    if (!rec) return
+    rec.lang = "en-US"
+    rec.interimResults = false
+    rec.maxAlternatives = 1
+    rec.continuous = false
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rec.onresult = (e: any) => onText(e.results[0][0].transcript)
+    rec.onend = () => setListening(false)
+    rec.onerror = () => setListening(false)
+    setListening(true)
+    try {
+      rec.start()
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function stopListening() {
+    try {
+      recRef.current?.stop()
+    } catch {
+      /* ignore */
+    }
+    setListening(false)
+  }
+
+  return {
+    supported,
+    canSpeak,
+    listening,
+    wakeActive,
+    heard,
+    listen,
+    stopListening,
+    startWakeWord,
+    stopWakeWord,
+    speak,
+    stopSpeaking,
+    primeAudio,
+  }
+}

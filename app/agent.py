@@ -1,0 +1,241 @@
+"""Summer's agent loop. Answers/teaches directly AND acts via role-scoped tools.
+Per-user memory + time/timezone/location context. Provider (brain) selectable
+per request: Anthropic (Claude) or OpenAI (GPT)."""
+import os
+import json
+import datetime
+from collections import defaultdict, deque
+from .tools import available_tools
+from . import models
+
+try:
+    from zoneinfo import ZoneInfo
+except Exception:
+    ZoneInfo = None
+
+SYSTEM = (
+    "You are Summer, a warm, capable personal assistant. You help in two ways: you take ACTIONS using "
+    "your tools, and you ANSWER QUESTIONS and TEACH directly from your own knowledge. Be genuinely "
+    "helpful and do not refuse reasonable requests. "
+    "Answer directly, with no tool, for explanations, teaching, tutoring, math, definitions, advice, or "
+    "general conversation. Format longer answers in clean Markdown (short paragraphs, '-' bullet lists, "
+    "'**bold**' for key terms). Use the research tool only to look up specific facts you are unsure about. "
+    "Use tools to ACT: set_reminder(text, in_minutes) \u2014 convert any specific time into minutes from the "
+    "current local time in your context; create_task/list_tasks/complete_task; list_events then "
+    "book_event/cancel_event_booking; draft_email writes a DRAFT the user must approve before sending, so "
+    "never claim you already sent it; open_website opens a URL in the user's browser; read_webpage fetches a page so you can summarize an article or doc; email_delete moves a mail to trash (confirm first); read_emails reads the recent inbox (Gmail/Outlook, skipping no-reply); email_reply and email_send send mail — always show the user your draft and get a yes before actually sending, and never reply to no-reply addresses; set_profile to save "
+    "the user's timezone or location; calendar_add_event adds an event to the user's Google Calendar "
+    "(compute the start as a local ISO datetime like 2026-06-16T10:00:00 from your context; if it says not "
+    "connected, tell them to click Connect Google Calendar). For a 'daily audit' or 'what's my day', call daily_brief, then summarize the day and explicitly flag any conflicts or overloaded times with concrete suggested fixes. When the user names a specific clock time for a reminder, set it to alert about one minute before that time so they get a heads-up. "
+    "ADMIN-ONLY abilities (only central admin / assigned admin can use these — never offer them to students, "
+    "tutors, or officers): play_music / play_playlist / music_control on Spotify; system_control to sleep, lock, "
+    "shut down, or restart this computer (confirm before shutdown/restart); weather; suggest_events for local "
+    "concerts, sports, theatre, and tech events near Lubbock, Dallas, Austin, Houston, Amarillo, Albuquerque, "
+    "Oklahoma City, and Midland; football_update for the admin's favorite team; tech_conferences; and ieee_info. "
+    "CAMPUS HELP: for any question about a class, room, schedule, professor, office or office hours, advisor, "
+    "building, departmental electives/prerequisites, or a service like the stockroom, ALWAYS call the campus "
+    "tools (find_course, find_professor, find_advisor, building_info, campus_service_hours, elective_catalog) "
+    "and answer ONLY from what they return — this data was loaded by the campus admin. Never guess or invent a "
+    "room number, office, time, instructor, prerequisite, or permit rule; if the tool returns no match or a "
+    "blank field, say it isn't in the data and suggest who to contact (e.g. the listed advisor or the permit "
+    "contact in the course record). When a class needs a permit, relay the exact instruction from the record "
+    "(e.g. 'YES - EMAIL MADDOX'). Students often use abbreviations/initials (e.g. 'E2' = Advanced Electronics, "
+    "'Digit' = Digital Communications, 'Lab 1/2/3' / 'Capstone' = the project labs, 'ECE' = Electrical & "
+    "Computer Engineering) — interpret them, search by the likely full title or course number, and try a few "
+    "variations (or a broader keyword) before saying it isn't found. "
+    "IMPORTANT BOUNDARY: you are an information assistant, NOT an academic advisor and NOT a replacement for a "
+    "professor. Do not tell a student which courses to take, build their degree plan, judge their eligibility, "
+    "or give academic/registration advice. You may surface the facts (offerings, prerequisites, who to talk to) "
+    "and then direct them to the appropriate advisor or professor for decisions. "
+    "Reply in the SAME LANGUAGE the user used; English is the default. If they used another language, add an "
+    "English translation on a new line as subtitles. The user can ask you to change the default language. "
+    "After acting, reply in one short sentence about what you did. Never invent tool results."
+)
+MAX_STEPS = 6
+DEFAULT_MODEL = {"anthropic": "claude-haiku-4-5", "openai": "gpt-4o-mini"}
+_HISTORY = defaultdict(lambda: deque(maxlen=12))
+
+
+def _memories(db, user):
+    from . import models
+    rows = db.query(models.Memory).filter_by(user_id=user.id).order_by(models.Memory.id).all()
+    if not rows:
+        return ""
+    return "\nThings you remember about the user: " + "; ".join(r.text for r in rows[:30]) + "."
+
+
+def _context(user):
+    tz = getattr(user, "timezone", None) or "UTC"
+    now = datetime.datetime.now()
+    if ZoneInfo:
+        try:
+            now = datetime.datetime.now(ZoneInfo(tz))
+        except Exception:
+            pass
+    return (f"\nContext \u2014 user timezone: {tz}; current local time: {now.strftime('%A %Y-%m-%d %H:%M')}; "
+            f"location: {getattr(user, 'location', None) or 'unknown'}.")
+
+
+async def run_agent(goal, db, user, provider=None, voice=False):
+    env_provider = os.getenv("LLM_PROVIDER", "anthropic").lower()
+    provider = (provider or env_provider).lower()
+    # honor env LLM_MODEL only when using the env's provider; otherwise use that provider's default
+    if provider == env_provider:
+        model = os.getenv("LLM_MODEL") or DEFAULT_MODEL.get(provider, "")
+    else:
+        model = DEFAULT_MODEL.get(provider, "")
+    # guard: if the model name doesn't match the provider (e.g. a gpt-* model with Anthropic),
+    # fall back to that provider's known-good default instead of 404ing.
+    if provider == "anthropic" and not str(model).startswith("claude"):
+        model = DEFAULT_MODEL.get("anthropic", "claude-haiku-4-5")
+    if provider == "openai" and not (str(model).startswith("gpt") or str(model).startswith("o")):
+        model = DEFAULT_MODEL.get("openai", "gpt-4o-mini")
+    avail = available_tools(user.role)
+    system = SYSTEM + _context(user) + _memories(db, user)
+    if voice:
+        system += (" The user is speaking to you hands-free by voice, so keep replies brief (1–2 sentences), "
+                   "natural and conversational — no markdown, no bullet lists. Answer exactly what was asked.")
+    hist = list(_HISTORY[user.id])
+    if provider == "anthropic":
+        result = await _run_anthropic(goal, db, user, avail, system, hist, model)
+    elif provider == "openai":
+        result = await _run_openai(goal, db, user, avail, system, hist, model)
+    else:
+        result = {"reply": f"Unknown provider '{provider}'. Use 'anthropic' or 'openai'.", "actions": []}
+    _HISTORY[user.id].append({"role": "user", "content": goal})
+    _HISTORY[user.id].append({"role": "assistant", "content": result.get("reply", "")})
+    u = result.get("usage")
+    if u and (u.get("input") or u.get("output")):
+        try:
+            db.add(models.UsageLog(user_id=user.id, provider=u.get("provider"), model=u.get("model"),
+                                   input_tokens=u.get("input", 0), output_tokens=u.get("output", 0)))
+            db.commit()
+        except Exception:
+            db.rollback()
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Public hallway kiosk: anonymous, read-only, campus Q&A ONLY. The tool set is
+# hard-restricted to the campus lookups — the model literally cannot reach email,
+# calendar, system control, or any data-editing tool from here.
+# ---------------------------------------------------------------------------
+KIOSK_TOOLS = ("find_course", "find_professor", "find_advisor",
+               "campus_service_hours", "building_info", "elective_catalog")
+
+KIOSK_SYSTEM = (
+    "You are Summer, a friendly help kiosk in a university department hallway. Anyone walking by can "
+    "ask you a question. Answer ONLY questions about this department's classes, rooms, schedules, "
+    "professors, offices and office hours, advisors, buildings, departmental electives/prerequisites, "
+    "and services like the stockroom — using ONLY the campus tools. The data was loaded by the campus "
+    "admin. NEVER guess or invent a room, time, instructor, office, prerequisite, or permit rule; if a "
+    "tool returns nothing or a blank field, say it isn't in the system and suggest who to contact (the "
+    "listed advisor, or the permit contact in the course record). When a class needs a permit, relay the "
+    "exact instruction from the record. "
+    "Students often use ABBREVIATIONS, initials, or nicknames instead of the full course name — be smart "
+    "and figure out what they mean, then search by the likely full title or course number, trying a few "
+    "variations before concluding it isn't there. For example 'E1' or 'Electronics 1' means Electronics; "
+    "'E2' means Advanced Electronics; 'Digit' means Digital Communications; 'Lab 1/2/3' or 'Capstone' "
+    "refer to the project/Capstone labs; 'ECE' is Electrical & Computer Engineering. If an exact term "
+    "finds nothing, search a broader keyword (e.g. just 'electronics' or 'lab') and offer the closest "
+    "matches instead of a flat 'not found'. "
+    "You are an information kiosk, NOT an academic advisor and NOT a replacement for a professor: do not "
+    "tell students which courses to take, build degree plans, or judge eligibility — give the facts and "
+    "point them to the right person. "
+    "Keep answers short, warm, and spoken-plainly for a screen in a hallway: a sentence or two, no "
+    "markdown tables or headings. If a question is outside campus info (personal, general knowledge, "
+    "anything not in your tools), politely say you can only help with this department's classes, "
+    "offices, and services. Never ask for or store personal information. "
+    "If the student speaks or writes in another language (Spanish, French, etc.), reply in that same language."
+)
+
+
+async def run_kiosk_agent(goal, db, provider=None):
+    """One anonymous Q&A turn for the public kiosk — no user, no memory, no history,
+    campus tools only."""
+    goal = (goal or "").strip()[:500]  # cap input length (public endpoint)
+    if not goal:
+        return {"reply": "Ask me about a class, professor, office hours, a room, or the stockroom!", "actions": []}
+    provider = (provider or os.getenv("LLM_PROVIDER", "anthropic")).lower()
+    # Kiosk answers are quick lookups — use the FAST model for snappy replies,
+    # regardless of the (possibly slower) dashboard model in LLM_MODEL.
+    model = os.getenv("KIOSK_LLM_MODEL") or DEFAULT_MODEL.get(provider, "")
+    from .tools import TOOLS
+    avail = {n: TOOLS[n] for n in KIOSK_TOOLS if n in TOOLS}
+    system = KIOSK_SYSTEM + f"\nToday's date: {datetime.date.today().isoformat()}."
+    if provider == "anthropic":
+        result = await _run_anthropic(goal, db, None, avail, system, [], model)
+    elif provider == "openai":
+        result = await _run_openai(goal, db, None, avail, system, [], model)
+    else:
+        return {"reply": "The kiosk assistant isn't configured.", "actions": []}
+    u = result.get("usage")
+    if u and (u.get("input") or u.get("output")):
+        try:
+            db.add(models.UsageLog(user_id=None, provider=u.get("provider"), model=u.get("model"),
+                                   input_tokens=u.get("input", 0), output_tokens=u.get("output", 0)))
+            db.commit()
+        except Exception:
+            db.rollback()
+    # the kiosk only needs the spoken answer, not the internal tool trace
+    return {"reply": result.get("reply", "")}
+
+
+async def _run_anthropic(goal, db, user, avail, system, hist, model):
+    import anthropic
+    key = os.getenv("ANTHROPIC_API_KEY")
+    if not key:
+        return {"reply": "No ANTHROPIC_API_KEY is set (needed to use the Claude brain).", "actions": []}
+    client = anthropic.AsyncAnthropic(api_key=key)
+    model = model or "claude-haiku-4-5"
+    tools = [{"name": n, "description": t["description"], "input_schema": t["schema"]} for n, t in avail.items()]
+    messages = hist + [{"role": "user", "content": goal}]
+    actions = []
+    in_tok = 0; out_tok = 0
+    for _ in range(MAX_STEPS):
+        resp = await client.messages.create(model=model, max_tokens=1024, system=system, tools=tools, messages=messages)
+        try:
+            in_tok += resp.usage.input_tokens; out_tok += resp.usage.output_tokens
+        except Exception:
+            pass
+        if resp.stop_reason != "tool_use":
+            text = "".join(b.text for b in resp.content if b.type == "text").strip()
+            return {"reply": text or "(done)", "actions": actions, "usage": {"provider": "anthropic", "model": model, "input": in_tok, "output": out_tok}}
+        messages.append({"role": "assistant", "content": [b.model_dump() for b in resp.content]})
+        results = []
+        for b in resp.content:
+            if b.type == "tool_use":
+                out = await avail[b.name]["fn"](b.input, db, user)
+                actions.append({"tool": b.name, "input": b.input, "result": out})
+                results.append({"type": "tool_result", "tool_use_id": b.id, "content": json.dumps(out)})
+        messages.append({"role": "user", "content": results})
+    return {"reply": "Stopped after too many steps.", "actions": actions, "usage": {"provider": "anthropic", "model": model, "input": in_tok, "output": out_tok}}
+
+
+async def _run_openai(goal, db, user, avail, system, hist, model):
+    import openai
+    key = os.getenv("OPENAI_API_KEY")
+    if not key:
+        return {"reply": "No OPENAI_API_KEY is set (needed to use the GPT brain).", "actions": []}
+    client = openai.AsyncOpenAI(api_key=key)
+    model = model or "gpt-4o-mini"
+    tools = [{"type": "function", "function": {"name": n, "description": t["description"], "parameters": t["schema"]}} for n, t in avail.items()]
+    messages = [{"role": "system", "content": system}] + hist + [{"role": "user", "content": goal}]
+    actions = []
+    in_tok = 0; out_tok = 0
+    for _ in range(MAX_STEPS):
+        resp = await client.chat.completions.create(model=model, messages=messages, tools=tools)
+        try:
+            in_tok += resp.usage.prompt_tokens; out_tok += resp.usage.completion_tokens
+        except Exception:
+            pass
+        msg = resp.choices[0].message
+        if not msg.tool_calls:
+            return {"reply": (msg.content or "(done)").strip(), "actions": actions, "usage": {"provider": "openai", "model": model, "input": in_tok, "output": out_tok}}
+        messages.append({"role": "assistant", "content": msg.content, "tool_calls": [tc.model_dump() for tc in msg.tool_calls]})
+        for tc in msg.tool_calls:
+            args = json.loads(tc.function.arguments or "{}")
+            out = await avail[tc.function.name]["fn"](args, db, user)
+            actions.append({"tool": tc.function.name, "input": args, "result": out})
+            messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(out)})
+    return {"reply": "Stopped after too many steps.", "actions": actions, "usage": {"provider": "openai", "model": model, "input": in_tok, "output": out_tok}}

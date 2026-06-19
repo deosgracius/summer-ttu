@@ -2,7 +2,7 @@ import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, FileResponse
 from sqlalchemy import inspect, text
 from .database import Base, engine, SessionLocal
 from .routers import auth, tasks, events, reminders, emails, memories, admin, oauth, spotify, outlook, vision, agent, payments, content, voice, campus, security, kiosk, docs
@@ -150,6 +150,12 @@ _origins = [o.strip() for o in _cors.split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=_origins,
                    allow_methods=["*"], allow_headers=["*"])
 
+# In production the built React campus UI is baked into the image and served from
+# here (one origin, no CORS). WEB_DIST points at that build. In local dev it's
+# unset and the Vite dev server serves the UI instead.
+WEB_DIST = os.getenv("WEB_DIST", "")
+_HAS_WEB = bool(WEB_DIST) and os.path.isdir(WEB_DIST)
+
 
 @app.middleware("http")
 async def _no_cache_ui(request, call_next):
@@ -167,6 +173,9 @@ for r in (auth.router, tasks.router, events.router, reminders.router, emails.rou
 
 @app.get("/", include_in_schema=False)
 def root():
+    # Serve the React campus app in production; fall back to the legacy /ui in dev.
+    if _HAS_WEB:
+        return FileResponse(os.path.join(WEB_DIST, "index.html"))
     return RedirectResponse(url="/ui/")
 
 
@@ -186,3 +195,18 @@ async def ws_tasks(ws: WebSocket):
 
 
 app.mount("/ui", StaticFiles(directory="app/static", html=True), name="ui")
+
+# --- Serve the built React campus UI (production only) --------------------
+# Registered LAST so API routes always take precedence; the catch-all returns
+# index.html for client-side routes (/kiosk, /login, …) and real files otherwise.
+if _HAS_WEB:
+    _assets = os.path.join(WEB_DIST, "assets")
+    if os.path.isdir(_assets):
+        app.mount("/assets", StaticFiles(directory=_assets), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa_fallback(full_path: str):
+        candidate = os.path.join(WEB_DIST, full_path)
+        if full_path and os.path.isfile(candidate):
+            return FileResponse(candidate)
+        return FileResponse(os.path.join(WEB_DIST, "index.html"))

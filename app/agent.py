@@ -10,12 +10,10 @@ from .tools import available_tools
 from . import models, tracing, appsettings
 
 
-def _music_unlocked_for(db, role: str) -> bool:
-    """True if the central admin has unlocked music control for this role.
-    Stored as a comma-separated role list in the AppSetting 'music_unlocked_roles'."""
-    raw = appsettings.get(db, "music_unlocked_roles", "")
-    roles = {r.strip() for r in raw.split(",") if r.strip()}
-    return role in roles
+def _granted_services_for(db, user_id: int):
+    """Service keys the central admin has enabled for THIS individual user
+    (rows in service_grants)."""
+    return {g.service for g in db.query(models.ServiceGrant).filter_by(user_id=user_id).all()}
 
 try:
     from zoneinfo import ZoneInfo
@@ -28,11 +26,14 @@ SYSTEM = (
     "helpful and do not refuse reasonable requests. "
     "Answer directly, with no tool, for explanations, teaching, tutoring, math, definitions, advice, or "
     "general conversation. "
-    "WRITING STYLE — always reply in clean, professional, well-formatted text: open with the direct answer, "
-    "then keep it tidy. Use short paragraphs; use '-' bullet lists for multiple items; use '**bold**' only "
-    "for key terms; use '##' headings ONLY for genuinely long, multi-section answers. Do not over-format — "
-    "no clutter, no decorative separators, no emoji spam, no tables for one or two facts, no half-finished or "
-    "ragged formatting. The result should always read like a thoughtful, professional message to the user. "
+    "WRITING STYLE — write like a professional assistant in a university setting. STRICT RULES: "
+    "NEVER use emojis or emoticons. Do NOT open with casual greetings like 'Hey there!', 'Hi!', or 'Hello!'; "
+    "be courteous but get to the point. Keep a warm, professional, concise tone. "
+    "Lead with the direct answer in plain sentences. Use short paragraphs. Use a '-' bullet list ONLY when "
+    "listing several distinct items, and keep each bullet plain — do not bold the start of every bullet. "
+    "Use '**bold**' very sparingly (at most a key term or two), and avoid headings unless the answer is long "
+    "and genuinely multi-section. No decorative separators, no tables for one or two facts. The result should "
+    "read like a clean, professional message — never cluttered or decorated. "
     "Use the research tool only to look up specific facts you are unsure about. "
     "Use tools to ACT: set_reminder(text, in_minutes) \u2014 convert any specific time into minutes from the "
     "current local time in your context; create_task/list_tasks/complete_task; list_events then "
@@ -46,7 +47,7 @@ SYSTEM = (
     "tutors, or officers): play_music / play_playlist / music_control on Spotify; system_control to sleep, lock, "
     "shut down, or restart this computer (confirm before shutdown/restart); weather; suggest_events for local "
     "concerts, sports, theatre, and tech events near Lubbock, Dallas, Austin, Houston, Amarillo, Albuquerque, "
-    "Oklahoma City, and Midland; football_update for the admin's favorite team; tech_conferences; and ieee_info. "
+    "Oklahoma City, and Midland; sports_update for NFL, college football (NCAA), or NBA scores and schedules (e.g. the Cowboys, Texas Tech, or the Lakers — defaults to Texas Tech); tech_conferences; and ieee_info. "
     "CAMPUS HELP: for any question about a class, room, schedule, professor, office or office hours, advisor, "
     "building, departmental electives/prerequisites, or a service like the stockroom, ALWAYS call the campus "
     "tools (find_course, find_professor, find_advisor, building_info, campus_service_hours, elective_catalog) "
@@ -113,7 +114,7 @@ async def run_agent(goal, db, user, provider=None, voice=False):
         model = DEFAULT_MODEL.get("anthropic", "claude-haiku-4-5")
     if provider == "openai" and not (str(model).startswith("gpt") or str(model).startswith("o")):
         model = DEFAULT_MODEL.get("openai", "gpt-4o-mini")
-    avail = available_tools(user.role, music_unlocked=_music_unlocked_for(db, user.role))
+    avail = available_tools(user.role, granted_services=_granted_services_for(db, user.id))
     system = SYSTEM + _context(user) + _memories(db, user)
     if voice:
         system += (" The user is speaking to you hands-free by voice, so keep replies brief (1–2 sentences), "
@@ -177,7 +178,8 @@ KIOSK_SYSTEM = (
     "tell students which courses to take, build degree plans, or judge eligibility — give the facts and "
     "point them to the right person. "
     "Keep answers short, warm, and spoken-plainly for a screen in a hallway: a sentence or two, no "
-    "markdown tables or headings. If a question is outside campus info (personal, general knowledge, "
+    "markdown tables or headings, NO emojis, and no casual openers like 'Hey there!' — be courteous and "
+    "professional. If a question is outside campus info (personal, general knowledge, "
     "anything not in your tools), politely say you can only help with this department's classes, "
     "offices, and services. Never ask for or store personal information. "
     "If the student speaks or writes in another language (Spanish, French, etc.), reply in that same language."

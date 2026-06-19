@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from .. import models
 from ..database import get_db
 from ..auth import get_current_user
-from ..agent import run_agent
+from ..agent import run_agent, _granted_services_for
 from ..welcome import compose_welcome
 from .. import orchestrator
 
@@ -13,7 +13,11 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 
 @router.get("/welcome")
 async def welcome(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
-    """Spoken 'welcome back' briefing (email, calendar, tasks, nearby events)."""
+    """Spoken 'welcome back' briefing — gated on the 'daily_update' service
+    (admins always; others only if the central admin granted it)."""
+    is_admin = user.role in ("admin", "central_admin")
+    if not is_admin and "daily_update" not in _granted_services_for(db, user.id):
+        return {"text": "", "disabled": True}
     try:
         return await compose_welcome(db, user)
     except Exception as e:

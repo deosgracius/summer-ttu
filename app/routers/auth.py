@@ -1,13 +1,17 @@
 import os
 from pydantic import BaseModel
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 import json
-from .. import models, schemas, auth
+from .. import models, schemas, auth, ratelimit
 from ..database import get_db
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Brute-force / abuse guards on the public auth surface (per client IP).
+LOGIN_MAX = int(os.getenv("LOGIN_PER_MIN", "10"))      # password attempts / min
+REGISTER_MAX = int(os.getenv("REGISTER_PER_MIN", "5"))  # new accounts / min
 
 def _out(user):
     try:
@@ -19,7 +23,8 @@ def _out(user):
 
 
 @router.post("/register", response_model=schemas.UserOut, status_code=201)
-def register(data: schemas.UserCreate, db: Session = Depends(get_db)):
+def register(data: schemas.UserCreate, request: Request, db: Session = Depends(get_db)):
+    ratelimit.check(f"register:{ratelimit.client_ip(request)}", REGISTER_MAX)
     if db.query(models.User).filter(models.User.email == data.email).first():
         raise HTTPException(400, "Email already registered")
     # SECURITY: public sign-up always creates the lowest role. Elevated access
@@ -36,7 +41,8 @@ def register(data: schemas.UserCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/login")
-def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login(request: Request, form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    ratelimit.check(f"login:{ratelimit.client_ip(request)}", LOGIN_MAX)
     user = db.query(models.User).filter(models.User.email == form.username).first()
     if not user or not auth.verify_password(form.password, user.password_hash):
         raise HTTPException(401, "Incorrect email or password")
@@ -55,7 +61,8 @@ class MfaLogin(BaseModel):
 
 
 @router.post("/login/mfa")
-def login_mfa(data: MfaLogin, db: Session = Depends(get_db)):
+def login_mfa(data: MfaLogin, request: Request, db: Session = Depends(get_db)):
+    ratelimit.check(f"login:{ratelimit.client_ip(request)}", LOGIN_MAX)
     """Second login step: password + authenticator/recovery code. If the user
     also has a passkey, returns a passkey challenge (the 3rd factor) instead of a
     token; otherwise returns the token."""
@@ -80,8 +87,9 @@ class PasskeyLogin(BaseModel):
 
 
 @router.post("/login/passkey", response_model=schemas.Token)
-def login_passkey(data: PasskeyLogin, db: Session = Depends(get_db)):
+def login_passkey(data: PasskeyLogin, request: Request, db: Session = Depends(get_db)):
     """Final login step: verify the passkey assertion, then issue the token."""
+    ratelimit.check(f"login:{ratelimit.client_ip(request)}", LOGIN_MAX)
     from .. import security, webauthn_svc
     user = db.query(models.User).filter(models.User.email == data.email).first()
     if not user or not auth.verify_password(data.password, user.password_hash):

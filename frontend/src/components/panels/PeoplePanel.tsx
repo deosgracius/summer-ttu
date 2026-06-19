@@ -32,6 +32,7 @@ export default function PeoplePanel({ reloadKey }: { reloadKey?: number }) {
   const [open, setOpen] = useState(false)
   const [people, setPeople] = useState<Person[]>([])
   const [q, setQ] = useState("")
+  const [groupBy, setGroupBy] = useState<"role" | "department">("role")
   const [detail, setDetail] = useState<PersonDetail | null>(null)
   const [draft, setDraft] = useState<Partial<Person>>({})
 
@@ -54,12 +55,13 @@ export default function PeoplePanel({ reloadKey }: { reloadKey?: number }) {
       : people
     const map = new Map<string, Person[]>()
     for (const p of [...list].sort((a, b) => a.name.localeCompare(b.name))) {
-      const g = p.role_label || "Other"
+      const g = (groupBy === "department" ? p.department : p.role_label) || "Other"
       if (!map.has(g)) map.set(g, [])
       map.get(g)!.push(p)
     }
-    return [...map.entries()]
-  }, [people, q])
+    // Sort groups alphabetically so departments/roles read predictably.
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  }, [people, q, groupBy])
 
   if (!isAdmin) return null
 
@@ -111,7 +113,24 @@ export default function PeoplePanel({ reloadKey }: { reloadKey?: number }) {
               Rebuild
             </Button>
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">{people.length} profiles</div>
+          <div className="mt-2 flex items-center gap-2 text-xs">
+            <span className="text-muted-foreground">Group by:</span>
+            {(["role", "department"] as const).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setGroupBy(mode)}
+                className={
+                  "rounded-full border px-2.5 py-0.5 capitalize transition " +
+                  (groupBy === mode
+                    ? "border-primary bg-primary/15 text-primary"
+                    : "border-border text-muted-foreground hover:bg-muted/40")
+                }
+              >
+                {mode}
+              </button>
+            ))}
+            <span className="ml-auto text-muted-foreground">{people.length} profiles</span>
+          </div>
 
           <div className="mt-2 max-h-[30rem] overflow-auto space-y-3 pr-1">
             {groups.map(([role, items]) => (

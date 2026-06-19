@@ -148,38 +148,40 @@ def assign_role(data: AssignRole, db: Session = Depends(get_db),
     return {"email": target.email, "role": target.role, "by": actor.email}
 
 
-# --- Music access (central-admin privilege; unlockable for other roles) ---
+# --- Per-user service grants (central admin enables a service for one person) ---
 
-MUSIC_GRANTABLE_ROLES = ["customer", "tutor", "officer", "client", "admin"]
-
-
-@router.get("/music-access")
-def get_music_access(db: Session = Depends(get_db),
-                     user: models.User = Depends(require_roles("admin"))):
-    """Which roles (besides central admin) may control music. Central admin
-    always can; others only if unlocked here."""
-    from .. import appsettings
-    raw = appsettings.get(db, "music_unlocked_roles", "")
-    roles = [r.strip() for r in raw.split(",") if r.strip()]
-    return {"unlocked_roles": roles, "grantable_roles": MUSIC_GRANTABLE_ROLES}
+@router.get("/users/{uid}/services")
+def get_user_services(uid: int, db: Session = Depends(get_db),
+                      actor: models.User = Depends(require_roles("central_admin"))):
+    """The services enabled for this individual + the full catalog to choose from."""
+    from ..tools import SERVICES
+    granted = [g.service for g in db.query(models.ServiceGrant).filter_by(user_id=uid).all()]
+    available = [{"key": k, "label": v["label"]} for k, v in SERVICES.items()]
+    return {"granted": granted, "available": available}
 
 
-class MusicAccess(BaseModel):
-    roles: list[str] = []
+class ServiceGrants(BaseModel):
+    services: list[str] = []
 
 
-@router.put("/music-access")
-def set_music_access(data: MusicAccess, db: Session = Depends(get_db),
-                     actor: models.User = Depends(require_roles("central_admin"))):
-    """Central admin unlocks (or re-locks) music control for a set of roles."""
-    from .. import appsettings, audit
-    roles = [r.strip() for r in (data.roles or []) if r.strip() in MUSIC_GRANTABLE_ROLES]
-    appsettings.set(db, "music_unlocked_roles", ",".join(roles))
-    audit.log(db, actor, "music_access",
-              f"Music control unlocked for: {', '.join(roles) if roles else 'central admin only'}",
-              {"roles": roles})
+@router.put("/users/{uid}/services")
+def set_user_services(uid: int, data: ServiceGrants, db: Session = Depends(get_db),
+                      actor: models.User = Depends(require_roles("central_admin"))):
+    """Replace the set of services enabled for this individual user."""
+    from ..tools import SERVICES
+    from .. import audit
+    target = db.get(models.User, uid)
+    if not target:
+        raise HTTPException(404, "User not found.")
+    keys = [s for s in (data.services or []) if s in SERVICES]
+    db.query(models.ServiceGrant).filter_by(user_id=uid).delete()
+    for k in keys:
+        db.add(models.ServiceGrant(user_id=uid, service=k))
+    audit.log(db, actor, "service_grant",
+              f"Services for {target.email}: {', '.join(keys) if keys else 'none'}",
+              {"user": target.email, "services": keys})
     db.commit()
-    return {"unlocked_roles": roles}
+    return {"granted": keys}
 
 
 # --- Approval queue & audit log ------------------------------------------

@@ -18,8 +18,8 @@ __pycache__
 traces.jsonl
 eval_report.json
 
-# frontend is built in its own image, not the backend one
-frontend
+# frontend SOURCE is needed now (the multi-stage image compiles it); its heavy
+# dirs (node_modules, dist) are excluded via frontend/.dockerignore.
 design
 docs
 *.md

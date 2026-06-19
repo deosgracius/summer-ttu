@@ -11,6 +11,25 @@ def _key() -> str | None:
     return os.getenv("ELEVENLABS_API_KEY") or None
 
 
+# ---- Speech-to-text (Whisper) — reliable mic transcription ----
+def stt_enabled() -> bool:
+    return bool(os.getenv("OPENAI_API_KEY"))
+
+
+def transcribe(audio: bytes, filename: str = "audio.webm") -> str:
+    """Transcribe recorded mic audio via OpenAI Whisper. Reliable across networks
+    and browsers (unlike the browser's Web Speech API). Synchronous — call it from
+    a sync route so FastAPI runs it in a threadpool. Raises on missing key/API error."""
+    import openai
+    key = os.getenv("OPENAI_API_KEY")
+    if not key:
+        raise RuntimeError("OpenAI not configured for transcription")
+    client = openai.OpenAI(api_key=key)
+    model = os.getenv("STT_MODEL", "whisper-1")
+    resp = client.audio.transcriptions.create(model=model, file=(filename, audio))
+    return (getattr(resp, "text", "") or "").strip()
+
+
 def enabled() -> bool:
     return bool(_key())
 

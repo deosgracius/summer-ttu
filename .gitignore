@@ -38,3 +38,6 @@ Thumbs.db
 # ---- Logs / temp ----
 *.log
 .resume_build/
+
+# generated eval artifact
+eval_report.json

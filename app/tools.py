@@ -8,7 +8,7 @@ from .events_service import (list_events as _list_events, create_event as _creat
                              my_bookings as _my_bookings)
 from .extra_service import (create_reminder as _create_reminder, list_reminders as _list_reminders,
                             create_draft as _create_draft, music_link as _music_link,
-                            weather as _weather, football_update as _football_update)
+                            weather as _weather, sports_update as _sports_update)
 from .google_cal import add_event as _cal_add, list_upcoming as _cal_upcoming, is_connected as _cal_connected
 from .spotify import is_connected as _sp_connected, play as _sp_play, play_playlist as _sp_playlist, control as _sp_control
 from . import gmail as _gmail, outlook as _outlook
@@ -20,12 +20,26 @@ import json as _json
 
 ALL = ("customer", "tutor", "officer", "client", "admin", "central_admin")
 ADMINS = ("admin", "central_admin")  # admin-level only (central admin + assigned admin)
-CENTRAL = ("central_admin",)  # central admin ONLY (e.g. music) — can be unlocked for others
+CENTRAL = ("central_admin",)  # central admin ONLY by default; granted to individuals via SERVICES
 
-# Music is a central-admin privilege. The central admin can UNLOCK it for other
-# roles via the AppSetting "music_unlocked_roles" (a comma-separated role list);
-# available_tools() then adds these tools for those roles at request time.
+# Music tools — admin-only by default; the central admin grants the "music"
+# service to specific individuals (see SERVICES + available_tools).
 MUSIC_TOOLS = ("play_music", "play_playlist", "music_control")
+
+# Grantable services: the central admin can enable any of these for an INDIVIDUAL
+# user (from their row in User Access). Each service maps to one or more tools.
+# Keyed by a stable service id stored in the service_grants table.
+SERVICES = {
+    "daily_update":     {"label": "Daily briefing",         "tools": ("daily_brief",)},
+    "email":            {"label": "Email assistant",        "tools": ("read_emails", "email_reply", "email_send", "email_delete")},
+    "music":            {"label": "Music (Spotify)",        "tools": MUSIC_TOOLS},
+    "weather":          {"label": "Weather",                "tools": ("weather",)},
+    "sports":           {"label": "Sports (NFL/NCAA/NBA)",  "tools": ("sports_update",)},
+    "local_events":     {"label": "Local events",           "tools": ("suggest_events",)},
+    "tech_conferences": {"label": "Tech conferences",       "tools": ("tech_conferences",)},
+    "ieee":             {"label": "IEEE info",              "tools": ("ieee_info",)},
+    "system_control":   {"label": "Computer control",       "tools": ("system_control",)},
+}
 
 
 async def _bt(action, task):
@@ -145,8 +159,8 @@ async def calendar_add_event(args, db, user):
     return await _cal_add(db, user, args.get("summary", ""), args.get("start", ""), args.get("duration_minutes", 60))
 
 
-async def football_update(args, db, user):
-    return await _football_update()
+async def sports_update(args, db, user):
+    return await _sports_update(args.get("team"), args.get("league"))
 
 
 async def create_event(args, db, user):
@@ -405,13 +419,13 @@ TOOLS = {
     "remember": _t("Save a durable fact or preference about the user (e.g. 'prefers morning meetings', 'dog is named Max').", ALL, {"text": {"type": "string"}}, ["text"], remember),
     "list_memories": _t("List the durable facts you remember about the user.", ALL, {}, [], list_memories),
     "forget": _t("Forget a saved memory by its numeric id.", ALL, {"memory_id": {"type": "integer"}}, ["memory_id"], forget),
-    "daily_brief": _t("Gather the user's open tasks, reminders, booked events, and upcoming Google Calendar events so you can summarize their day and flag conflicts/overloaded times with suggested fixes.", ALL, {}, [], daily_brief),
+    "daily_brief": _t("Gather the user's open tasks, reminders, booked events, and upcoming Google Calendar events so you can summarize their day and flag conflicts/overloaded times with suggested fixes.", ADMINS, {}, [], daily_brief),
     "open_website": _t("Open a web page in the user's browser — e.g. a Ticketmaster event/booking page, or any link. Provide the full url.", ALL, {"url": {"type": "string"}}, ["url"], open_website),
     "read_webpage": _t("Fetch a web page and return its text so you can read or summarize it (news articles, event pages, docs). Provide the url.", ALL, {"url": {"type": "string"}}, ["url"], read_webpage),
-    "email_delete": _t("Move an email to trash by its message_id (Gmail or Outlook). Always confirm with the user before deleting.", ALL, {"provider": {"type": "string"}, "message_id": {"type": "string"}}, ["message_id"], email_delete),
-    "read_emails": _t("Read the user's recent inbox emails from Gmail and/or Outlook. Automatically skips no-reply senders. Optional 'provider' (gmail or outlook).", ALL, {"provider": {"type": "string"}, "limit": {"type": "integer"}}, [], read_emails),
-    "email_reply": _t("Reply to a specific inbox email by its message_id. Never replies to no-reply senders. Show the user your draft and confirm before sending.", ALL, {"provider": {"type": "string"}, "message_id": {"type": "string"}, "body": {"type": "string"}}, ["message_id", "body"], email_reply),
-    "email_send": _t("Send a brand-new email. Show the user the draft and confirm before sending.", ALL, {"provider": {"type": "string"}, "to": {"type": "string"}, "subject": {"type": "string"}, "body": {"type": "string"}}, ["to", "body"], email_send),
+    "email_delete": _t("Move an email to trash by its message_id (Gmail or Outlook). Always confirm with the user before deleting.", ADMINS, {"provider": {"type": "string"}, "message_id": {"type": "string"}}, ["message_id"], email_delete),
+    "read_emails": _t("Read the user's recent inbox emails from Gmail and/or Outlook. Automatically skips no-reply senders. Optional 'provider' (gmail or outlook).", ADMINS, {"provider": {"type": "string"}, "limit": {"type": "integer"}}, [], read_emails),
+    "email_reply": _t("Reply to a specific inbox email by its message_id. Never replies to no-reply senders. Show the user your draft and confirm before sending.", ADMINS, {"provider": {"type": "string"}, "message_id": {"type": "string"}, "body": {"type": "string"}}, ["message_id", "body"], email_reply),
+    "email_send": _t("Send a brand-new email. Show the user the draft and confirm before sending.", ADMINS, {"provider": {"type": "string"}, "to": {"type": "string"}, "subject": {"type": "string"}, "body": {"type": "string"}}, ["to", "body"], email_send),
     "list_users": _t("List all users (admin only).", ADMINS, {}, [], list_users),
     # ----- Admin-level only (central admin + assigned admin) -----
     "play_music": _t("Play a song on Spotify (or return links). Put the song title in 'query' and the performer in 'artist'. Central admin only (may be unlocked for others by the central admin).", CENTRAL, {"query": {"type": "string"}, "artist": {"type": "string"}}, ["query"], play_music),
@@ -420,7 +434,7 @@ TOOLS = {
     "system_control": _t("Control THIS computer: sleep, lock, shutdown, restart, or cancel a pending shutdown. Confirm before shutdown/restart. Admin only.", ADMINS, {"action": {"type": "string", "enum": ["sleep", "lock", "shutdown", "restart", "cancel"]}}, ["action"], system_control),
     "weather": _t("Get current weather; uses the user's saved location if none given. Admin only.", ADMINS, {"location": {"type": "string"}}, [], weather),
     "suggest_events": _t("Suggest real upcoming local events (concerts, sports, theatre, comedy, tech) near the user via Ticketmaster. Covers the West-Texas/region cities within ~600 miles — Lubbock, Dallas, Amarillo, Austin, Houston, Albuquerque, Oklahoma City, Midland; call once per city if needed. Admin only.", ADMINS, {"location": {"type": "string"}, "interests": {"type": "string"}}, [], suggest_events),
-    "football_update": _t("Get the admin's favorite team's recent and upcoming matches (FC Barcelona by default). Admin only.", ADMINS, {}, [], football_update),
+    "sports_update": _t("Get recent and upcoming games for an American football (NFL), college football (NCAA), or NBA team. Pass the team name in 'team' (e.g. 'Cowboys', 'Texas Tech', 'Lakers') and optionally 'league' (nfl, college-football, or nba). Defaults to the campus team (Texas Tech) if no team is given. Admin only.", ADMINS, {"team": {"type": "string"}, "league": {"type": "string"}}, [], sports_update),
     "tech_conferences": _t("Look up upcoming technology / engineering conferences (optionally by topic or region). Admin only.", ADMINS, {"query": {"type": "string"}}, [], tech_conferences),
     "ieee_info": _t("Look up IEEE (national association) news, events, conferences, and membership info. Admin only.", ADMINS, {"query": {"type": "string"}}, [], ieee_info),
     "find_course": _t("Look up an offered course section from the campus schedule by course code (e.g. 'ECE 3306'), course number alone ('3312'), title keyword, or instructor — returns room, building, days/times, instructor, prerequisites, permit requirement, campus, and graduate-level flag. Optional 'semester'. Students often use ABBREVIATIONS or nicknames — interpret them and search by the likely FULL TITLE or course number, and try multiple variations before giving up. Examples: 'E1'/'Electronics 1' -> Electronics; 'E2' -> Advanced Electronics; 'Digit' -> Digital Communications; 'Lab 1/2/3' or 'Capstone' -> the project/Capstone labs; 'ECE' = Electrical & Computer Engineering. If one term returns nothing, search a broader keyword (e.g. just 'electronics' or 'lab') and offer the closest matches rather than saying 'not found'.", ALL, {"query": {"type": "string"}, "semester": {"type": "string"}}, ["query"], find_course),
@@ -436,10 +450,12 @@ TOOLS = {
 }
 
 
-def available_tools(role, music_unlocked=False):
+def available_tools(role, granted_services=()):
+    """Tools a user can use: their role's tools, plus the tools behind any
+    services the central admin has granted them individually."""
     avail = {n: t for n, t in TOOLS.items() if role in t["roles"]}
-    # Central admin can grant music to other roles; add those tools on the fly.
-    if music_unlocked and role != "central_admin":
-        for n in MUSIC_TOOLS:
-            avail[n] = TOOLS[n]
+    for skey in granted_services:
+        for tname in SERVICES.get(skey, {}).get("tools", ()):
+            if tname in TOOLS:
+                avail[tname] = TOOLS[tname]
     return avail

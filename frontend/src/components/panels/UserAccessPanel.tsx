@@ -3,6 +3,7 @@ import { api, type AdminUser, type Role } from "@/lib/api"
 import { withStepUp } from "@/lib/webauthn"
 import { useAuth } from "@/lib/auth"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 import { PanelCard } from "@/components/panels/PanelCard"
 import { toast } from "sonner"
 
@@ -15,14 +16,24 @@ const ROLE_LABELS: Record<Role, string> = {
   central_admin: "Central Admin",
 }
 
-/** Role management — visible only to admins and central admins. An actor can
- * grant any role at or below their own rank (the backend enforces this too). */
+// Order roles are shown in (highest authority first).
+const ROLE_ORDER: Role[] = ["central_admin", "admin", "client", "officer", "tutor", "customer"]
+
+type ServiceInfo = { granted: string[]; available: { key: string; label: string }[] }
+
+/** Role management — visible to admins and central admins. The central admin can
+ * also enable individual admin-only SERVICES (music, weather, sports, …) for a
+ * specific user from their row, without making them a full admin. */
 export default function UserAccessPanel({ reloadKey }: { reloadKey?: number }) {
   const { me } = useAuth()
   const canManage = me?.role === "admin" || me?.role === "central_admin"
+  const isCentral = me?.role === "central_admin"
   const [users, setUsers] = useState<AdminUser[]>([])
   const [assignable, setAssignable] = useState<Role[]>([])
   const [q, setQ] = useState("")
+  const [svcOpen, setSvcOpen] = useState<number | null>(null)
+  const [svc, setSvc] = useState<ServiceInfo | null>(null)
+  const [savingSvc, setSavingSvc] = useState(false)
 
   async function load() {
     try {
@@ -38,7 +49,7 @@ export default function UserAccessPanel({ reloadKey }: { reloadKey?: number }) {
   }
   useEffect(() => {
     if (canManage) load()
-     
+
   }, [reloadKey, canManage])
 
   if (!canManage) return null
@@ -51,55 +62,144 @@ export default function UserAccessPanel({ reloadKey }: { reloadKey?: number }) {
       setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, role } : x)))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not change role")
-      load() // resync the dropdown to the real value
+      load()
     }
   }
 
-  const filtered = users.filter((u) =>
-    u.email.toLowerCase().includes(q.trim().toLowerCase()),
-  )
+  async function toggleServices(uid: number) {
+    if (svcOpen === uid) {
+      setSvcOpen(null)
+      setSvc(null)
+      return
+    }
+    setSvcOpen(uid)
+    setSvc(null)
+    try {
+      setSvc(await api.get<ServiceInfo>(`/admin/users/${uid}/services`))
+    } catch {
+      toast.error("Couldn't load services")
+    }
+  }
+
+  function flip(key: string) {
+    setSvc((s) =>
+      s
+        ? { ...s, granted: s.granted.includes(key) ? s.granted.filter((k) => k !== key) : [...s.granted, key] }
+        : s,
+    )
+  }
+
+  async function saveServices(uid: number) {
+    if (!svc) return
+    setSavingSvc(true)
+    try {
+      await api.put(`/admin/users/${uid}/services`, { services: svc.granted })
+      toast.success("Services updated")
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Save failed")
+    } finally {
+      setSavingSvc(false)
+    }
+  }
+
+  const filtered = users.filter((u) => u.email.toLowerCase().includes(q.trim().toLowerCase()))
+
+  function renderUser(u: AdminUser) {
+    const editable = assignable.includes(u.role)
+    const canGrant = isCentral && u.role !== "central_admin"
+    return (
+      <li key={u.id} className="py-2 text-sm">
+        <div className="flex items-center gap-3">
+          <span className="flex-1 truncate">
+            {u.email}
+            {u.id === me?.id && <span className="text-muted-foreground"> (you)</span>}
+          </span>
+          {canGrant && (
+            <button onClick={() => toggleServices(u.id)} className="text-xs text-primary/80 hover:underline">
+              {svcOpen === u.id ? "Services ▾" : "Services ▸"}
+            </button>
+          )}
+          {editable ? (
+            <select
+              value={u.role}
+              onChange={(e) => changeRole(u, e.target.value as Role)}
+              className="rounded-md border bg-background px-2 py-1 text-xs"
+            >
+              {assignable.map((r) => (
+                <option key={r} value={r}>
+                  {ROLE_LABELS[r]}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="text-xs text-muted-foreground">{ROLE_LABELS[u.role]}</span>
+          )}
+        </div>
+
+        {canGrant && svcOpen === u.id && (
+          <div className="mt-2 rounded-md border p-3">
+            <div className="text-xs text-muted-foreground mb-2">Enable services for {u.email}:</div>
+            {!svc ? (
+              <div className="text-xs text-muted-foreground">Loading…</div>
+            ) : (
+              <>
+                <div className="flex flex-wrap gap-2">
+                  {svc.available.map((s) => {
+                    const on = svc.granted.includes(s.key)
+                    return (
+                      <button
+                        key={s.key}
+                        onClick={() => flip(s.key)}
+                        className={
+                          "rounded-full border px-3 py-1 text-xs transition " +
+                          (on
+                            ? "border-primary bg-primary/15 text-primary"
+                            : "border-border text-muted-foreground hover:bg-muted/40")
+                        }
+                      >
+                        {on ? "✓ " : ""}
+                        {s.label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <div className="mt-3">
+                  <Button size="sm" onClick={() => saveServices(u.id)} disabled={savingSvc}>
+                    {savingSvc ? "Saving…" : "Save services"}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </li>
+    )
+  }
 
   return (
     <PanelCard title="User Access">
       <div className="text-xs text-muted-foreground">
         You can assign: {assignable.map((r) => ROLE_LABELS[r]).join(", ")}.
+        {isCentral && " Use Services to enable an admin-only service for one person."}
       </div>
       <div className="mt-3">
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search users by email…" />
       </div>
-      <ul className="mt-3 divide-y max-h-96 overflow-auto">
-        {filtered.map((u) => {
-          // A user is editable only when their current role is within what I can
-          // assign (i.e. they don't outrank me). Otherwise show a locked label.
-          const editable = assignable.includes(u.role)
+      <div className="mt-3 max-h-[34rem] overflow-auto space-y-3 pr-1">
+        {ROLE_ORDER.map((role) => {
+          const members = filtered.filter((u) => u.role === role)
+          if (!members.length) return null
           return (
-            <li key={u.id} className="flex items-center gap-3 py-2 text-sm">
-              <span className="flex-1 truncate">
-                {u.email}
-                {u.id === me?.id && <span className="text-muted-foreground"> (you)</span>}
-              </span>
-              {editable ? (
-                <select
-                  value={u.role}
-                  onChange={(e) => changeRole(u, e.target.value as Role)}
-                  className="rounded-md border bg-background px-2 py-1 text-xs"
-                >
-                  {assignable.map((r) => (
-                    <option key={r} value={r}>
-                      {ROLE_LABELS[r]}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <span className="text-xs text-muted-foreground">{ROLE_LABELS[u.role]}</span>
-              )}
-            </li>
+            <div key={role}>
+              <div className="sticky top-0 z-10 bg-card/95 backdrop-blur text-xs font-medium text-primary/80 py-1">
+                {ROLE_LABELS[role]} <span className="text-muted-foreground">({members.length})</span>
+              </div>
+              <ul className="divide-y">{members.map(renderUser)}</ul>
+            </div>
           )
         })}
-        {filtered.length === 0 && (
-          <li className="py-2 text-sm text-muted-foreground">No users.</li>
-        )}
-      </ul>
+        {filtered.length === 0 && <div className="py-2 text-sm text-muted-foreground">No users.</div>}
+      </div>
     </PanelCard>
   )
 }

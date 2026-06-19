@@ -12,7 +12,6 @@ import UserAccessPanel from "@/components/panels/UserAccessPanel"
 import ApprovalsPanel from "@/components/panels/ApprovalsPanel"
 import SecurityPanel from "@/components/panels/SecurityPanel"
 import VoiceSettingsPanel from "@/components/panels/VoiceSettingsPanel"
-import MusicAccessPanel from "@/components/panels/MusicAccessPanel"
 import MyAvailabilityPanel from "@/components/panels/MyAvailabilityPanel"
 import WelcomeBriefing from "@/components/WelcomeBriefing"
 import SplineRobot from "@/components/SplineRobot"
@@ -67,8 +66,6 @@ export default function DashboardPage() {
         <SecurityPanel reloadKey={reloadKey} />
 
         <VoiceSettingsPanel reloadKey={reloadKey} />
-
-        <MusicAccessPanel reloadKey={reloadKey} />
 
         <div className="grid gap-6 md:grid-cols-2">
           <TasksPanel reloadKey={reloadKey} />

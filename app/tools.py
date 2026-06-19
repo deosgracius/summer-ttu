@@ -20,17 +20,18 @@ import json as _json
 
 ALL = ("customer", "tutor", "officer", "client", "admin", "central_admin")
 ADMINS = ("admin", "central_admin")  # admin-level only (central admin + assigned admin)
-CENTRAL = ("central_admin",)  # central admin ONLY (e.g. music) — can be unlocked for others
+CENTRAL = ("central_admin",)  # central admin ONLY by default; granted to individuals via SERVICES
 
-# Music is a central-admin privilege. The central admin can UNLOCK it for other
-# roles via the AppSetting "music_unlocked_roles" (a comma-separated role list);
-# available_tools() then adds these tools for those roles at request time.
+# Music tools — admin-only by default; the central admin grants the "music"
+# service to specific individuals (see SERVICES + available_tools).
 MUSIC_TOOLS = ("play_music", "play_playlist", "music_control")
 
 # Grantable services: the central admin can enable any of these for an INDIVIDUAL
 # user (from their row in User Access). Each service maps to one or more tools.
 # Keyed by a stable service id stored in the service_grants table.
 SERVICES = {
+    "daily_update":     {"label": "Daily briefing",         "tools": ("daily_brief",)},
+    "email":            {"label": "Email assistant",        "tools": ("read_emails", "email_reply", "email_send", "email_delete")},
     "music":            {"label": "Music (Spotify)",        "tools": MUSIC_TOOLS},
     "weather":          {"label": "Weather",                "tools": ("weather",)},
     "sports":           {"label": "Sports (NFL/NCAA/NBA)",  "tools": ("sports_update",)},
@@ -418,13 +419,13 @@ TOOLS = {
     "remember": _t("Save a durable fact or preference about the user (e.g. 'prefers morning meetings', 'dog is named Max').", ALL, {"text": {"type": "string"}}, ["text"], remember),
     "list_memories": _t("List the durable facts you remember about the user.", ALL, {}, [], list_memories),
     "forget": _t("Forget a saved memory by its numeric id.", ALL, {"memory_id": {"type": "integer"}}, ["memory_id"], forget),
-    "daily_brief": _t("Gather the user's open tasks, reminders, booked events, and upcoming Google Calendar events so you can summarize their day and flag conflicts/overloaded times with suggested fixes.", ALL, {}, [], daily_brief),
+    "daily_brief": _t("Gather the user's open tasks, reminders, booked events, and upcoming Google Calendar events so you can summarize their day and flag conflicts/overloaded times with suggested fixes.", ADMINS, {}, [], daily_brief),
     "open_website": _t("Open a web page in the user's browser — e.g. a Ticketmaster event/booking page, or any link. Provide the full url.", ALL, {"url": {"type": "string"}}, ["url"], open_website),
     "read_webpage": _t("Fetch a web page and return its text so you can read or summarize it (news articles, event pages, docs). Provide the url.", ALL, {"url": {"type": "string"}}, ["url"], read_webpage),
-    "email_delete": _t("Move an email to trash by its message_id (Gmail or Outlook). Always confirm with the user before deleting.", ALL, {"provider": {"type": "string"}, "message_id": {"type": "string"}}, ["message_id"], email_delete),
-    "read_emails": _t("Read the user's recent inbox emails from Gmail and/or Outlook. Automatically skips no-reply senders. Optional 'provider' (gmail or outlook).", ALL, {"provider": {"type": "string"}, "limit": {"type": "integer"}}, [], read_emails),
-    "email_reply": _t("Reply to a specific inbox email by its message_id. Never replies to no-reply senders. Show the user your draft and confirm before sending.", ALL, {"provider": {"type": "string"}, "message_id": {"type": "string"}, "body": {"type": "string"}}, ["message_id", "body"], email_reply),
-    "email_send": _t("Send a brand-new email. Show the user the draft and confirm before sending.", ALL, {"provider": {"type": "string"}, "to": {"type": "string"}, "subject": {"type": "string"}, "body": {"type": "string"}}, ["to", "body"], email_send),
+    "email_delete": _t("Move an email to trash by its message_id (Gmail or Outlook). Always confirm with the user before deleting.", ADMINS, {"provider": {"type": "string"}, "message_id": {"type": "string"}}, ["message_id"], email_delete),
+    "read_emails": _t("Read the user's recent inbox emails from Gmail and/or Outlook. Automatically skips no-reply senders. Optional 'provider' (gmail or outlook).", ADMINS, {"provider": {"type": "string"}, "limit": {"type": "integer"}}, [], read_emails),
+    "email_reply": _t("Reply to a specific inbox email by its message_id. Never replies to no-reply senders. Show the user your draft and confirm before sending.", ADMINS, {"provider": {"type": "string"}, "message_id": {"type": "string"}, "body": {"type": "string"}}, ["message_id", "body"], email_reply),
+    "email_send": _t("Send a brand-new email. Show the user the draft and confirm before sending.", ADMINS, {"provider": {"type": "string"}, "to": {"type": "string"}, "subject": {"type": "string"}, "body": {"type": "string"}}, ["to", "body"], email_send),
     "list_users": _t("List all users (admin only).", ADMINS, {}, [], list_users),
     # ----- Admin-level only (central admin + assigned admin) -----
     "play_music": _t("Play a song on Spotify (or return links). Put the song title in 'query' and the performer in 'artist'. Central admin only (may be unlocked for others by the central admin).", CENTRAL, {"query": {"type": "string"}, "artist": {"type": "string"}}, ["query"], play_music),
@@ -449,13 +450,10 @@ TOOLS = {
 }
 
 
-def available_tools(role, music_unlocked=False, granted_services=()):
+def available_tools(role, granted_services=()):
+    """Tools a user can use: their role's tools, plus the tools behind any
+    services the central admin has granted them individually."""
     avail = {n: t for n, t in TOOLS.items() if role in t["roles"]}
-    # Central admin can grant music to other roles; add those tools on the fly.
-    if music_unlocked and role != "central_admin":
-        for n in MUSIC_TOOLS:
-            avail[n] = TOOLS[n]
-    # Per-user service grants: enable the tools behind each granted service.
     for skey in granted_services:
         for tname in SERVICES.get(skey, {}).get("tools", ()):
             if tname in TOOLS:

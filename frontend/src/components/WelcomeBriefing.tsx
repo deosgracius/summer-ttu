@@ -14,6 +14,7 @@ export default function WelcomeBriefing() {
   const [status, setStatus] = useState<"idle" | "playing" | "done">("idle")
   const [needsTap, setNeedsTap] = useState(false)
   const [text, setText] = useState("")
+  const [disabled, setDisabled] = useState(false) // user not granted the daily briefing
 
   function fade(audio: HTMLAudioElement, to: number, ms: number, done?: () => void) {
     const from = audio.volume
@@ -31,6 +32,20 @@ export default function WelcomeBriefing() {
 
   async function run() {
     setNeedsTap(false)
+    // Decide eligibility first — users without the 'daily_update' service get
+    // no briefing (and no music), so check before starting any audio.
+    let r: { text: string; disabled?: boolean }
+    try {
+      r = await api.get<{ text: string; disabled?: boolean }>("/agent/welcome")
+    } catch {
+      setStatus("done")
+      return
+    }
+    if (!r || r.disabled || !r.text) {
+      setDisabled(true)
+      setStatus("done")
+      return
+    }
     primeAudio()
     const audio = audioRef.current ?? new Audio("/welcome-music.mp3")
     audioRef.current = audio
@@ -40,18 +55,14 @@ export default function WelcomeBriefing() {
       await audio.play()
     } catch {
       // Browser blocked autoplay — needs a tap to start.
+      setText(r.text)
       setNeedsTap(true)
       return
     }
     setStatus("playing")
     fade(audio, 0.12, 700) // quiet bed so the spoken briefing stays clear
-    try {
-      const r = await api.get<{ text: string }>("/agent/welcome")
-      setText(r.text)
-      await speak(r.text)
-    } catch {
-      /* ignore — still let the music play briefly */
-    }
+    setText(r.text)
+    await speak(r.text)
     fade(audio, 0, 1400, () => audio.pause())
     setStatus("done")
   }
@@ -70,6 +81,9 @@ export default function WelcomeBriefing() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // No briefing for users who haven't been granted the daily-update service.
+  if (disabled) return null
 
   return (
     <PanelCard title="Welcome briefing">

@@ -10,14 +10,6 @@ from .tools import available_tools
 from . import models, tracing, appsettings
 
 
-def _music_unlocked_for(db, role: str) -> bool:
-    """True if the central admin has unlocked music control for this role.
-    Stored as a comma-separated role list in the AppSetting 'music_unlocked_roles'."""
-    raw = appsettings.get(db, "music_unlocked_roles", "")
-    roles = {r.strip() for r in raw.split(",") if r.strip()}
-    return role in roles
-
-
 def _granted_services_for(db, user_id: int):
     """Service keys the central admin has enabled for THIS individual user
     (rows in service_grants)."""
@@ -119,8 +111,7 @@ async def run_agent(goal, db, user, provider=None, voice=False):
         model = DEFAULT_MODEL.get("anthropic", "claude-haiku-4-5")
     if provider == "openai" and not (str(model).startswith("gpt") or str(model).startswith("o")):
         model = DEFAULT_MODEL.get("openai", "gpt-4o-mini")
-    avail = available_tools(user.role, music_unlocked=_music_unlocked_for(db, user.role),
-                            granted_services=_granted_services_for(db, user.id))
+    avail = available_tools(user.role, granted_services=_granted_services_for(db, user.id))
     system = SYSTEM + _context(user) + _memories(db, user)
     if voice:
         system += (" The user is speaking to you hands-free by voice, so keep replies brief (1–2 sentences), "

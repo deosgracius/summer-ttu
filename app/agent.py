@@ -48,6 +48,7 @@ SYSTEM = (
     "shut down, or restart this computer (confirm before shutdown/restart); weather; suggest_events for local "
     "concerts, sports, theatre, and tech events near Lubbock, Dallas, Austin, Houston, Amarillo, Albuquerque, "
     "Oklahoma City, and Midland; sports_update for NFL, college football (NCAA), or NBA scores and schedules (e.g. the Cowboys, Texas Tech, or the Lakers — defaults to Texas Tech); tech_conferences; and ieee_info. "
+    "When you suggest events, end by ASKING if the user wants the event page opened. If they say yes (or name an event), call suggest_events to get that event's url and then open_website to open it. "
     "CAMPUS HELP: for any question about a class, room, schedule, professor, office or office hours, advisor, "
     "building, departmental electives/prerequisites, or a service like the stockroom, ALWAYS call the campus "
     "tools (find_course, find_professor, find_advisor, building_info, campus_service_hours, elective_catalog) "

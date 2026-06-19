@@ -269,9 +269,11 @@ export function useSpeech() {
   function openWindow() {
     vstate.current = "active"
     clearFollow()
+    // Short follow-up window — long enough for a natural reply, short enough that
+    // background chatter doesn't get treated as a command in a busy hallway.
     followTimer.current = window.setTimeout(() => {
       if (micOn.current) vstate.current = "ambient"
-    }, 12000)
+    }, 8000)
   }
   function afterSpeak() {
     if (micOn.current) openWindow() // keep listening for a follow-up after Summer talks
@@ -289,11 +291,26 @@ export function useSpeech() {
     // Send the full accumulated utterance once you've paused (good rhythm:
     // wait until you actually stop, then reply to everything).
     const flush = () => {
-      const cmd = buffer.current.replace(WAKE, "").trim()
+      const raw = buffer.current.trim()
+      const hasWake = WAKE.test(raw)
       buffer.current = ""
       setHeard("")
-      if (cmd.length < 2) return
-      if (ENDRE.test(cmd) && cmd.split(/\s+/).length <= 3) return
+      // CONVERSATION TRACKER: when idle (ambient), Summer only responds to someone
+      // who addresses her by name ("Hey Summer …"). All other nearby talk — other
+      // students chatting, background noise — is ignored. After she's addressed (or
+      // just replied), a short ACTIVE window lets you follow up without repeating
+      // the wake word; then she goes back to waiting for her name.
+      if (vstate.current !== "active" && !hasWake) return
+      const cmd = raw.replace(WAKE, "").trim()
+      if (cmd.length < 2) {
+        if (hasWake) openWindow() // "Hey Summer" alone → start listening for the request
+        return
+      }
+      if (ENDRE.test(cmd) && cmd.split(/\s+/).length <= 3) {
+        vstate.current = "ambient" // "thanks/done" → stop the follow-up window
+        return
+      }
+      openWindow() // allow a brief hands-free follow-up
       onCmd.current(cmd)
     }
     const scheduleFlush = () => {

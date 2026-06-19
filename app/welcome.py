@@ -156,13 +156,20 @@ async def compose_welcome(db, user):
     except Exception:
         events = []
     if events:
+        def _nice_date(d):
+            try:
+                dt = datetime.datetime.strptime(d, "%Y-%m-%d")
+                return f"{dt.strftime('%B')} {dt.day}"   # e.g. "May 1"
+            except Exception:
+                return "soon"
         top = events[:3]
-        names = "; ".join(
-            f"{e.get('name')} in {e.get('city') or 'nearby'} on {e.get('date') or 'soon'}"
+        listed = "; ".join(
+            f"{e.get('name')} in {e.get('city') or 'the area'} on {_nice_date(e.get('date'))}"
             for e in top)
-        parts.append(f"Nearby in the next three weeks, you might enjoy: {names}.")
+        parts.append(f"There are a few events within driving distance over the next three weeks: {listed}.")
+        parts.append("If you'd like, I can open the page for any of them — just tell me which.")
 
-    parts.append("That's your briefing. I'm here whenever you need me.")
+    parts.append("That's your briefing. Let me know if you need anything.")
     return {"text": " ".join(parts),
             "data": {"tasks": len(tasks), "calendar": len(cal),
                      "reminders": len(reminders), "events": events[:5]}}

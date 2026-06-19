@@ -91,7 +91,7 @@ export default function AgentChat({ onChanged }: Props) {
           </div>
           {voiceIn && wakeActive && state !== "thinking" && (
             <div className="text-xs text-primary/70 min-h-4">
-              {heard ? <span className="text-foreground italic normal-case">“{heard}”</span> : "listening — just talk, or say “Hey Summer”"}
+              {heard ? <span className="text-foreground italic normal-case">“{heard}”</span> : "say “Hey Summer” to talk to me — or tap the mic"}
             </div>
           )}
         </div>

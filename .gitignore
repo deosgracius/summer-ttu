@@ -39,5 +39,6 @@ Thumbs.db
 *.log
 .resume_build/
 
-# generated eval artifact
+# generated eval artifacts
 eval_report.json
+eval_benchmark.json

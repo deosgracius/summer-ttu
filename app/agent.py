@@ -34,8 +34,10 @@ SYSTEM = (
     "words (no dashes, asterisks, or markdown). The reply must always read like a polished, professional "
     "message — never decorated, never with stray symbols. "
     "RESEARCH & GENERAL KNOWLEDGE: for 'teach me about X', 'research Y', 'explain Z', or any general "
-    "knowledge or research question, call the research tool (it returns the most relevant Wikipedia articles), "
-    "then SYNTHESIZE a thorough, clear, well-organized, genuinely intelligent answer in your own words and "
+    "knowledge or research question, call the research tool (it returns the most relevant Wikipedia articles). "
+    "For 'who works on / researches X' about a department PROFESSOR'S research area, use search_documents (the "
+    "faculty research profiles live there) and name the matching professor(s) from the passages. For a general "
+    "knowledge or research question, SYNTHESIZE a thorough, clear, well-organized, genuinely intelligent answer in your own words and "
     "mention the source. Use read_webpage to read a specific page if needed. Combine the looked-up facts with "
     "your own reasoning to give a great answer, not just a copy of the summary. (These research tools are "
     "available to the central admin and to anyone granted the research service.) "
@@ -79,6 +81,18 @@ SYSTEM = (
     "professor. Do not tell a student which courses to take, build their degree plan, judge their eligibility, "
     "or give academic/registration advice. You may surface the facts (offerings, prerequisites, who to talk to) "
     "and then direct them to the appropriate advisor or professor for decisions. "
+    "PRIVACY AND NO SURVEILLANCE (a hard, non-negotiable rule): Summer never tracks, records, requests, or "
+    "infers anyone's physical location, and never uses GPS, geolocation, or maps to locate a person. Summer does "
+    "not monitor or surveil students, staff, or tutors, and does not police where someone is. If anyone — "
+    "including an administrator — asks you to track a location, geofence or location-restrict a check-in, or "
+    "monitor a person's whereabouts or activity, politely decline and explain this is a deliberate privacy "
+    "boundary built into Summer. Then offer the privacy-respecting alternative: a voluntary check-in or check-out "
+    "done in person at the kiosk, which records only a name and a timestamp the person chose to enter — never "
+    "a location. "
+    "PROVENANCE: every factual claim you make about the department (a room, office, time, instructor, "
+    "prerequisite, policy, deadline, or course detail) must come from a tool result and reflect that source; "
+    "name where it came from when it helps, and never state a date, deadline, number, or rule you did not get "
+    "from a tool. "
     "TECHNICAL SUPPORT: if anyone reports a technical issue or a problem connecting to or using Summer "
     "(login trouble, voice not working, an integration like Spotify, or any error), do NOT tell them to contact "
     "a generic 'platform support' — give them this contact: Deo Grace Mwala (DG) — email deosgracius17@gmail.com "
@@ -149,12 +163,17 @@ async def run_agent(goal, db, user, provider=None, voice=False):
                    "natural and conversational — no markdown, no bullet lists. Answer exactly what was asked.")
     hist = list(_HISTORY[user.id])
     t0 = time.perf_counter()
-    if provider == "anthropic":
-        result = await _run_anthropic(goal, db, user, avail, system, hist, model)
-    elif provider == "openai":
-        result = await _run_openai(goal, db, user, avail, system, hist, model)
-    else:
-        result = {"reply": f"Unknown provider '{provider}'. Use 'anthropic' or 'openai'.", "actions": []}
+    try:
+        if provider == "anthropic":
+            result = await _run_anthropic(goal, db, user, avail, system, hist, model)
+        elif provider == "openai":
+            result = await _run_openai(goal, db, user, avail, system, hist, model)
+        else:
+            result = {"reply": f"Unknown provider '{provider}'. Use 'anthropic' or 'openai'.", "actions": []}
+    except Exception:
+        # LLM unreachable (e.g. depleted credits) — degrade to a direct campus lookup
+        # rather than erroring out on the user.
+        result = {"reply": _deterministic_fallback(db, goal), "actions": []}
     tracing.record("agent", goal, result, (time.perf_counter() - t0) * 1000)
     _HISTORY[user.id].append({"role": "user", "content": goal})
     _HISTORY[user.id].append({"role": "assistant", "content": result.get("reply", "")})
@@ -201,6 +220,9 @@ KIOSK_SYSTEM = (
     "title ('classes about robots', 'something with circuits'), use course_search (meaning-based search). "
     "For questions answered by a department handbook, policy, syllabus, or FAQ (procedures, rules, deadlines, "
     "'how do I…'), use search_documents and answer ONLY from the returned passages, citing the document. "
+    "For a question about a professor's RESEARCH AREA or 'who works on / researches X' (RF, pulsed power, "
+    "power electronics, nanotech, machine learning, etc.), use search_documents — the faculty research "
+    "profiles are stored there — and name the matching professor(s) from the passages. "
     "Relay those as plain facts — never advise which courses to take. "
     "You are an information kiosk, NOT an academic advisor and NOT a replacement for a professor: do not "
     "tell students which courses to take, build degree plans, or judge eligibility — give the facts and "
@@ -210,7 +232,8 @@ KIOSK_SYSTEM = (
     "literal characters), no emojis, and no casual openers like 'Hey there!' — be courteous and professional. "
     "If a question is outside campus info (personal, general knowledge, "
     "anything not in your tools), politely say you can only help with this department's classes, "
-    "offices, and services. Never ask for or store personal information. "
+    "offices, and services. Never ask for, store, track, or infer anyone's personal information or physical "
+    "location — Summer does not do location tracking, geofencing, or surveillance of any kind, for anyone. "
     "If someone reports a technical problem with the kiosk itself (it's broken, frozen, or not working), tell "
     "them to contact Deo Grace Mwala (DG) at Demwala@ttu.edu or 217-417-4270, or Dr. Derek Johnston. "
     "If the student speaks or writes in another language (Spanish, French, etc.), reply in that same language."
@@ -232,6 +255,13 @@ async def run_kiosk_traced(goal, db, provider=None):
     quick = campus_service.fast_answer(db, goal)
     if quick:
         return {"reply": quick, "actions": [], "latency_ms": 0.0}
+    # CONFIDENT FACTUAL LOOKUP: natural-language questions that clearly resolve to one
+    # campus record (an office, instructor, building/service hours) are answered straight
+    # from the DB — instant and free — instead of paying the LLM. Anything needing
+    # reasoning, topic search, abbreviation expansion, or a refusal falls through.
+    sure = campus_service.confident_lookup(db, goal)
+    if sure:
+        return {"reply": sure, "actions": [], "latency_ms": 0.0}
     provider = (provider or os.getenv("LLM_PROVIDER", "anthropic")).lower()
     # Kiosk answers are quick lookups — use the FAST model for snappy replies,
     # regardless of the (possibly slower) dashboard model in LLM_MODEL.
@@ -240,12 +270,17 @@ async def run_kiosk_traced(goal, db, provider=None):
     avail = {n: TOOLS[n] for n in KIOSK_TOOLS if n in TOOLS}
     system = KIOSK_SYSTEM + f"\nToday's date: {datetime.date.today().isoformat()}."
     t0 = time.perf_counter()
-    if provider == "anthropic":
-        result = await _run_anthropic(goal, db, None, avail, system, [], model)
-    elif provider == "openai":
-        result = await _run_openai(goal, db, None, avail, system, [], model)
-    else:
-        return {"reply": "The kiosk assistant isn't configured.", "actions": [], "latency_ms": 0.0}
+    try:
+        if provider == "anthropic":
+            result = await _run_anthropic(goal, db, None, avail, system, [], model)
+        elif provider == "openai":
+            result = await _run_openai(goal, db, None, avail, system, [], model)
+        else:
+            return {"reply": "The kiosk assistant isn't configured.", "actions": [], "latency_ms": 0.0}
+    except Exception:
+        # LLM unreachable (e.g. depleted credits) — degrade to a direct DB lookup.
+        return {"reply": _deterministic_fallback(db, goal), "actions": [],
+                "latency_ms": (time.perf_counter() - t0) * 1000}
     result["latency_ms"] = (time.perf_counter() - t0) * 1000
     u = result.get("usage")
     if u and (u.get("input") or u.get("output")):
@@ -264,6 +299,18 @@ async def run_kiosk_agent(goal, db, provider=None):
     campus tools only. Returns only the spoken answer (no internal tool trace)."""
     result = await run_kiosk_traced(goal, db, provider)
     return {"reply": result.get("reply", "")}
+
+
+def _deterministic_fallback(db, goal):
+    """When the LLM brain is unreachable (depleted credits, API outage, timeout),
+    answer straight from the campus database so Summer DEGRADES to a useful lookup
+    instead of throwing an error at the user."""
+    from . import campus_service
+    ans = campus_service.fast_answer(db, goal) or campus_service.best_answer(db, goal)
+    if ans:
+        return ans
+    return ("My conversational brain is temporarily unavailable right now. You can still ask about "
+            "a specific class, professor, office, building, or the stockroom, or please try again shortly.")
 
 
 async def _run_anthropic(goal, db, user, avail, system, hist, model):

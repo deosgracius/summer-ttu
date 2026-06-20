@@ -32,8 +32,11 @@ jobs:
 
       - name: Deterministic test suites
         # `python -m pytest` (not bare `pytest`) so the repo root is on sys.path
-        # and `import app` resolves.
-        run: python -m pytest tests/test_graph.py tests/test_vector.py tests/test_evals.py -q
+        # and `import app` resolves. Covers graph, vector, doc-RAG chunking, the
+        # multi-agent orchestrator, the eval + red-team scorers, and the LLM-vs-
+        # search-box benchmark's deterministic checks (routing, baseline accuracy,
+        # scorer, aggregation) — all no-key. The live benchmark stays opt-in.
+        run: python -m pytest tests/test_graph.py tests/test_vector.py tests/test_evals.py tests/test_docs_rag.py tests/test_orchestrator.py tests/test_benchmark.py -q
 
       - name: Upload eval report
         if: always()

@@ -200,13 +200,18 @@ def import_faculty(db, client):
             block.append(f"Education: {education}")
         if website:
             block.append(f"Website: {website}")
-        doc_parts.append("\n".join(block))
+        doc_parts.append((name, (BASE + path) if path else FACULTY_URL, "\n".join(block)))
         print(f"    [{i}/{len(bios)}] {name}")
 
     db.commit()
-    _replace_doc(db, "TTU ECE Faculty — Directory & Research", FACULTY_URL,
-                 "\n\n".join(doc_parts))
-    print(f"  professors refreshed: {refreshed}")
+    # One searchable document PER professor, so a research query ("who does RF
+    # sensing") matches that person cleanly instead of a chunk blending several.
+    # Clear the old combined/per-prof faculty docs first.
+    for d in db.query(models.Document).filter(models.Document.title.like("TTU ECE Faculty%")).all():
+        docs_rag.delete_document(db, d.id)
+    for nm, src, text in doc_parts:
+        docs_rag.ingest_document(db, title=f"TTU ECE Faculty — {nm}", source=src, text=text)
+    print(f"  professors refreshed: {refreshed} (one searchable document each)")
 
 
 # --------------------------------------------------------------------------- #

@@ -25,7 +25,7 @@ const WAKE = /\b(?:hey\s+|okay\s+|ok\s+|hi\s+|yo\s+|hay\s+|a\s+)?(?:summer|summe
 // Only a LEADING wake phrase is stripped from the command (so "summer courses"
 // mid-sentence stays intact).
 const WAKE_LEAD = /^\s*(?:(?:hey|okay|ok|hi|yo|hay)[\s,]+)?(?:summer|summers|sumer|summa|somers?|sommer)\b[\s,.:!?-]*/i
-const ENDRE = /\b(thank you|thanks summer|thank you summer|we'?re done|that'?s all|that'?s it|i'?m done|stop|goodbye|good bye|bye summer|never ?mind)\b/i
+const ENDRE = /\b(thank you|thanks summer|thank you summer|we'?re done|that'?s all|that'?s it|i'?m done|stop|goodbye|good bye|bye summer|never ?mind|sleep|go to sleep|goodnight|good night|go to bed)\b/i
 
 // SHARED across every useSpeech instance: the welcome-briefing hook and the chat
 // hook are two separate instances, but there is only ONE Summer voice. This
@@ -379,14 +379,11 @@ export function useSpeech() {
       // DORMANT: ignore everything until the wake word ("Hey Summer" / "Summer").
       // Once it's heard, engage and answer the rest of what was said (if anything).
       if (!engaged.current) {
-        // Engage on the wake word OR on a real, directed question (3+ words). Brief
-        // noise/fragments stay ignored so the kiosk is quiet between conversations,
-        // but you're never locked out by an unreliable "Summer" mishear.
-        const hasWake = WAKE.test(raw)
-        const isQuestion = raw.split(/\s+/).length >= 3 && !ENDRE.test(raw)
-        if (!hasWake && !isQuestion) return
+        // SLEEP MODE: only the wake word ("Hey Summer" / "Summer") brings her out.
+        // Everything else is ignored so she stays quiet until directly addressed.
+        if (!WAKE.test(raw)) return
         engage()
-        const after = (hasWake ? raw.replace(WAKE_LEAD, "") : raw).trim()
+        const after = raw.replace(WAKE_LEAD, "").trim()
         // "Hey Summer" on its own just wakes her — wait for the actual question.
         if (after.length < 2 || (ENDRE.test(after) && after.split(/\s+/).length <= 4)) return
         resetConvoTimer()

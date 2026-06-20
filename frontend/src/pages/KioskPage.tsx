@@ -6,6 +6,7 @@ import SplineRobot from "@/components/SplineRobot"
 import SpaceBackground from "@/components/SpaceBackground"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import CampusSearch from "@/components/CampusSearch"
 
 interface Turn {
   q: string
@@ -26,7 +27,7 @@ export default function KioskPage() {
   const [turns, setTurns] = useState<Turn[]>([])
   const [loading, setLoading] = useState(false)
   const [muted, setMuted] = useState(false)
-  const { supported: voiceIn, canSpeak, listening, wakeActive, heard, listen, speak, stopSpeaking, startWakeWord, stopWakeWord, primeAudio } =
+  const { supported: voiceIn, canSpeak, listening, wakeActive, awake, heard, listen, speak, stopSpeaking, startWakeWord, stopWakeWord, primeAudio } =
     useSpeech()
   const idleTimer = useRef<number | undefined>(undefined)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -130,7 +131,7 @@ export default function KioskPage() {
         {voiceIn && wakeActive && (
           <div className="flex items-center justify-center gap-2 text-xs text-primary/80 pb-1 min-h-5">
             <span className="inline-block size-2 rounded-full bg-emerald-400 animate-pulse" />
-            {heard ? <span className="text-foreground italic">“{heard}”</span> : <>Say <b>“Hey Summer”</b> to ask a question — or tap the mic</>}
+            {heard ? <span className="text-foreground italic">“{heard}”</span> : awake ? <>Listening — just talk</> : <>Say <b>“Hey Summer”</b> to start, or tap the mic</>}
           </div>
         )}
 
@@ -162,6 +163,16 @@ export default function KioskPage() {
             Ask
           </Button>
         </div>
+
+        {/* Plain instant search — no AI, no waiting, no cost. */}
+        <details className="mt-2">
+          <summary className="cursor-pointer text-sm text-primary/80">
+            Or search directly — instant, no waiting
+          </summary>
+          <div className="mt-3 flex justify-center">
+            <CampusSearch />
+          </div>
+        </details>
         <div className="flex items-center justify-between text-xs text-muted-foreground pt-2">
           <span>I'm an information kiosk — not an academic advisor.</span>
           <div className="flex gap-3">

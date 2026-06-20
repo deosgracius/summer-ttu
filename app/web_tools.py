@@ -6,10 +6,29 @@ metadata) are blocked, and every redirect hop is re-validated."""
 import re
 import socket
 import ipaddress
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote_plus
 import httpx
 
 MAX_REDIRECTS = 4
+
+# Search-result URL templates per source (no API key needed — just opens the
+# site's search). DigiKey/Mouser are the electronics-part suppliers an ECE
+# department uses; the rest are general/web/shopping.
+SEARCH_SOURCES = {
+    "google": "https://www.google.com/search?q={q}",
+    "wikipedia": "https://en.wikipedia.org/w/index.php?search={q}",
+    "amazon": "https://www.amazon.com/s?k={q}",
+    "digikey": "https://www.digikey.com/en/products/result?keywords={q}",
+    "mouser": "https://www.mouser.com/c/?q={q}",
+}
+
+
+def search_url(query: str, source: str = "google") -> tuple:
+    """Return (resolved_source, search_results_url) for the query."""
+    src = (source or "google").lower().strip()
+    if src not in SEARCH_SOURCES:
+        src = "google"
+    return src, SEARCH_SOURCES[src].format(q=quote_plus((query or "").strip()))
 
 
 def _host_is_public(host: str) -> bool:

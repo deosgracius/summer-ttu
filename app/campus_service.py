@@ -134,3 +134,65 @@ def find_catalog(db, query: str):
         if len(out) >= _LIMIT:
             break
     return out
+
+
+def search_all(db, q: str, kind: str = "all"):
+    """Deterministic combined search over the campus data — NO LLM. Powers the
+    plain search box (instant, free)."""
+    q = (q or "").strip()
+    if not q:
+        return {}
+    res = {}
+    if kind in ("all", "courses"):
+        res["courses"] = find_courses(db, q)
+    if kind in ("all", "people"):
+        res["professors"] = find_professors(db, q)
+        res["advisors"] = find_advisors(db, q)
+    if kind in ("all", "buildings"):
+        res["buildings"] = find_buildings(db, q)
+    if kind in ("all", "services"):
+        res["services"] = find_services(db, q)
+    if kind in ("all", "catalog"):
+        res["catalog"] = find_catalog(db, q)
+    return res
+
+
+_CODE_RE = re.compile(r"^\s*([a-z]{2,4})\s*(\d{4})\s*$", re.I)
+
+
+_NAME_STOP = re.compile(
+    r"\b(professor|prof|dr|doctor|office|hours?|where(?:'?s| is)?|who(?:'?s| is)?|"
+    r"the|a|an|find|for|is|are|me|email|of|contact)\b", re.I)
+
+
+def fast_answer(db, question: str):
+    """Hybrid fast path: answer an exact course-code OR an exact professor/advisor
+    name straight from the DB with no LLM call. Returns a short text answer, or
+    None to fall through to the model for anything fuzzier."""
+    qt = (question or "").strip().rstrip("?.! ")
+
+    # 1) Exact course code, e.g. "ECE 3306".
+    m = _CODE_RE.match(qt)
+    if m:
+        code = f"{m.group(1).upper()} {m.group(2)}"
+        exact = [c for c in find_courses(db, code) if c["course"].upper() == code]
+        if exact:
+            lines = [f"{code} — {exact[0]['title']}:"]
+            for c in exact[:4]:
+                where = f"{c['building']} {c['room']}".strip()
+                lines.append(f"- Section {c['section']}: {c['days']} {c['times']}, {where}, with {c['instructor']}.")
+            return "\n".join(lines)
+        return None
+
+    # 2) A short name-like query that matches exactly ONE professor or advisor.
+    name = _NAME_STOP.sub(" ", qt).strip()
+    name = re.sub(r"\s+", " ", name)
+    if name and 1 <= len(name.split()) <= 3 and len(name) >= 3:
+        people = find_professors(db, name) + find_advisors(db, name)
+        if len(people) == 1:
+            p = people[0]
+            hours = p.get("office_hours") or p.get("schedule") or p.get("availability") or "not listed"
+            return (f"{p['name']} ({p.get('department', '')}): "
+                    f"office {p.get('office') or 'not listed'}, "
+                    f"hours {hours}, email {p.get('email') or 'not listed'}.")
+    return None

@@ -31,6 +31,7 @@ export default defineConfig({
       "/kiosk/ask": "http://localhost:8000",
       "/kiosk/tts": "http://localhost:8000",
       "/kiosk/stt": "http://localhost:8000",
+      "/kiosk/search": "http://localhost:8000",
       "/voice": "http://localhost:8000",
       "/payments": "http://localhost:8000",
       "/oauth": "http://localhost:8000",

@@ -10,10 +10,12 @@ from .extra_service import (create_reminder as _create_reminder, list_reminders 
                             create_draft as _create_draft, music_link as _music_link,
                             weather as _weather, sports_update as _sports_update)
 from .google_cal import add_event as _cal_add, list_upcoming as _cal_upcoming, is_connected as _cal_connected
-from .spotify import is_connected as _sp_connected, play as _sp_play, play_playlist as _sp_playlist, control as _sp_control
+from .spotify import (is_connected as _sp_connected, play as _sp_play, play_playlist as _sp_playlist,
+                      control as _sp_control, search_track as _sp_search)
+from .itunes import search as _itunes_search
 from . import gmail as _gmail, outlook as _outlook
 from .local_events import suggest_events as _suggest_events
-from .web_tools import fetch_page as _fetch_page
+from .web_tools import fetch_page as _fetch_page, search_url as _search_url
 from .system_control import control as _sys_control
 from . import campus_service as _campus
 import json as _json
@@ -32,13 +34,14 @@ MUSIC_TOOLS = ("play_music", "play_playlist", "music_control")
 SERVICES = {
     "daily_update":     {"label": "Daily briefing",         "tools": ("daily_brief",)},
     "email":            {"label": "Email assistant",        "tools": ("read_emails", "email_reply", "email_send", "email_delete")},
-    "music":            {"label": "Music (Spotify)",        "tools": MUSIC_TOOLS},
+    "music":            {"label": "Music (Spotify & Apple)", "tools": MUSIC_TOOLS + ("play_apple_music",)},
     "weather":          {"label": "Weather",                "tools": ("weather",)},
     "sports":           {"label": "Sports (NFL/NCAA/NBA)",  "tools": ("sports_update",)},
     "local_events":     {"label": "Local events",           "tools": ("suggest_events",)},
     "tech_conferences": {"label": "Tech conferences",       "tools": ("tech_conferences",)},
     "ieee":             {"label": "IEEE info",              "tools": ("ieee_info",)},
     "system_control":   {"label": "Computer control",       "tools": ("system_control",)},
+    "web_search":       {"label": "Web & part search (Google, Wikipedia, Amazon, DigiKey, Mouser)", "tools": ("web_search",)},
 }
 
 
@@ -117,12 +120,21 @@ async def draft_email(args, db, user):
 async def play_music(args, db, user):
     query = args.get("query", "")
     artist = args.get("artist", "")
-    links = _music_link((query + " " + artist).strip())
+    q = (query + " " + artist).strip()
+    links = _music_link(q)
     if _sp_connected(db, user.id):
         res = await _sp_play(db, user, query, artist)
         res["links"] = links
         return res
-    links["note"] = "Spotify isn't connected — connect it to play directly; for now here are links."
+    # Not connected for playback control — find the exact track via app-level
+    # search (no user login needed) and return an open-in-Spotify link.
+    found = await _sp_search(q)
+    if found and found.get("spotify_url"):
+        return {"found": f"{found['track']} by {found['artist']}",
+                "spotify": found["spotify_url"],
+                "preview": found.get("preview_url"),
+                "note": "Opens the song in Spotify. Connect Spotify (Premium) for in-app play/pause control."}
+    links["note"] = "Connect Spotify (Premium) for direct playback; here are search links."
     return links
 
 
@@ -139,6 +151,17 @@ async def play_playlist(args, db, user):
     if not _sp_connected(db, user.id):
         return {"error": "Connect Spotify first to play your playlists."}
     return await _sp_playlist(db, user, name)
+
+
+async def play_apple_music(args, db, user):
+    res = await _itunes_search(args.get("query", ""), 5)
+    if "tracks" not in res:
+        return res  # error/info
+    top = res["tracks"][0]
+    return {"found": f"{top['track']} by {top['artist']}",
+            "preview": top.get("preview_url"),         # 30s clip the UI can play
+            "apple_music": top.get("apple_music_url"),  # opens the full song in Apple Music
+            "more": [f"{t['track']} — {t['artist']}" for t in res["tracks"][1:4]]}
 
 
 async def weather(args, db, user):
@@ -273,6 +296,15 @@ async def open_website(args, db, user):
 
 async def read_webpage(args, db, user):
     return await _fetch_page(args.get("url", ""))
+
+
+async def web_search(args, db, user):
+    q = (args.get("query") or "").strip()
+    if not q:
+        return {"error": "What should I search for?"}
+    src, url = _search_url(q, args.get("source") or "google")
+    return {"source": src, "query": q, "open_url": url,
+            "note": f"Opening {src} search for '{q}'."}
 
 
 async def email_delete(args, db, user):
@@ -431,12 +463,14 @@ TOOLS = {
     "play_music": _t("Play a song on Spotify (or return links). Put the song title in 'query' and the performer in 'artist'. Central admin only (may be unlocked for others by the central admin).", CENTRAL, {"query": {"type": "string"}, "artist": {"type": "string"}}, ["query"], play_music),
     "play_playlist": _t("Play one of the user's Spotify playlists by name (shuffled). Central admin only (may be unlocked for others by the central admin).", CENTRAL, {"name": {"type": "string"}}, ["name"], play_playlist),
     "music_control": _t("Control Spotify playback: pause, resume, next, previous, or volume (volume_percent 0-100). Central admin only (may be unlocked for others by the central admin).", CENTRAL, {"action": {"type": "string"}, "volume_percent": {"type": "integer"}}, ["action"], music_control),
+    "play_apple_music": _t("Find a song on Apple Music / iTunes and return a 30-second preview to play plus a link to open the full song in Apple Music. Use this when the user mentions Apple Music or iTunes, or as a fallback when Spotify isn't connected. Put the song and/or artist in 'query'. Part of the music service (central admin / granted users).", CENTRAL, {"query": {"type": "string"}}, ["query"], play_apple_music),
     "system_control": _t("Control THIS computer: sleep, lock, shutdown, restart, or cancel a pending shutdown. Confirm before shutdown/restart. Admin only.", ADMINS, {"action": {"type": "string", "enum": ["sleep", "lock", "shutdown", "restart", "cancel"]}}, ["action"], system_control),
     "weather": _t("Get current weather; uses the user's saved location if none given. Admin only.", ADMINS, {"location": {"type": "string"}}, [], weather),
     "suggest_events": _t("Suggest real upcoming local events (concerts, sports, theatre, comedy, tech) near the user via Ticketmaster. Covers the West-Texas/region cities within ~600 miles — Lubbock, Dallas, Amarillo, Austin, Houston, Albuquerque, Oklahoma City, Midland; call once per city if needed. Admin only.", ADMINS, {"location": {"type": "string"}, "interests": {"type": "string"}}, [], suggest_events),
     "sports_update": _t("Get recent and upcoming games for an American football (NFL), college football (NCAA), or NBA team. Pass the team name in 'team' (e.g. 'Cowboys', 'Texas Tech', 'Lakers') and optionally 'league' (nfl, college-football, or nba). Defaults to the campus team (Texas Tech) if no team is given. Admin only.", ADMINS, {"team": {"type": "string"}, "league": {"type": "string"}}, [], sports_update),
     "tech_conferences": _t("Look up upcoming technology / engineering conferences (optionally by topic or region). Admin only.", ADMINS, {"query": {"type": "string"}}, [], tech_conferences),
     "ieee_info": _t("Look up IEEE (national association) news, events, conferences, and membership info. Admin only.", ADMINS, {"query": {"type": "string"}}, [], ieee_info),
+    "web_search": _t("Open a search on an external site for a query and return the link. Sources: 'google' (general web), 'wikipedia', 'amazon' (shopping), 'digikey' and 'mouser' (electronic components/parts — ideal for ECE part lookups). Provide 'query' and optional 'source' (defaults google). Central admin / granted users only.", CENTRAL, {"query": {"type": "string"}, "source": {"type": "string"}}, ["query"], web_search),
     "find_course": _t("Look up an offered course section from the campus schedule by course code (e.g. 'ECE 3306'), course number alone ('3312'), title keyword, or instructor — returns room, building, days/times, instructor, prerequisites, permit requirement, campus, and graduate-level flag. Optional 'semester'. Students often use ABBREVIATIONS or nicknames — interpret them and search by the likely FULL TITLE or course number, and try multiple variations before giving up. Examples: 'E1'/'Electronics 1' -> Electronics; 'E2' -> Advanced Electronics; 'Digit' -> Digital Communications; 'Lab 1/2/3' or 'Capstone' -> the project/Capstone labs; 'ECE' = Electrical & Computer Engineering. If one term returns nothing, search a broader keyword (e.g. just 'electronics' or 'lab') and offer the closest matches rather than saying 'not found'.", ALL, {"query": {"type": "string"}, "semester": {"type": "string"}}, ["query"], find_course),
     "find_professor": _t("Look up a professor from the campus directory by name or department — returns their office (building + number), office hours, office-hours policy, and email.", ALL, {"query": {"type": "string"}}, ["query"], find_professor),
     "find_advisor": _t("Look up an academic advisor by name or department — returns their office, schedule, availability, and email. Use for 'who do I talk to' / 'who's my advisor' questions, then point the student to that person (you are not the advisor).", ALL, {"query": {"type": "string"}}, ["query"], find_advisor),

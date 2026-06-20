@@ -61,10 +61,14 @@ export default function WelcomeBriefing() {
     }
     setStatus("playing")
     setText(r.text)
-    // Let the music play on its own for ~3s, then duck it and let Summer speak.
-    fade(audio, 0.3, 800)
+    // Phones mix audio differently and the music drowns Summer out, so duck the
+    // bed much lower on mobile while keeping the (already-fine) desktop level.
+    const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+    const introVol = isMobile ? 0.16 : 0.28
+    const bedVol = isMobile ? 0.03 : 0.12 // volume under Summer's voice
+    fade(audio, introVol, 800)
     await new Promise((res) => setTimeout(res, 3000))
-    fade(audio, 0.12, 600) // quiet bed so the spoken briefing stays clear
+    fade(audio, bedVol, 600)
     await speak(r.text)
     fade(audio, 0, 1400, () => audio.pause())
     setStatus("done")

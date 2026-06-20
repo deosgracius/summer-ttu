@@ -18,7 +18,13 @@ type AnyRec = any
 const SILENT_AUDIO =
   "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA="
 
-const WAKE = /^\s*(ok |okay |hey |hi |yo )?summer[\s,.:!?-]*/i
+// Wake word: "Hey Summer" or just "Summer", matched ANYWHERE in what you say, and
+// tolerant of the common ways browser speech-to-text mishears it (sumer, summers,
+// somer, "a summer", etc.) so it triggers reliably instead of treating you as noise.
+const WAKE = /\b(?:hey\s+|okay\s+|ok\s+|hi\s+|yo\s+|hay\s+|a\s+)?(?:summer|summers|sumer|summa|somers?|sommer)\b/i
+// Only a LEADING wake phrase is stripped from the command (so "summer courses"
+// mid-sentence stays intact).
+const WAKE_LEAD = /^\s*(?:(?:hey|okay|ok|hi|yo|hay)[\s,]+)?(?:summer|summers|sumer|summa|somers?|sommer)\b[\s,.:!?-]*/i
 const ENDRE = /\b(thank you|thanks summer|thank you summer|we'?re done|that'?s all|that'?s it|i'?m done|stop|goodbye|good bye|bye summer|never ?mind)\b/i
 
 // SHARED across every useSpeech instance: the welcome-briefing hook and the chat
@@ -73,6 +79,8 @@ export function useSpeech() {
   const canSpeak = typeof window !== "undefined" && "speechSynthesis" in window
   const [listening, setListening] = useState(false)
   const [wakeActive, setWakeActive] = useState(false)
+  // awake = currently in an active conversation (vs dormant, waiting for "Hey Summer")
+  const [awake, setAwake] = useState(false)
   const [heard, setHeard] = useState("") // live transcript for on-screen feedback
 
   const recRef = useRef<AnyRec | null>(null)
@@ -307,14 +315,22 @@ export function useSpeech() {
       followTimer.current = undefined
     }
   }
+  function goDormant() {
+    vstate.current = "ambient"
+    setAwake(false)
+    clearFollow()
+    setHeard("")
+  }
+  // Enter / extend an active conversation. While active you can just talk; after
+  // 30s of silence the conversation ends and Summer goes dormant (waits for the
+  // wake word again).
   function openWindow() {
     vstate.current = "active"
+    setAwake(true)
     clearFollow()
-    // Short follow-up window — long enough for a natural reply, short enough that
-    // background chatter doesn't get treated as a command in a busy hallway.
     followTimer.current = window.setTimeout(() => {
-      if (micOn.current) vstate.current = "ambient"
-    }, 8000)
+      if (micOn.current) goDormant()
+    }, 30000)
   }
   function afterSpeak() {
     if (micOn.current) openWindow() // keep listening for a follow-up after Summer talks
@@ -336,22 +352,23 @@ export function useSpeech() {
       const hasWake = WAKE.test(raw)
       buffer.current = ""
       setHeard("")
-      // CONVERSATION TRACKER: when idle (ambient), Summer only responds to someone
-      // who addresses her by name ("Hey Summer …"). All other nearby talk — other
-      // students chatting, background noise — is ignored. After she's addressed (or
-      // just replied), a short ACTIVE window lets you follow up without repeating
-      // the wake word; then she goes back to waiting for her name.
-      if (vstate.current !== "active" && !hasWake) return
-      const cmd = raw.replace(WAKE, "").trim()
-      if (cmd.length < 2) {
-        if (hasWake) openWindow() // "Hey Summer" alone → start listening for the request
-        return
+      const cmd = raw.replace(WAKE_LEAD, "").trim()
+      // DORMANT: Summer is waiting and ignores everything until she's addressed by
+      // name ("Hey Summer"). (Tapping the mic also wakes her — see listen().)
+      if (vstate.current !== "active") {
+        if (!hasWake) return
+        openWindow() // "Hey Summer" → start the conversation
+        if (cmd.length < 2) return // just the wake word — wait for the actual request
       }
+      // ACTIVE conversation: you can just talk, no wake word needed per turn.
+      if (cmd.length < 2) return
+      // Closing phrase ("thanks", "that's all", "bye") ends the conversation and
+      // sends Summer back to dormant until the next "Hey Summer".
       if (ENDRE.test(cmd) && cmd.split(/\s+/).length <= 3) {
-        vstate.current = "ambient" // "thanks/done" → stop the follow-up window
+        goDormant()
         return
       }
-      openWindow() // allow a brief hands-free follow-up
+      openWindow() // keep the conversation alive (resets the 30s idle timer)
       onCmd.current(cmd)
     }
     const scheduleFlush = () => {
@@ -427,7 +444,8 @@ export function useSpeech() {
     }
     recRef.current = rec
     micOn.current = true
-    vstate.current = "ambient"
+    vstate.current = "ambient" // start DORMANT — wait for "Hey Summer" to begin
+    setAwake(false)
     try {
       rec.start()
     } catch {
@@ -493,6 +511,12 @@ export function useSpeech() {
       ctx.createMediaStreamSource(stream).connect(analyser)
       const data = new Uint8Array(analyser.frequencyBinCount)
       let spoke = false
+      // Calibrate to the room's background noise for the first few frames, then set
+      // the speech threshold just above it — so normal (even quiet) talking counts
+      // as speech and you don't have to raise your voice.
+      let frames = 0
+      let floorSum = 0
+      let thresh = 6 // sensible default until calibrated
       const tick = () => {
         analyser.getByteTimeDomainData(data)
         let max = 0
@@ -500,14 +524,21 @@ export function useSpeech() {
           const v = Math.abs(data[i] - 128)
           if (v > max) max = v
         }
-        if (max > 8) {
+        frames++
+        if (frames <= 12) {
+          floorSum += max
+          if (frames === 12) thresh = Math.max(3, Math.round(floorSum / 12) + 4)
+          vadRaf.current = requestAnimationFrame(tick)
+          return // don't detect speech while still calibrating
+        }
+        if (max > thresh) {
           spoke = true
           if (silenceTimer.current) {
             clearTimeout(silenceTimer.current)
             silenceTimer.current = undefined
           }
         } else if (spoke && silenceTimer.current === undefined) {
-          silenceTimer.current = window.setTimeout(onSilence, 1400)
+          silenceTimer.current = window.setTimeout(onSilence, 1500)
         }
         vadRaf.current = requestAnimationFrame(tick)
       }
@@ -574,8 +605,10 @@ export function useSpeech() {
       try {
         const text = await transcribeBlob(blob)
         setHeard("")
-        if (text) onText(text)
-        else setHeard("⚠ didn't catch that — try again")
+        if (text) {
+          if (micOn.current) openWindow() // a mic tap starts/continues the conversation
+          onText(text)
+        } else setHeard("⚠ didn't catch that — try again")
       } catch {
         setHeard("⚠ couldn't transcribe — check connection")
       }
@@ -595,6 +628,7 @@ export function useSpeech() {
     canSpeak,
     listening,
     wakeActive,
+    awake,
     heard,
     listen,
     stopListening,

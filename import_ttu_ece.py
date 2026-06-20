@@ -32,6 +32,7 @@ UA = {"User-Agent": "Summer-TTU/1.0 (https://summer-ttu.fly.dev; deosgracius17@g
 BASE = "https://www.depts.ttu.edu"
 FACULTY_URL = BASE + "/ece/faculty/"
 STAFF_URL = BASE + "/ece/staff/"
+RESEARCH_URL = BASE + "/ece/research/"
 SYLLABI_URL = BASE + "/ece/undergrad/syllabi/"
 LAB_PAGES = [
     ("Stockroom Policies", BASE + "/ece/undergrad/labs/stockroom_policies.php"),
@@ -285,6 +286,51 @@ def import_staff(db, client):
 
 
 # --------------------------------------------------------------------------- #
+# 1c. Research areas (descriptions + the faculty working in each)
+# --------------------------------------------------------------------------- #
+def import_research(db, client):
+    html = _get(client, RESEARCH_URL)
+    # Each area links to /ece/research/research_topics/<page>.php — keep order, dedup.
+    pairs = re.findall(
+        r'<a\s+[^>]*href="(/ece/research/research_topics/[^"]+)"[^>]*>(.*?)</a>',
+        html, re.S | re.I)
+    seen, areas = set(), []
+    for href, label in pairs:
+        if href in seen:
+            continue
+        seen.add(href)
+        label = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", label)).strip()
+        areas.append((label, href))
+    print(f"  research areas: {len(areas)}")
+
+    # The body of each sub-page starts right after this breadcrumb tail and ends at
+    # the shared site footer — trim both so only the area's real content is stored.
+    LEAD = "Electrical & Computer Engineering Research "
+    FOOT = ["Electrical & Computer Engineering Follow", "Connect with Electrical & Computer",
+            "Address Texas Tech University, Box 43102", "Texas Tech University 2500 Broadway"]
+    parts = []
+    for label, href in areas:
+        try:
+            text = _visible_text(_get(client, BASE + href))
+            k = text.rfind(LEAD)
+            if k >= 0:
+                text = text[k + len(LEAD):]
+            for f in FOOT:
+                j = text.find(f)
+                if j > 0:
+                    text = text[:j]
+            parts.append(f"== {label} ==\nSource: {BASE + href}\n{text.strip()[:4000]}")
+            print(f"    area: {label} ({len(text)} chars)")
+            time.sleep(0.4)  # be polite to the server
+        except Exception as e:
+            print(f"    ! {label}: fetch failed ({e})")
+    header = ("Texas Tech University, Department of Electrical & Computer Engineering — "
+              "research areas (with descriptions and the faculty working in each):\n")
+    _replace_doc(db, "TTU ECE Research Areas", RESEARCH_URL,
+                 header + "\n\n".join(parts))
+
+
+# --------------------------------------------------------------------------- #
 # 2. Course descriptions
 # --------------------------------------------------------------------------- #
 def import_courses(db, client):
@@ -353,6 +399,9 @@ def main():
             if which in ("all", "staff"):
                 print("Importing staff...")
                 import_staff(db, client)
+            if which in ("all", "research"):
+                print("Importing research areas...")
+                import_research(db, client)
             if which in ("all", "courses"):
                 print("Importing course descriptions...")
                 import_courses(db, client)

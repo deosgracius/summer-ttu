@@ -206,8 +206,11 @@ def best_answer(db, question: str, min_score: int = 1):
             continue
         office = f"{p.office_building} {p.office_number}".strip() or "not listed"
         extra = f", office hours {p.office_hours}" if p.office_hours else ""
-        title = f"{p.title}, " if p.title else ""
-        consider(f"{p.name} {p.title} {p.department} {office} {p.email}",
+        # `title` is added by the faculty-profiles change; tolerate its absence so
+        # this branch works independently of that migration.
+        ptitle = getattr(p, "title", "") or ""
+        title = f"{ptitle}, " if ptitle else ""
+        consider(f"{p.name} {ptitle} {p.department} {office} {p.email}",
                  f"{p.name} — {title}office {office}, email {p.email or 'not listed'}{extra}.")
     for a in db.query(models.Advisor).all():
         if not any(t in a.name.lower() or t in (a.email or "").lower() for t in toks):

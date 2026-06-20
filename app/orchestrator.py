@@ -19,8 +19,8 @@ Design note (SOLID / dependency inversion): the generation step is injected as a
 `generate(question, contexts)` callable, so the graph doesn't depend on a concrete
 LLM. The app passes an LLM-backed generator; tests pass a stub.
 
-Gracefully optional: if `langgraph` isn't installed the same nodes run in a manual
-loop, so the feature degrades instead of breaking.
+The nodes run in a small manual loop (route -> retrieve -> synthesize -> validate),
+with no external graph-engine dependency.
 """
 from typing import TypedDict, Callable
 from . import campus_service, graph_sync, vector_store, docs_rag
@@ -185,36 +185,16 @@ def _run_manual(db, question: str, generate: Callable) -> dict:
     return state
 
 
-def _run_langgraph(db, question: str, generate: Callable) -> dict:
-    from langgraph.graph import StateGraph, END
-    g = StateGraph(OrchState)
-    g.add_node("route", lambda s: route_node(s))
-    g.add_node("retrieve", lambda s: retrieve_node(s, db))
-    g.add_node("synthesize", lambda s: synthesize_node(s, generate))
-    g.add_node("validate", lambda s: validate_node(s))
-    g.set_entry_point("route")
-    g.add_edge("route", "retrieve")
-    g.add_edge("retrieve", "synthesize")
-    g.add_edge("synthesize", "validate")
-    g.add_conditional_edges("validate", should_continue, {"retry": "retrieve", "end": END})
-    final = g.compile().invoke({"question": question, "attempts": 0})
-    final = dict(final)
-    final["engine"] = "langgraph"
-    return final
-
-
 def run_orchestrator(db, question: str, generate: Callable = None) -> dict:
-    """Run the multi-agent pipeline for `question`. Uses LangGraph if installed, else a
-    manual loop. Returns the answer, citations, route taken, attempts, and engine."""
+    """Run the multi-agent pipeline for `question` as a manual loop
+    (route -> retrieve -> synthesize -> validate). Returns the answer, citations,
+    route taken, attempts, and engine."""
     generate = generate or llm_generate
     question = (question or "").strip()
     if not question:
         return {"answer": "", "grounded": False, "citations": [], "route": None,
                 "attempts": 0, "engine": "none"}
-    try:
-        state = _run_langgraph(db, question, generate)
-    except Exception:
-        state = _run_manual(db, question, generate)
+    state = _run_manual(db, question, generate)
     return {"answer": state.get("answer", ""), "grounded": bool(state.get("grounded")),
             "citations": state.get("citations", []), "route": state.get("route"),
             "attempts": state.get("attempts", 0), "engine": state.get("engine", "manual")}

@@ -96,9 +96,12 @@ async def ask(data: Ask, request: Request, db: Session = Depends(get_db)):
     # Don't show a face if the written answer says the person isn't on file — that
     # contradiction (photo of X while text says "no record") is confusing.
     reply_low = (result.get("reply") or "").lower()
+    # Only treat the answer as "person not found" on phrases that can't appear in a
+    # normal found answer — avoid false positives like "office hours not listed".
     not_found = any(s in reply_low for s in (
-        "don't have", "do not have", "no record", "couldn't find", "could not find",
-        "isn't in", "is not in", "not in the", "not listed", "couldn't locate", "no one named"))
+        "no record", "any record of", "couldn't find", "could not find",
+        "couldn't locate", "could not locate", "no one named", "no one by that",
+        "not in our directory", "not in the directory", "isn't in our directory"))
     if card and not not_found:
         result["person"] = card
     return result

@@ -366,6 +366,81 @@ def _person_detail(kind: str, r) -> str:
     return " ".join(parts)
 
 
+def _person_by_email(db, email: str):
+    """Find a person (staff/professor/advisor) by exact email, across tables."""
+    email = (email or "").lower()
+    for cls in ("Staff", "Professor", "Advisor"):
+        m = getattr(models, cls, None)
+        if m is None:
+            continue
+        for r in db.query(m).all():
+            if (getattr(r, "email", "") or "").lower() == email:
+                return r
+    return None
+
+
+# Who to route a student to, by need. Keyed by stable email so office/contact stay
+# current from the directory; only the routing intent lives here. (Admin-provided.)
+_ADVISING = [
+    ("ug_compe", "andrew.vanderpool@ttu.edu", "undergraduate Computer Engineering advising"),
+    ("ug_ee", "jennifer.maddox@ttu.edu", "undergraduate Electrical Engineering advising"),
+    ("grad", "jenny.erdmann@ttu.edu", "graduate (MS/PhD) advising"),
+]
+_STOCKROOM_CONTACT = "richard.woodcock@ttu.edu"
+
+
+def _referral_line(db, email: str, need: str) -> str:
+    r = _person_by_email(db, email)
+    if not r:
+        return ""
+    title = getattr(r, "title", "") or ""
+    office = f"{r.office_building} {r.office_number}".strip()
+    who = r.name + (f", {title}" if title else "")
+    tail = ", ".join(x for x in [f"office {office}" if office else "", getattr(r, "email", "")] if x)
+    return f"For {need}, see {who}" + (f" — {tail}" if tail else "") + "."
+
+
+def advising_referral(db, query: str):
+    """Route common 'who do I talk to' questions to the right advisor/coordinator:
+    undergrad CompE -> Andrew Vanderpool, undergrad EE -> Jennifer Maddox,
+    graduate -> Jennifer Erdmann, stockroom -> Richard Woodcock. Returns None when
+    the question isn't a routing/referral question."""
+    q = (query or "").lower()
+    stock = "stockroom" in q or "stock room" in q
+    if stock and re.search(r"\b(who|whom|contact|talk|speak|help|person|charge|reach|email|ask)\b", q):
+        line = _referral_line(db, _STOCKROOM_CONTACT, "the stockroom and lab support")
+        return (line + " " + WALK_IN) if line else None
+
+    advising = bool(re.search(
+        r"\b(advisor|advising|advise|adviser|degree plan|register|registration|enroll|"
+        r"who do i|who should i|who can i|change my major|add a class|drop a class|"
+        r"graduat\w*|signature|override|permit)\b", q))
+    grad = bool(re.search(r"\b(grad|graduate|master'?s?|phd|ph\.?d|doctoral|thesis|dissertation)\b", q))
+    compe = bool(re.search(r"\b(computer engineering|computer eng|compe|comp e|cpe|cmpe)\b", q))
+    ee = bool(re.search(r"\b(electrical engineering|electrical|ee|e\.e)\b", q))
+
+    # Grad students go to the coordinator for advising regardless of major.
+    if grad and (advising or re.search(r"\b(student|do i|talk|see|contact)\b", q)):
+        line = _referral_line(db, "jenny.erdmann@ttu.edu", "graduate (MS/PhD) advising")
+        return (line + " " + WALK_IN) if line else None
+    if not advising:
+        return None
+    if compe:
+        line = _referral_line(db, "andrew.vanderpool@ttu.edu", "undergraduate Computer Engineering advising")
+        return (line + " " + WALK_IN) if line else None
+    if ee:
+        line = _referral_line(db, "jennifer.maddox@ttu.edu", "undergraduate Electrical Engineering advising")
+        return (line + " " + WALK_IN) if line else None
+    # Generic "who's my advisor" — list all three.
+    lines = ["Here's who to see for ECE advising:"]
+    for _k, email, need in _ADVISING:
+        ln = _referral_line(db, email, need)
+        if ln:
+            lines.append(ln)
+    lines.append(WALK_IN)
+    return "\n".join(lines) if len(lines) > 2 else None
+
+
 def person_answer(db, query: str):
     """Deterministic, speech-robust answer for a 'who/where/office/schedule is X'
     question. Disambiguates when a name matches more than one person. Returns None

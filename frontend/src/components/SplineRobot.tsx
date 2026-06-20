@@ -20,7 +20,7 @@ function ensureViewerLoaded() {
   document.head.appendChild(s)
 }
 
-export default function SplineRobot() {
+export default function SplineRobot({ ambient = false }) {
   const ref = useRef(null)
 
   useEffect(() => {
@@ -33,11 +33,9 @@ export default function SplineRobot() {
   // (inside its shadow DOM). Only movement is forwarded, so clicks/taps still
   // reach the real UI.
   //
-  // When NO real mouse is moving, the robot would have nothing to look at, so it
-  // follows a "digital mouse": a soft glowing dot that wanders the screen on its
-  // own. The moment a real cursor moves, the dot fades out and the robot tracks
-  // the real cursor; once the real mouse has been still for a few seconds, the
-  // dot fades back in and resumes wandering.
+  // The "digital mouse" (a soft glowing dot that wanders the screen when the real
+  // mouse is idle, so the robot has something to follow) is KIOSK-ONLY — enabled
+  // via `ambient`. On the admin dashboard the robot just follows the real cursor.
   useEffect(() => {
     const sv = ref.current
     if (!sv) return
@@ -65,61 +63,66 @@ export default function SplineRobot() {
       } catch { /* ignore */ }
     }
 
-    // The visible "digital mouse".
-    const dot = document.createElement("div")
-    dot.setAttribute("aria-hidden", "true")
-    Object.assign(dot.style, {
-      position: "fixed", left: "0", top: "0", width: "16px", height: "16px",
-      marginLeft: "-8px", marginTop: "-8px", borderRadius: "50%", zIndex: "9998",
-      pointerEvents: "none", opacity: "0", transition: "opacity .55s ease",
-      background: "radial-gradient(circle at 50% 50%, rgba(150,215,255,.95), rgba(120,180,255,.4) 45%, rgba(120,180,255,0) 70%)",
-      boxShadow: "0 0 16px 5px rgba(120,190,255,.45)", willChange: "transform, opacity",
-    })
-    document.body.appendChild(dot)
-
-    const reduce = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)
-    const IDLE_MS = 15000          // 15s without touching the real mouse → digital mouse activates
-    const vw = () => window.innerWidth
-    const vh = () => window.innerHeight
-    let vx = vw() * 0.5, vy = vh() * 0.42       // virtual cursor position
-    let tx = vx, ty = vy                         // current wander target
-    const pickTarget = () => {
-      tx = vw() * (0.12 + Math.random() * 0.76)
-      ty = vh() * (0.16 + Math.random() * 0.60)
-    }
-    pickTarget()
-    let lastReal = -1e9            // far in the past → start in digital mode
+    let lastReal = -1e9            // far in the past → start in digital mode (kiosk)
     let digital = false
     let raf = 0
+    let dot = null
+    let vx = window.innerWidth * 0.5, vy = window.innerHeight * 0.42
+    let tx = vx, ty = vy
 
+    // ALWAYS: relay the REAL cursor so the robot looks where the user's mouse is.
     const onMove = (e) => {
       if (!e.isTrusted) return     // ignore our own synthetic events
       lastReal = performance.now()
-      if (digital) { digital = false; dot.style.opacity = "0" }
+      if (digital && dot) { digital = false; dot.style.opacity = "0" }
       vx = e.clientX; vy = e.clientY  // resume wandering from where the real cursor left
       feed(e.clientX, e.clientY)
     }
     window.addEventListener("pointermove", onMove, { passive: true, capture: true })
 
-    const tick = (now) => {
-      if (!reduce && now - lastReal > IDLE_MS) {
-        if (!digital) { digital = true; dot.style.opacity = "1"; pickTarget() }
-        vx += (tx - vx) * 0.022     // ease toward the target for calm, organic drift
-        vy += (ty - vy) * 0.022
-        if (Math.hypot(tx - vx, ty - vy) < 26) pickTarget()
-        dot.style.transform = `translate(${vx}px, ${vy}px)`
-        feed(vx, vy)
+    // KIOSK ONLY: the wandering "digital mouse" when the real mouse is idle.
+    if (ambient) {
+      dot = document.createElement("div")
+      dot.setAttribute("aria-hidden", "true")
+      Object.assign(dot.style, {
+        position: "fixed", left: "0", top: "0", width: "16px", height: "16px",
+        marginLeft: "-8px", marginTop: "-8px", borderRadius: "50%", zIndex: "9998",
+        pointerEvents: "none", opacity: "0", transition: "opacity .55s ease",
+        background: "radial-gradient(circle at 50% 50%, rgba(150,215,255,.95), rgba(120,180,255,.4) 45%, rgba(120,180,255,0) 70%)",
+        boxShadow: "0 0 16px 5px rgba(120,190,255,.45)", willChange: "transform, opacity",
+      })
+      document.body.appendChild(dot)
+
+      const reduce = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)
+      const IDLE_MS = 15000        // 15s without touching the real mouse → digital mouse activates
+      const vw = () => window.innerWidth
+      const vh = () => window.innerHeight
+      const pickTarget = () => {
+        tx = vw() * (0.12 + Math.random() * 0.76)
+        ty = vh() * (0.16 + Math.random() * 0.60)
+      }
+      pickTarget()
+
+      const tick = (now) => {
+        if (!reduce && now - lastReal > IDLE_MS) {
+          if (!digital) { digital = true; dot.style.opacity = "1"; pickTarget() }
+          vx += (tx - vx) * 0.022   // ease toward the target for calm, organic drift
+          vy += (ty - vy) * 0.022
+          if (Math.hypot(tx - vx, ty - vy) < 26) pickTarget()
+          dot.style.transform = `translate(${vx}px, ${vy}px)`
+          feed(vx, vy)
+        }
+        raf = requestAnimationFrame(tick)
       }
       raf = requestAnimationFrame(tick)
     }
-    raf = requestAnimationFrame(tick)
 
     return () => {
       window.removeEventListener("pointermove", onMove, { capture: true })
-      cancelAnimationFrame(raf)
-      dot.remove()
+      if (raf) cancelAnimationFrame(raf)
+      if (dot) dot.remove()
     }
-  }, [])
+  }, [ambient])
 
   return (
     <>

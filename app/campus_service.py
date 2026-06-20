@@ -4,7 +4,23 @@ Everything here is a plain DB read scoped to what the admin imported — no advi
 no invention. If nothing matches, the tools say so and suggest who to contact.
 """
 import re
+import difflib
 from . import models
+
+# Every ECE office runs walk-in: if the door is open, first come, first served.
+WALK_IN = "These offices are walk-in — if the door is open, it's first come, first served."
+DIRECTORY_URL = "https://www.depts.ttu.edu/ece/"
+# Title prefixes/suffixes and honorifics that aren't part of a person's real name.
+_NAME_NOISE = {"dr", "mr", "ms", "mrs", "prof", "professor", "doctor", "jr", "sr",
+               "phd", "pe", "ii", "iii", "iv"}
+# Generic words around a person query ("andrew's OFFICE", "li's SCHEDULE") — strip
+# them so only the actual name is matched.
+_PERSON_QUERY_NOISE = {
+    "office", "schedule", "availability", "available", "hours", "hour", "email",
+    "phone", "room", "when", "where", "located", "location", "contact", "number",
+    "tell", "know", "more", "detail", "details", "info", "information", "reach",
+    "find", "looking", "talk", "meet", "see", "who", "whos", "about", "have",
+    "research", "teach", "teaches", "teaching", "class", "advisor", "staff"}
 
 _LIMIT = 15
 
@@ -266,6 +282,112 @@ def best_answer(db, question: str, min_score: int = 1):
                  f"{s.name} — {s.location}, hours {s.hours_text or 'not listed'}.{pol}")
 
     return best[1] if best[0] >= min_score else None
+
+
+def find_people_fuzzy(db, query: str, threshold: float = 0.82, limit: int = 5):
+    """Speech-robust people lookup. Tolerant of imperfect spelling/pronunciation
+    (e.g. 'vander pool' -> Vanderpool, 'changi lee' -> Changzhi Li) and a single
+    first OR last name. Returns [(kind, row, score)] best-first. Pure stdlib."""
+    qtoks = [t for t in re.findall(r"[a-z]+", (query or "").lower())
+             if len(t) >= 2 and t not in _STOP_TOKENS and t not in _NAME_NOISE
+             and t not in _PERSON_QUERY_NOISE]
+    if not qtoks:
+        return []
+    qjoin = "".join(qtoks)
+
+    def score(name: str, email: str) -> float:
+        # Drop title prefixes/suffixes and lone initials ("Dr.", "P.") so they don't
+        # cause spurious substring hits ("dr" is inside "andrew", "p" inside "pool").
+        ntoks = [t for t in re.findall(r"[a-z]+", (name or "").lower())
+                 if len(t) >= 2 and t not in _NAME_NOISE]
+        if not ntoks:
+            return 0.0
+        njoin = "".join(ntoks)
+        # Average each query token's best match — so matching the WHOLE name
+        # ("jennifer maddox") beats matching just a shared first name ("jennifer").
+        per = []
+        for qt in qtoks:
+            b = 0.0
+            for nt in ntoks:
+                if qt == nt:
+                    b = max(b, 1.0)
+                elif min(len(qt), len(nt)) >= 3 and (qt in nt or nt in qt):
+                    b = max(b, 0.93)
+                else:
+                    b = max(b, difflib.SequenceMatcher(None, qt, nt).ratio())
+            per.append(b)
+        tok_score = sum(per) / len(per)
+        whole = difflib.SequenceMatcher(None, qjoin, njoin).ratio()
+        if len(qjoin) >= 3 and qjoin in njoin:
+            whole = max(whole, 0.95)
+        elocal = "".join(re.findall(r"[a-z]+", (email or "").lower()))
+        if len(qjoin) >= 4 and elocal and qjoin in elocal:
+            whole = max(whole, 0.95)
+        return max(tok_score, whole)
+
+    out = []
+    for cls, kind in (("Professor", "professor"), ("Staff", "staff"), ("Advisor", "advisor")):
+        m = getattr(models, cls, None)
+        if m is None:
+            continue
+        for r in db.query(m).all():
+            sc = score(r.name, getattr(r, "email", ""))
+            if sc >= threshold:
+                out.append((kind, r, sc))
+    out.sort(key=lambda x: -x[2])
+    return out[:limit]
+
+
+def _person_detail(kind: str, r) -> str:
+    """Full public detail for one person + the walk-in policy + where to learn more."""
+    title = getattr(r, "title", "") or ("Academic Advisor" if kind == "advisor" else "")
+    head = r.name + (f" — {title}" if title else "")
+    facts = []
+    office = f"{r.office_building} {r.office_number}".strip()
+    if office:
+        facts.append(f"office {office}")
+    if getattr(r, "email", ""):
+        facts.append(r.email)
+    if getattr(r, "phone", ""):
+        facts.append(r.phone)
+    parts = [head + ((": " + ", ".join(facts) + ".") if facts else ".")]
+    hrs = getattr(r, "office_hours", "") or getattr(r, "schedule", "")
+    if hrs:
+        facts_hrs = f"Hours: {hrs}."
+        if getattr(r, "office_hours_policy", ""):
+            facts_hrs = f"Hours: {hrs} ({r.office_hours_policy})."
+        parts.append(facts_hrs)
+    if getattr(r, "availability", ""):
+        parts.append(f"Availability: {r.availability}.")
+    if getattr(r, "bio", ""):
+        parts.append(getattr(r, "bio"))
+    parts.append(WALK_IN)
+    parts.append(f"For more, see the TTU ECE directory: {DIRECTORY_URL}")
+    return " ".join(parts)
+
+
+def person_answer(db, query: str):
+    """Deterministic, speech-robust answer for a 'who/where/office/schedule is X'
+    question. Disambiguates when a name matches more than one person. Returns None
+    when the query isn't clearly about a person (so courses/buildings fall through)."""
+    matches = find_people_fuzzy(db, query)
+    if not matches:
+        return None
+    top = matches[0][2]
+    # distinct people whose score is within a hair of the best
+    seen = {}
+    for kind, r, sc in matches:
+        if sc >= top - 0.04:
+            seen.setdefault(r.name, (kind, r))
+    if len(seen) > 1:
+        lines = ["A few people match that name — which one did you mean?"]
+        for kind, r in list(seen.values())[:4]:
+            t = getattr(r, "title", "") or kind
+            office = f"{r.office_building} {r.office_number}".strip()
+            lines.append(f"{r.name} ({t})" + (f", office {office}" if office else ""))
+        return "\n".join(lines)
+    kind, r, _ = matches[0]
+    return _person_detail(kind, r)
 
 
 # Phrases that need the model's reasoning/judgement, semantic search, abbreviation

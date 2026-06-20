@@ -48,44 +48,31 @@ class Ask(BaseModel):
     question: str = ""
 
 
-# Title words that aren't part of a person's actual name, so they don't get
-# treated as a name token to match against the question.
-_NAME_NOISE = {"dr", "mr", "ms", "mrs", "prof", "professor", "the", "jr", "sr", "phd"}
-
-
 def _person_card(db, question: str):
-    """If the question names exactly ONE professor/staff/advisor who has a headshot
-    on file, return a small card {name, title, office, email, photo} so the kiosk
-    can show their picture next to the answer. Read-only; fires only on a clear
-    single-name match WITH a photo, so it never guesses a face."""
-    q = (question or "").lower()
-    if not q:
-        return None
-    found = {}
-
-    def scan(rows, default_title):
-        for r in rows:
-            photo = getattr(r, "photo_url", "") or ""
-            if not photo:
-                continue
-            parts = [p for p in re.split(r"[^a-z]+", (r.name or "").lower())
-                     if len(p) >= 3 and p not in _NAME_NOISE]
-            if any(re.search(r"\b" + re.escape(p) + r"\b", q) for p in parts):
-                office = f"{getattr(r, 'office_building', '')} {getattr(r, 'office_number', '')}".strip()
-                found[r.name] = {
-                    "name": r.name, "title": (getattr(r, "title", "") or default_title),
-                    "office": office, "email": getattr(r, "email", "") or "", "photo": photo,
-                }
-
+    """If the question resolves to exactly ONE professor/staff/advisor (speech-robust
+    fuzzy match) who has a headshot on file, return a small card for the kiosk to show
+    their picture. No card when the name is ambiguous (e.g. two Jennifers) or has no
+    photo — so the picture never contradicts or guesses."""
     try:
-        scan(db.query(models.Professor).all(), "")
-        if hasattr(models, "Staff"):
-            scan(db.query(models.Staff).all(), "Staff")
-        scan(db.query(models.Advisor).all(), "Academic Advisor")
+        matches = campus_service.find_people_fuzzy(db, question)
     except Exception:
         return None
-    # Only show a face when the question points at exactly one person.
-    return next(iter(found.values())) if len(found) == 1 else None
+    if not matches:
+        return None
+    top = matches[0][2]
+    distinct = {}
+    for _kind, r, sc in matches:
+        if sc >= top - 0.04:
+            distinct.setdefault(r.name, r)
+    if len(distinct) != 1:
+        return None  # ambiguous → no face
+    r = matches[0][1]
+    photo = getattr(r, "photo_url", "") or ""
+    if not photo:
+        return None
+    office = f"{getattr(r, 'office_building', '')} {getattr(r, 'office_number', '')}".strip()
+    return {"name": r.name, "title": getattr(r, "title", "") or "",
+            "office": office, "email": getattr(r, "email", "") or "", "photo": photo}
 
 
 @router.post("/ask")

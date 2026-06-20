@@ -9,6 +9,7 @@ import DraftsPanel from "@/components/panels/DraftsPanel"
 import CampusPanel from "@/components/panels/CampusPanel"
 import PeoplePanel from "@/components/panels/PeoplePanel"
 import UserAccessPanel from "@/components/panels/UserAccessPanel"
+import DelegationPanel from "@/components/panels/DelegationPanel"
 import ApprovalsPanel from "@/components/panels/ApprovalsPanel"
 import SecurityPanel from "@/components/panels/SecurityPanel"
 import VoiceSettingsPanel from "@/components/panels/VoiceSettingsPanel"
@@ -63,6 +64,8 @@ export default function DashboardPage() {
         <PeoplePanel reloadKey={reloadKey} />
 
         <UserAccessPanel reloadKey={reloadKey} />
+
+        <DelegationPanel />
 
         <SecurityPanel reloadKey={reloadKey} />
 

@@ -32,12 +32,20 @@ def register(data: schemas.UserCreate, request: Request, db: Session = Depends(g
     # /admin/assign-role — you can never self-promote. This is what makes
     # "nothing changes without the central admin's approval" enforceable.
     role = "customer"
+    # The very first account ever created bootstraps the system and is auto-approved;
+    # every later public sign-up is held until a central admin approves it.
+    first_user = db.query(models.User).count() == 0
     user = models.User(email=data.email, password_hash=auth.hash_password(data.password),
-                       role=role, timezone=data.timezone or "UTC", location=data.location or "")
+                       role=role, timezone=data.timezone or "UTC", location=data.location or "",
+                       approved=first_user)
     if getattr(data, "profile", None):
         user.profile_json = json.dumps(data.profile)
     db.add(user); db.commit(); db.refresh(user)
     return _out(user)
+
+
+# Message shown when an account exists but hasn't been approved yet.
+PENDING_MSG = "Your account is awaiting administrator approval. You'll be able to sign in once it's approved."
 
 
 @router.post("/login")
@@ -46,6 +54,8 @@ def login(request: Request, form: OAuth2PasswordRequestForm = Depends(), db: Ses
     user = db.query(models.User).filter(models.User.email == form.username).first()
     if not user or not auth.verify_password(form.password, user.password_hash):
         raise HTTPException(401, "Incorrect email or password")
+    if not getattr(user, "approved", True):
+        raise HTTPException(403, PENDING_MSG)
     # If MFA is enabled, the password alone is NOT enough — a second factor is
     # required at /auth/login/mfa. A stolen password gets nowhere on its own.
     from .. import security
@@ -70,6 +80,8 @@ def login_mfa(data: MfaLogin, request: Request, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.email == data.email).first()
     if not user or not auth.verify_password(data.password, user.password_hash):
         raise HTTPException(401, "Incorrect email or password")
+    if not getattr(user, "approved", True):
+        raise HTTPException(403, PENDING_MSG)
     sec = security.get_security(db, user)
     if sec and sec.totp_enabled and not security.verify_factor(db, user, data.code):
         raise HTTPException(401, "Invalid verification code")
@@ -94,6 +106,8 @@ def login_passkey(data: PasskeyLogin, request: Request, db: Session = Depends(ge
     user = db.query(models.User).filter(models.User.email == data.email).first()
     if not user or not auth.verify_password(data.password, user.password_hash):
         raise HTTPException(401, "Incorrect email or password")
+    if not getattr(user, "approved", True):
+        raise HTTPException(403, PENDING_MSG)
     webauthn_svc.auth_verify(db, user, data.credential)  # raises on failure; marks step-up
     return schemas.Token(access_token=auth.create_token(user.id))
 

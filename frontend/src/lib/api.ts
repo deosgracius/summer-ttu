@@ -137,6 +137,7 @@ export interface AdminUser {
   id: number
   email: string
   role: Role
+  approved?: boolean
 }
 export interface Task {
   id: number

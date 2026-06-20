@@ -14,6 +14,9 @@ class User(Base):
     profile_json = Column(String, default='{}')
     language = Column(String, nullable=False, default="English")
     timezone = Column(String, nullable=False, default="")
+    # New public sign-ups start unapproved; a central admin must approve before they
+    # can log in. Existing rows + admin-created accounts default to approved.
+    approved = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, server_default=func.now())
     tasks = relationship("Task", back_populates="owner", cascade="all, delete-orphan")
 

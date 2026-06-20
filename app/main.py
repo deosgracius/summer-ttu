@@ -23,6 +23,9 @@ def _migrate():
             conn.execute(text("ALTER TABLE users ADD COLUMN location VARCHAR NOT NULL DEFAULT ''"))
         if "profile_json" not in cols:
             conn.execute(text("ALTER TABLE users ADD COLUMN profile_json VARCHAR DEFAULT '{}'"))
+        if "approved" not in cols:
+            # Existing users are grandfathered in as approved; only new sign-ups pend.
+            conn.execute(text("ALTER TABLE users ADD COLUMN approved BOOLEAN NOT NULL DEFAULT TRUE"))
         ecols = [c["name"] for c in inspect(engine).get_columns("events")]
         for col, ddl in [("owner_id","INTEGER"),("status","VARCHAR NOT NULL DEFAULT 'approved'"),
                          ("location","VARCHAR"),("speaker","VARCHAR"),("image_url","VARCHAR"),("description","VARCHAR"),("layout","VARCHAR NOT NULL DEFAULT 'theater'")]:

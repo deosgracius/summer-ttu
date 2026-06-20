@@ -8,9 +8,18 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import CampusSearch from "@/components/CampusSearch"
 
+interface Person {
+  name: string
+  title?: string
+  office?: string
+  email?: string
+  photo?: string
+}
+
 interface Turn {
   q: string
   a: string
+  person?: Person
 }
 
 const EXAMPLES = [
@@ -71,9 +80,9 @@ export default function KioskPage() {
     setLoading(true)
     resetIdle()
     try {
-      const res = await api.post<{ reply: string }>("/kiosk/ask", { question: text })
+      const res = await api.post<{ reply: string; person?: Person }>("/kiosk/ask", { question: text })
       const reply = res.reply || "(no answer)"
-      setTurns((t) => [...t, { q: text, a: reply }])
+      setTurns((t) => [...t, { q: text, a: reply, person: res.person }])
       if (!muted) speak(reply) // read the answer aloud for the hallway
     } catch {
       setTurns((t) => [...t, { q: text, a: "Sorry — I couldn't reach the system. Please try again." }])
@@ -116,8 +125,31 @@ export default function KioskPage() {
                   {t.q}
                 </span>
               </div>
-              <div className="rounded-2xl border bg-muted/40 px-4 py-3 text-sm whitespace-pre-wrap leading-relaxed">
-                {t.a}
+              <div className="rounded-2xl border bg-muted/40 px-4 py-3 text-sm leading-relaxed">
+                {t.person?.photo && /^https?:\/\//.test(t.person.photo) && (
+                  <div className="flex items-center gap-3 mb-3 pb-3 border-b text-left">
+                    <img
+                      src={t.person.photo}
+                      alt={t.person.name}
+                      loading="lazy"
+                      className="size-16 rounded-xl object-cover shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <div className="font-semibold">{t.person.name}</div>
+                      {t.person.title && (
+                        <div className="text-xs text-muted-foreground">{t.person.title}</div>
+                      )}
+                      {(t.person.office || t.person.email) && (
+                        <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                          {[t.person.office && `Office ${t.person.office}`, t.person.email]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <div className="whitespace-pre-wrap">{t.a}</div>
               </div>
             </div>
           ))}

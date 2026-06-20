@@ -11,9 +11,10 @@ from collections import defaultdict
 from fastapi import APIRouter, Depends, HTTPException, Response, Request, UploadFile, File
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+import re
 from ..database import get_db
 from ..agent import run_kiosk_agent
-from .. import voice, appsettings, campus_service
+from .. import voice, appsettings, campus_service, models
 
 router = APIRouter(prefix="/kiosk", tags=["kiosk"])
 
@@ -47,10 +48,54 @@ class Ask(BaseModel):
     question: str = ""
 
 
+# Title words that aren't part of a person's actual name, so they don't get
+# treated as a name token to match against the question.
+_NAME_NOISE = {"dr", "mr", "ms", "mrs", "prof", "professor", "the", "jr", "sr", "phd"}
+
+
+def _person_card(db, question: str):
+    """If the question names exactly ONE professor/staff/advisor who has a headshot
+    on file, return a small card {name, title, office, email, photo} so the kiosk
+    can show their picture next to the answer. Read-only; fires only on a clear
+    single-name match WITH a photo, so it never guesses a face."""
+    q = (question or "").lower()
+    if not q:
+        return None
+    found = {}
+
+    def scan(rows, default_title):
+        for r in rows:
+            photo = getattr(r, "photo_url", "") or ""
+            if not photo:
+                continue
+            parts = [p for p in re.split(r"[^a-z]+", (r.name or "").lower())
+                     if len(p) >= 3 and p not in _NAME_NOISE]
+            if any(re.search(r"\b" + re.escape(p) + r"\b", q) for p in parts):
+                office = f"{getattr(r, 'office_building', '')} {getattr(r, 'office_number', '')}".strip()
+                found[r.name] = {
+                    "name": r.name, "title": (getattr(r, "title", "") or default_title),
+                    "office": office, "email": getattr(r, "email", "") or "", "photo": photo,
+                }
+
+    try:
+        scan(db.query(models.Professor).all(), "")
+        if hasattr(models, "Staff"):
+            scan(db.query(models.Staff).all(), "Staff")
+        scan(db.query(models.Advisor).all(), "Academic Advisor")
+    except Exception:
+        return None
+    # Only show a face when the question points at exactly one person.
+    return next(iter(found.values())) if len(found) == 1 else None
+
+
 @router.post("/ask")
 async def ask(data: Ask, request: Request, db: Session = Depends(get_db)):
     _rate_limit(request, "ask", ASK_MAX)
-    return await run_kiosk_agent(data.question, db)
+    result = await run_kiosk_agent(data.question, db)
+    card = _person_card(db, data.question)
+    if card:
+        result["person"] = card
+    return result
 
 
 @router.get("/search")

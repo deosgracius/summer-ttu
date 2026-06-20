@@ -160,20 +160,39 @@ def search_all(db, q: str, kind: str = "all"):
 _CODE_RE = re.compile(r"^\s*([a-z]{2,4})\s*(\d{4})\s*$", re.I)
 
 
+_NAME_STOP = re.compile(
+    r"\b(professor|prof|dr|doctor|office|hours?|where(?:'?s| is)?|who(?:'?s| is)?|"
+    r"the|a|an|find|for|is|are|me|email|of|contact)\b", re.I)
+
+
 def fast_answer(db, question: str):
-    """Hybrid fast path: if the question is essentially a bare course code
-    (e.g. 'ECE 3306'), answer straight from the DB with no LLM call. Returns a
-    short text answer, or None to fall through to the model."""
+    """Hybrid fast path: answer an exact course-code OR an exact professor/advisor
+    name straight from the DB with no LLM call. Returns a short text answer, or
+    None to fall through to the model for anything fuzzier."""
     qt = (question or "").strip().rstrip("?.! ")
+
+    # 1) Exact course code, e.g. "ECE 3306".
     m = _CODE_RE.match(qt)
-    if not m:
+    if m:
+        code = f"{m.group(1).upper()} {m.group(2)}"
+        exact = [c for c in find_courses(db, code) if c["course"].upper() == code]
+        if exact:
+            lines = [f"{code} — {exact[0]['title']}:"]
+            for c in exact[:4]:
+                where = f"{c['building']} {c['room']}".strip()
+                lines.append(f"- Section {c['section']}: {c['days']} {c['times']}, {where}, with {c['instructor']}.")
+            return "\n".join(lines)
         return None
-    code = f"{m.group(1).upper()} {m.group(2)}"
-    exact = [c for c in find_courses(db, code) if c["course"].upper() == code]
-    if not exact:
-        return None
-    lines = [f"{code} — {exact[0]['title']}:"]
-    for c in exact[:4]:
-        where = f"{c['building']} {c['room']}".strip()
-        lines.append(f"- Section {c['section']}: {c['days']} {c['times']}, {where}, with {c['instructor']}.")
-    return "\n".join(lines)
+
+    # 2) A short name-like query that matches exactly ONE professor or advisor.
+    name = _NAME_STOP.sub(" ", qt).strip()
+    name = re.sub(r"\s+", " ", name)
+    if name and 1 <= len(name.split()) <= 3 and len(name) >= 3:
+        people = find_professors(db, name) + find_advisors(db, name)
+        if len(people) == 1:
+            p = people[0]
+            hours = p.get("office_hours") or p.get("schedule") or p.get("availability") or "not listed"
+            return (f"{p['name']} ({p.get('department', '')}): "
+                    f"office {p.get('office') or 'not listed'}, "
+                    f"hours {hours}, email {p.get('email') or 'not listed'}.")
+    return None

@@ -379,9 +379,14 @@ export function useSpeech() {
       // DORMANT: ignore everything until the wake word ("Hey Summer" / "Summer").
       // Once it's heard, engage and answer the rest of what was said (if anything).
       if (!engaged.current) {
-        if (!WAKE.test(raw)) return
+        // Engage on the wake word OR on a real, directed question (3+ words). Brief
+        // noise/fragments stay ignored so the kiosk is quiet between conversations,
+        // but you're never locked out by an unreliable "Summer" mishear.
+        const hasWake = WAKE.test(raw)
+        const isQuestion = raw.split(/\s+/).length >= 3 && !ENDRE.test(raw)
+        if (!hasWake && !isQuestion) return
         engage()
-        const after = raw.replace(WAKE_LEAD, "").trim()
+        const after = (hasWake ? raw.replace(WAKE_LEAD, "") : raw).trim()
         // "Hey Summer" on its own just wakes her — wait for the actual question.
         if (after.length < 2 || (ENDRE.test(after) && after.split(/\s+/).length <= 4)) return
         resetConvoTimer()
@@ -476,9 +481,13 @@ export function useSpeech() {
     }
     recRef.current = rec
     micOn.current = true
-    engaged.current = false // start DORMANT — wait for "Hey Summer" / "Summer" to engage
-    vstate.current = "ambient"
-    setAwake(false)
+    // Start RESPONSIVE so the mic works the instant someone speaks — no wake word
+    // needed for the first turn. It only drops to dormant after an end phrase or 8s
+    // of silence, and re-engages easily (wake word OR a real question) from there.
+    engaged.current = true
+    vstate.current = "active"
+    setAwake(true)
+    resetConvoTimer()
     try {
       rec.start()
     } catch {

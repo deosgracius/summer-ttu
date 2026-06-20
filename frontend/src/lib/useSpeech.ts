@@ -18,7 +18,13 @@ type AnyRec = any
 const SILENT_AUDIO =
   "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA="
 
-const WAKE = /^\s*(ok |okay |hey |hi |yo )?summer[\s,.:!?-]*/i
+// Wake word: "Hey Summer" or just "Summer", matched ANYWHERE in what you say, and
+// tolerant of the common ways browser speech-to-text mishears it (sumer, summers,
+// somer, "a summer", etc.) so it triggers reliably instead of treating you as noise.
+const WAKE = /\b(?:hey\s+|okay\s+|ok\s+|hi\s+|yo\s+|hay\s+|a\s+)?(?:summer|summers|sumer|summa|somers?|sommer)\b/i
+// Only a LEADING wake phrase is stripped from the command (so "summer courses"
+// mid-sentence stays intact).
+const WAKE_LEAD = /^\s*(?:(?:hey|okay|ok|hi|yo|hay)[\s,]+)?(?:summer|summers|sumer|summa|somers?|sommer)\b[\s,.:!?-]*/i
 const ENDRE = /\b(thank you|thanks summer|thank you summer|we'?re done|that'?s all|that'?s it|i'?m done|stop|goodbye|good bye|bye summer|never ?mind)\b/i
 
 // SHARED across every useSpeech instance: the welcome-briefing hook and the chat
@@ -346,7 +352,7 @@ export function useSpeech() {
       const hasWake = WAKE.test(raw)
       buffer.current = ""
       setHeard("")
-      const cmd = raw.replace(WAKE, "").trim()
+      const cmd = raw.replace(WAKE_LEAD, "").trim()
       // DORMANT: Summer is waiting and ignores everything until she's addressed by
       // name ("Hey Summer"). (Tapping the mic also wakes her — see listen().)
       if (vstate.current !== "active") {

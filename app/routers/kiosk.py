@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from ..database import get_db
 from ..agent import run_kiosk_agent
-from .. import voice, appsettings
+from .. import voice, appsettings, campus_service
 
 router = APIRouter(prefix="/kiosk", tags=["kiosk"])
 
@@ -51,6 +51,14 @@ class Ask(BaseModel):
 async def ask(data: Ask, request: Request, db: Session = Depends(get_db)):
     _rate_limit(request, "ask", ASK_MAX)
     return await run_kiosk_agent(data.question, db)
+
+
+@router.get("/search")
+def kiosk_search(request: Request, q: str = "", kind: str = "all", db: Session = Depends(get_db)):
+    """Plain deterministic search over the campus data — no LLM, instant, free.
+    Powers the search box. Generous limit since it's just a DB query."""
+    _rate_limit(request, "search", ASK_MAX * 6)
+    return campus_service.search_all(db, q, kind)
 
 
 @router.post("/stt")

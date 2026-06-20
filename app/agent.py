@@ -220,6 +220,13 @@ async def run_kiosk_traced(goal, db, provider=None):
     if not goal:
         return {"reply": "Ask me about a class, professor, office hours, a room, or the stockroom!",
                 "actions": [], "latency_ms": 0.0}
+    # HYBRID FAST PATH: an exact course-code lookup is answered straight from the
+    # database — no LLM call, instant, and free. Anything fuzzier falls through to
+    # the model below.
+    from . import campus_service
+    quick = campus_service.fast_answer(db, goal)
+    if quick:
+        return {"reply": quick, "actions": [], "latency_ms": 0.0}
     provider = (provider or os.getenv("LLM_PROVIDER", "anthropic")).lower()
     # Kiosk answers are quick lookups — use the FAST model for snappy replies,
     # regardless of the (possibly slower) dashboard model in LLM_MODEL.

@@ -6,6 +6,7 @@ import SplineRobot from "@/components/SplineRobot"
 import SpaceBackground from "@/components/SpaceBackground"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import CampusSearch from "@/components/CampusSearch"
 
 interface Turn {
   q: string
@@ -162,6 +163,16 @@ export default function KioskPage() {
             Ask
           </Button>
         </div>
+
+        {/* Plain instant search — no AI, no waiting, no cost. */}
+        <details className="mt-2">
+          <summary className="cursor-pointer text-sm text-primary/80">
+            Or search directly — instant, no waiting
+          </summary>
+          <div className="mt-3 flex justify-center">
+            <CampusSearch />
+          </div>
+        </details>
         <div className="flex items-center justify-between text-xs text-muted-foreground pt-2">
           <span>I'm an information kiosk — not an academic advisor.</span>
           <div className="flex gap-3">

@@ -369,6 +369,11 @@ export function useSpeech() {
     rec.interimResults = true // live feedback so the user can see it's hearing them
     rec.maxAlternatives = 1
     rec.continuous = true
+    // Track transient "network" errors from the browser's Web Speech service (it
+    // streams to Google's servers, which can fail even when the real internet is
+    // fine). We retry quietly and only hint at the mic button if it keeps failing.
+    let netFails = 0
+    let lastErr = ""
     // Send the full accumulated utterance once you've paused (good rhythm:
     // wait until you actually stop, then reply to everything).
     const flush = () => {
@@ -418,6 +423,7 @@ export function useSpeech() {
       }
       const live = (final || interim).trim()
       if (!live) return
+      netFails = 0; lastErr = ""  // recognition is working again — clear network backoff
       if (recording.current) return // tap-to-talk (Whisper) is capturing — don't double-handle
       if (isEcho(live)) return // ignore Summer's own voice (echo)
 
@@ -444,19 +450,30 @@ export function useSpeech() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     rec.onerror = (e: any) => {
       const err = e?.error || "error"
+      lastErr = err
       if (err === "no-speech" || err === "aborted") return
+      // 'network' = the browser's Web Speech service (Google's servers) couldn't be
+      // reached — NOT the user's connection. It auto-retries; only after several
+      // consecutive failures do we hint that the wake word isn't available here and
+      // the mic button (server-side Whisper) still works.
+      if (err === "network") {
+        netFails++
+        if (netFails >= 3) setHeard("⚠ Voice wake-word isn't available in this browser — tap the mic 🎤 to talk")
+        return
+      }
       const msg: Record<string, string> = {
         "not-allowed": "microphone blocked — allow it in the address bar 🔒",
         "service-not-allowed": "microphone blocked — allow it in the address bar 🔒",
         "audio-capture": "no microphone found",
-        network: "speech service unreachable — check your connection",
       }
       setHeard("⚠ " + (msg[err] || err))
     }
     rec.onend = () => {
       // Only the CURRENT recognizer restarts itself — prevents the StrictMode
-      // double-mount from leaving two recognizers fighting each other.
+      // double-mount from leaving two recognizers fighting each other. Back off
+      // longer after a network error so we don't hammer the failing speech service.
       if (micOn.current && recRef.current === rec) {
+        const delay = lastErr === "network" ? Math.min(1000 * netFails, 8000) : 300
         window.setTimeout(() => {
           if (micOn.current && recRef.current === rec) {
             try {
@@ -465,7 +482,7 @@ export function useSpeech() {
               /* already started */
             }
           }
-        }, 300)
+        }, delay)
       }
     }
     // Kill any previous recognizer before taking over.

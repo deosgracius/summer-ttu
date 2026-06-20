@@ -338,8 +338,10 @@ def find_people_fuzzy(db, query: str, threshold: float = 0.82, limit: int = 5):
     return out[:limit]
 
 
-def _person_detail(kind: str, r) -> str:
-    """Full public detail for one person + the walk-in policy + where to learn more."""
+def _person_detail(db, kind: str, r) -> str:
+    """Full public detail for one person + the walk-in policy + where to learn more.
+    Hours/availability come from the admin-entered Person profile (editable in the
+    People panel) when set, so "Jennifer's schedule" returns real hours once entered."""
     title = getattr(r, "title", "") or ("Academic Advisor" if kind == "advisor" else "")
     head = r.name + (f" — {title}" if title else "")
     facts = []
@@ -351,16 +353,19 @@ def _person_detail(kind: str, r) -> str:
     if getattr(r, "phone", ""):
         facts.append(r.phone)
     parts = [head + ((": " + ", ".join(facts) + ".") if facts else ".")]
-    hrs = getattr(r, "office_hours", "") or getattr(r, "schedule", "")
+    # Prefer admin-entered hours/availability/bio from the unified Person profile.
+    p = db.query(models.Person).filter(models.Person.name == r.name).first() if hasattr(models, "Person") else None
+    hrs = ((getattr(p, "office_hours", "") or getattr(p, "schedule", "")) if p else "") \
+        or getattr(r, "office_hours", "") or getattr(r, "schedule", "")
+    avail = (getattr(p, "availability", "") if p else "") or getattr(r, "availability", "")
+    bio = getattr(r, "bio", "") or (getattr(p, "bio", "") if p else "")
     if hrs:
-        facts_hrs = f"Hours: {hrs}."
-        if getattr(r, "office_hours_policy", ""):
-            facts_hrs = f"Hours: {hrs} ({r.office_hours_policy})."
-        parts.append(facts_hrs)
-    if getattr(r, "availability", ""):
-        parts.append(f"Availability: {r.availability}.")
-    if getattr(r, "bio", ""):
-        parts.append(getattr(r, "bio"))
+        pol = getattr(r, "office_hours_policy", "")
+        parts.append(f"Hours: {hrs}" + (f" ({pol})" if pol else "") + ".")
+    if avail:
+        parts.append(f"Availability: {avail}.")
+    if bio:
+        parts.append(bio)
     parts.append(WALK_IN)
     parts.append(f"For more, see the TTU ECE directory: {DIRECTORY_URL}")
     return " ".join(parts)
@@ -462,7 +467,7 @@ def person_answer(db, query: str):
             lines.append(f"{r.name} ({t})" + (f", office {office}" if office else ""))
         return "\n".join(lines)
     kind, r, _ = matches[0]
-    return _person_detail(kind, r)
+    return _person_detail(db, kind, r)
 
 
 # Phrases that need the model's reasoning/judgement, semantic search, abbreviation

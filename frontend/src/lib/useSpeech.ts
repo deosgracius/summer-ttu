@@ -102,6 +102,12 @@ export function useSpeech() {
   const buffer = useRef("") // accumulates your speech until you pause
   const flushTimer = useRef<number | undefined>(undefined)
   const SILENCE_MS = 600 // wait this long after you stop before replying
+  // Conversation lifecycle: once the wake word engages Summer she listens
+  // continuously (no wake word per turn) until an end phrase OR this many ms of
+  // silence, then drops back to dormant (wake-word-only).
+  const CONVO_IDLE_MS = 8000
+  const engaged = useRef(false)
+  const convoTimer = useRef<number | undefined>(undefined)
 
   // ---- TTS: ElevenLabs first, browser fallback ----
   // Split a reply into sentence chunks so we can start speaking the first one
@@ -209,6 +215,7 @@ export function useSpeech() {
     }
     const myTurn = ++speakSeq.current
     speaking.current = true
+    clearConvoTimer() // don't let the 8s idle fire while Summer is talking
     currentSpeech.current = clean.toLowerCase()
     voiceStart(clean.toLowerCase())
     const cancelled = () => myTurn !== speakSeq.current
@@ -315,14 +322,42 @@ export function useSpeech() {
       followTimer.current = undefined
     }
   }
-  // While the mic is on, Summer is "awake" and listening — no dormant gate.
-  function openWindow() {
+  function clearConvoTimer() {
+    if (convoTimer.current) {
+      clearTimeout(convoTimer.current)
+      convoTimer.current = undefined
+    }
+  }
+  // Drop out of the active conversation back to DORMANT: the mic stays on, but now
+  // it ignores everything except the "Hey Summer" / "Summer" wake word.
+  function disengage() {
+    engaged.current = false
+    vstate.current = "ambient"
+    clearConvoTimer()
+    buffer.current = ""
+    setHeard("")
+    setAwake(false)
+  }
+  // (Re)start the 8-second "no conversation" countdown. Only counts while engaged
+  // and while Summer isn't talking; when it elapses we go dormant.
+  function resetConvoTimer() {
+    clearConvoTimer()
+    if (!engaged.current || speaking.current || VOICE.speaking) return
+    convoTimer.current = window.setTimeout(disengage, CONVO_IDLE_MS)
+  }
+  // Enter / stay in an ENGAGED conversation: listen continuously (no wake word per
+  // turn) until an end phrase or 8s of silence sends us back to dormant.
+  function engage() {
+    engaged.current = true
     vstate.current = "active"
-    setAwake(true)
     clearFollow()
+    setAwake(true)
+    resetConvoTimer()
   }
   function afterSpeak() {
-    if (micOn.current) openWindow() // keep listening for a follow-up after Summer talks
+    // Summer just finished talking; if we're mid-conversation, restart the idle
+    // countdown so a follow-up keeps it alive but silence ends it.
+    if (micOn.current && engaged.current) resetConvoTimer()
   }
 
   function startWakeWord(onCommand: (cmd: string) => void) {
@@ -340,15 +375,29 @@ export function useSpeech() {
       const raw = buffer.current.trim()
       buffer.current = ""
       setHeard("")
-      // RESPONSIVE: while the mic is on you can just talk — no wake word required
-      // per turn (browser wake-word detection is too unreliable to gate on, which
-      // is what kept locking you out). A leading "Summer"/"Hey Summer" is stripped
-      // if you say it. Summer stays muted while she's speaking, so she never
-      // replies to her own audio.
+      if (!raw) return
+      // DORMANT: ignore everything until the wake word ("Hey Summer" / "Summer").
+      // Once it's heard, engage and answer the rest of what was said (if anything).
+      if (!engaged.current) {
+        if (!WAKE.test(raw)) return
+        engage()
+        const after = raw.replace(WAKE_LEAD, "").trim()
+        // "Hey Summer" on its own just wakes her — wait for the actual question.
+        if (after.length < 2 || (ENDRE.test(after) && after.split(/\s+/).length <= 4)) return
+        resetConvoTimer()
+        onCmd.current(after)
+        return
+      }
+      // ENGAGED: just talk, no wake word needed. A short end phrase ("thanks",
+      // "done", "that's all", "stop", "goodbye") closes the conversation and drops
+      // back to dormant. Summer stays muted while speaking, so she never self-replies.
       const cmd = raw.replace(WAKE_LEAD, "").trim()
       if (cmd.length < 2) return
-      if (ENDRE.test(cmd) && cmd.split(/\s+/).length <= 3) return // "thanks/stop" → ignore
-      openWindow()
+      if (ENDRE.test(cmd) && cmd.split(/\s+/).length <= 4) {
+        disengage()
+        return
+      }
+      resetConvoTimer()
       onCmd.current(cmd)
     }
     const scheduleFlush = () => {
@@ -377,6 +426,9 @@ export function useSpeech() {
         if (!WAKE.test(live)) return
         stopSpeaking()
       }
+
+      // Real user speech keeps an engaged conversation alive (resets the 8s idle).
+      if (engaged.current) resetConvoTimer()
 
       // Hearing you → hold any pending reply until you pause.
       if (flushTimer.current) clearTimeout(flushTimer.current)
@@ -424,8 +476,9 @@ export function useSpeech() {
     }
     recRef.current = rec
     micOn.current = true
-    vstate.current = "active" // mic on = listening; just talk
-    setAwake(true)
+    engaged.current = false // start DORMANT — wait for "Hey Summer" / "Summer" to engage
+    vstate.current = "ambient"
+    setAwake(false)
     try {
       rec.start()
     } catch {
@@ -436,9 +489,11 @@ export function useSpeech() {
 
   function stopWakeWord() {
     micOn.current = false
+    engaged.current = false
     vstate.current = "off"
     buffer.current = ""
     if (flushTimer.current) clearTimeout(flushTimer.current)
+    clearConvoTimer()
     setHeard("")
     clearFollow()
     try {
@@ -586,7 +641,7 @@ export function useSpeech() {
         const text = await transcribeBlob(blob)
         setHeard("")
         if (text) {
-          if (micOn.current) openWindow() // a mic tap starts/continues the conversation
+          if (micOn.current) engage() // a mic tap starts/continues the conversation
           onText(text)
         } else setHeard("⚠ didn't catch that — try again")
       } catch {

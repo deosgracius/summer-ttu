@@ -15,6 +15,16 @@ prerequisites, policies — through **two surfaces**:
   and administer access, behind role-based auth + multi-factor security, with a maker-checker
   approval queue and a full audit log.
 
+## Live
+
+The backend runs always-on on Fly.io and serves both surfaces:
+
+- **Public kiosk** — https://summer-ttu.fly.dev/kiosk  (no login, voice, read-only)
+- **Admin platform** — https://summer-ttu.fly.dev/  (staff sign-in)
+- Health check — https://summer-ttu.fly.dev/health
+
+> The OpenAPI docs (`/docs`) are intentionally locked behind authentication.
+
 ## Architecture
 
 ```
@@ -84,9 +94,11 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Then open:
-- http://localhost:8000/ — the app
-- http://localhost:8000/docs — the interactive OpenAPI documentation
+Then open the two surfaces locally:
+- http://localhost:8000/kiosk — **public hallway kiosk** (no login, voice, read-only)
+- http://localhost:8000/ — **admin platform** (staff sign-in at `/login`)
+- http://localhost:8000/docs — interactive OpenAPI documentation
+- http://localhost:8000/health — health check
 
 ### Configuration
 

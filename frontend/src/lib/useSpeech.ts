@@ -315,22 +315,11 @@ export function useSpeech() {
       followTimer.current = undefined
     }
   }
-  function goDormant() {
-    vstate.current = "ambient"
-    setAwake(false)
-    clearFollow()
-    setHeard("")
-  }
-  // Enter / extend an active conversation. While active you can just talk; after
-  // 30s of silence the conversation ends and Summer goes dormant (waits for the
-  // wake word again).
+  // While the mic is on, Summer is "awake" and listening — no dormant gate.
   function openWindow() {
     vstate.current = "active"
     setAwake(true)
     clearFollow()
-    followTimer.current = window.setTimeout(() => {
-      if (micOn.current) goDormant()
-    }, 30000)
   }
   function afterSpeak() {
     if (micOn.current) openWindow() // keep listening for a follow-up after Summer talks
@@ -349,26 +338,17 @@ export function useSpeech() {
     // wait until you actually stop, then reply to everything).
     const flush = () => {
       const raw = buffer.current.trim()
-      const hasWake = WAKE.test(raw)
       buffer.current = ""
       setHeard("")
+      // RESPONSIVE: while the mic is on you can just talk — no wake word required
+      // per turn (browser wake-word detection is too unreliable to gate on, which
+      // is what kept locking you out). A leading "Summer"/"Hey Summer" is stripped
+      // if you say it. Summer stays muted while she's speaking, so she never
+      // replies to her own audio.
       const cmd = raw.replace(WAKE_LEAD, "").trim()
-      // DORMANT: Summer is waiting and ignores everything until she's addressed by
-      // name ("Hey Summer"). (Tapping the mic also wakes her — see listen().)
-      if (vstate.current !== "active") {
-        if (!hasWake) return
-        openWindow() // "Hey Summer" → start the conversation
-        if (cmd.length < 2) return // just the wake word — wait for the actual request
-      }
-      // ACTIVE conversation: you can just talk, no wake word needed per turn.
       if (cmd.length < 2) return
-      // Closing phrase ("thanks", "that's all", "bye") ends the conversation and
-      // sends Summer back to dormant until the next "Hey Summer".
-      if (ENDRE.test(cmd) && cmd.split(/\s+/).length <= 3) {
-        goDormant()
-        return
-      }
-      openWindow() // keep the conversation alive (resets the 30s idle timer)
+      if (ENDRE.test(cmd) && cmd.split(/\s+/).length <= 3) return // "thanks/stop" → ignore
+      openWindow()
       onCmd.current(cmd)
     }
     const scheduleFlush = () => {
@@ -444,8 +424,8 @@ export function useSpeech() {
     }
     recRef.current = rec
     micOn.current = true
-    vstate.current = "ambient" // start DORMANT — wait for "Hey Summer" to begin
-    setAwake(false)
+    vstate.current = "active" // mic on = listening; just talk
+    setAwake(true)
     try {
       rec.start()
     } catch {

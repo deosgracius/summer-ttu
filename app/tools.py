@@ -15,7 +15,7 @@ from .spotify import (is_connected as _sp_connected, play as _sp_play, play_play
 from .itunes import search as _itunes_search
 from . import gmail as _gmail, outlook as _outlook
 from .local_events import suggest_events as _suggest_events
-from .web_tools import fetch_page as _fetch_page
+from .web_tools import fetch_page as _fetch_page, search_url as _search_url
 from .system_control import control as _sys_control
 from . import campus_service as _campus
 import json as _json
@@ -41,6 +41,7 @@ SERVICES = {
     "tech_conferences": {"label": "Tech conferences",       "tools": ("tech_conferences",)},
     "ieee":             {"label": "IEEE info",              "tools": ("ieee_info",)},
     "system_control":   {"label": "Computer control",       "tools": ("system_control",)},
+    "web_search":       {"label": "Web & part search (Google, Wikipedia, Amazon, DigiKey, Mouser)", "tools": ("web_search",)},
 }
 
 
@@ -297,6 +298,15 @@ async def read_webpage(args, db, user):
     return await _fetch_page(args.get("url", ""))
 
 
+async def web_search(args, db, user):
+    q = (args.get("query") or "").strip()
+    if not q:
+        return {"error": "What should I search for?"}
+    src, url = _search_url(q, args.get("source") or "google")
+    return {"source": src, "query": q, "open_url": url,
+            "note": f"Opening {src} search for '{q}'."}
+
+
 async def email_delete(args, db, user):
     provs = _email_providers(db, user)
     p = (args.get("provider") or (provs[0] if provs else "")).lower()
@@ -460,6 +470,7 @@ TOOLS = {
     "sports_update": _t("Get recent and upcoming games for an American football (NFL), college football (NCAA), or NBA team. Pass the team name in 'team' (e.g. 'Cowboys', 'Texas Tech', 'Lakers') and optionally 'league' (nfl, college-football, or nba). Defaults to the campus team (Texas Tech) if no team is given. Admin only.", ADMINS, {"team": {"type": "string"}, "league": {"type": "string"}}, [], sports_update),
     "tech_conferences": _t("Look up upcoming technology / engineering conferences (optionally by topic or region). Admin only.", ADMINS, {"query": {"type": "string"}}, [], tech_conferences),
     "ieee_info": _t("Look up IEEE (national association) news, events, conferences, and membership info. Admin only.", ADMINS, {"query": {"type": "string"}}, [], ieee_info),
+    "web_search": _t("Open a search on an external site for a query and return the link. Sources: 'google' (general web), 'wikipedia', 'amazon' (shopping), 'digikey' and 'mouser' (electronic components/parts — ideal for ECE part lookups). Provide 'query' and optional 'source' (defaults google). Central admin / granted users only.", CENTRAL, {"query": {"type": "string"}, "source": {"type": "string"}}, ["query"], web_search),
     "find_course": _t("Look up an offered course section from the campus schedule by course code (e.g. 'ECE 3306'), course number alone ('3312'), title keyword, or instructor — returns room, building, days/times, instructor, prerequisites, permit requirement, campus, and graduate-level flag. Optional 'semester'. Students often use ABBREVIATIONS or nicknames — interpret them and search by the likely FULL TITLE or course number, and try multiple variations before giving up. Examples: 'E1'/'Electronics 1' -> Electronics; 'E2' -> Advanced Electronics; 'Digit' -> Digital Communications; 'Lab 1/2/3' or 'Capstone' -> the project/Capstone labs; 'ECE' = Electrical & Computer Engineering. If one term returns nothing, search a broader keyword (e.g. just 'electronics' or 'lab') and offer the closest matches rather than saying 'not found'.", ALL, {"query": {"type": "string"}, "semester": {"type": "string"}}, ["query"], find_course),
     "find_professor": _t("Look up a professor from the campus directory by name or department — returns their office (building + number), office hours, office-hours policy, and email.", ALL, {"query": {"type": "string"}}, ["query"], find_professor),
     "find_advisor": _t("Look up an academic advisor by name or department — returns their office, schedule, availability, and email. Use for 'who do I talk to' / 'who's my advisor' questions, then point the student to that person (you are not the advisor).", ALL, {"query": {"type": "string"}}, ["query"], find_advisor),

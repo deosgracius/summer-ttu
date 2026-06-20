@@ -1,0 +1,50 @@
+name: build-and-push
+
+# Builds the backend and frontend container images and pushes them to the GitHub
+# Container Registry (GHCR) on every push to main (and on version tags). The
+# Kubernetes manifests in k8s/ then pull these images. This is the CI half of CD —
+# the actual rollout (kubectl / Argo CD) is environment-specific.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: ${{ github.repository_owner }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write          # needed to push to GHCR
+    strategy:
+      matrix:
+        include:
+          - name: api
+            context: .
+            dockerfile: Dockerfile
+          - name: web
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/summer-${{ matrix.name }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/summer-${{ matrix.name }}:${{ github.sha }}

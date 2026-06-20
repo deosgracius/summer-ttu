@@ -149,6 +149,14 @@ def llm_generate(question: str, contexts: list) -> str:
                 model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
                 messages=[{"role": "user", "content": prompt}])
             return (r.choices[0].message.content or "").strip() or extractive_generate(question, contexts)
+        if provider == "gemini" and (os.getenv("GOOGLE_API_KEY") or os.getenv("GOOGLE_GENAI_USE_VERTEXAI")):
+            # google-genai SDK: one client for both the Gemini API (GOOGLE_API_KEY) and
+            # Vertex AI (GOOGLE_GENAI_USE_VERTEXAI=true + GOOGLE_CLOUD_PROJECT/LOCATION).
+            from google import genai
+            client = genai.Client()
+            r = client.models.generate_content(
+                model=os.getenv("LLM_MODEL", "gemini-2.0-flash-001"), contents=prompt)
+            return (getattr(r, "text", "") or "").strip() or extractive_generate(question, contexts)
         if os.getenv("ANTHROPIC_API_KEY"):
             import anthropic
             client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])

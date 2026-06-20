@@ -38,6 +38,9 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = db.get(models.User, uid)
     if not user:
         raise cred_exc
+    # Track the central admin's activity so deputy delegation knows when they're away.
+    from . import delegation
+    delegation.record_central_seen(db, user)
     return user
 
 

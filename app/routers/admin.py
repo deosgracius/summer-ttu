@@ -2,7 +2,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from .. import models, auth, approvals, security, tracing
+from .. import models, auth, approvals, security, tracing, delegation
 from ..database import get_db
 from ..auth import require_roles
 
@@ -217,7 +217,10 @@ def list_pending(status: str = "", db: Session = Depends(get_db),
         q = q.filter(models.PendingChange.status == status)
     else:
         q = q.filter(models.PendingChange.status.in_(["pending", "under_review"]))
-    if actor.role != "central_admin":
+    # The central admin sees everything; a deputy sees everything WHILE the central
+    # admin is away (so they can act); any other admin sees only their own requests.
+    sees_all = actor.role == "central_admin" or (delegation.is_deputy(db, actor) and delegation.central_absent(db))
+    if not sees_all:
         q = q.filter(models.PendingChange.proposer_email == actor.email)
     rows = q.order_by(models.PendingChange.id.desc()).limit(200).all()
     return [_pc_out(pc) for pc in rows]
@@ -229,15 +232,33 @@ class Decision(BaseModel):
 
 @router.post("/pending/{change_id}/approve")
 def approve_change(change_id: int, db: Session = Depends(get_db),
-                   actor: models.User = Depends(require_roles("central_admin")),
+                   actor: models.User = Depends(require_roles("admin")),
                    _stepup: models.User = Depends(security.require_stepup)):
     pc = db.get(models.PendingChange, change_id)
     if not pc:
         raise HTTPException(404, "Change not found.")
+    # Central admin approves alone. While the central admin is AWAY, the two
+    # deputies may approve — but the change applies only once BOTH have approved.
+    if actor.role == "central_admin":
+        pass  # full authority
+    elif delegation.is_deputy(db, actor) and delegation.central_absent(db):
+        have = delegation.record_deputy_approval(db, change_id, actor)
+        if not delegation.both_deputies_approved(db, change_id):
+            from .. import audit
+            audit.log(db, actor, "deputy_approve", pc.summary,
+                      {"change_id": change_id, "approvals": sorted(have)})
+            db.commit()
+            return {"approved": False, "recorded": True, "change_id": change_id,
+                    "message": "Recorded — this change applies once the other deputy also approves."}
+        # both deputies approved → fall through and apply
+    else:
+        raise HTTPException(403, "Only the central admin can approve this. Deputies can act "
+                                 "only together, and only while the central admin is away.")
     try:
         result = approvals.approve(db, actor, pc)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    delegation.clear_dual(db, change_id)
     return {"approved": True, "change_id": change_id, "result": result}
 
 
@@ -254,6 +275,47 @@ def review_change(change_id: int, db: Session = Depends(get_db),
     except ValueError as e:
         raise HTTPException(400, str(e))
     return {"under_review": True, "change_id": change_id}
+
+
+# --- Deputy delegation (central admin designates 2 stand-ins) ---
+
+class DelegationCfg(BaseModel):
+    deputy_1: str = ""
+    deputy_2: str = ""
+    absence_minutes: int = 0
+
+
+@router.get("/delegation")
+def get_delegation(db: Session = Depends(get_db),
+                   actor: models.User = Depends(require_roles("admin"))):
+    """Current delegation config + whether the central admin is currently away."""
+    return delegation.status(db)
+
+
+@router.put("/delegation")
+def set_delegation(data: DelegationCfg, db: Session = Depends(get_db),
+                   actor: models.User = Depends(require_roles("central_admin"))):
+    """Central admin sets the two deputy admins and the inactivity window after
+    which they take over (and must approve together)."""
+    d1 = (data.deputy_1 or "").strip().lower()
+    d2 = (data.deputy_2 or "").strip().lower()
+    if (d1 or d2 or data.absence_minutes):  # a partial config still validates what's given
+        for em in (d1, d2):
+            if not em:
+                continue
+            u = db.query(models.User).filter(models.User.email == em).first()
+            if not u:
+                raise HTTPException(404, f"No user with email {em}.")
+            if auth.rank(u.role) < auth.rank("admin"):
+                raise HTTPException(400, f"{em} must be an admin to be a deputy.")
+        if d1 and d2 and d1 == d2:
+            raise HTTPException(400, "The two deputies must be different people.")
+    delegation.set_config(db, d1, d2, data.absence_minutes)
+    from .. import audit
+    audit.log(db, actor, "set_delegation", "Updated deputy delegation",
+              {"deputy_1": d1, "deputy_2": d2, "absence_minutes": data.absence_minutes})
+    db.commit()
+    return delegation.status(db)
 
 
 @router.post("/pending/{change_id}/reject")

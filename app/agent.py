@@ -264,6 +264,11 @@ async def run_kiosk_traced(goal, db, provider=None):
     person = campus_service.person_answer(db, goal)
     if person:
         return {"reply": person, "actions": [], "latency_ms": 0.0}
+    # ADVISING / STOCKROOM ROUTING: send students to the right advisor or coordinator
+    # (undergrad CompE/EE, graduate, stockroom) before any generic lookup.
+    referral = campus_service.advising_referral(db, goal)
+    if referral:
+        return {"reply": referral, "actions": [], "latency_ms": 0.0}
     # CONFIDENT FACTUAL LOOKUP: natural-language questions that clearly resolve to one
     # campus record (an office, instructor, building/service hours) are answered straight
     # from the DB — instant and free — instead of paying the LLM. Anything needing

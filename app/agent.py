@@ -143,6 +143,15 @@ def _context(user):
 
 
 async def run_agent(goal, db, user, provider=None, voice=False):
+    # QUICK LINKS: "open my gantt chart" opens a saved link deterministically (no LLM),
+    # so the phrase reliably opens the right page. The dashboard opens the open_url.
+    from . import quicklinks
+    ql = quicklinks.match_open(db, goal)
+    if ql:
+        name, url = ql
+        return {"reply": f"Opening your {name}.",
+                "actions": [{"tool": "open_website", "input": {"url": url},
+                             "result": {"open_url": url, "opened": True}}]}
     env_provider = os.getenv("LLM_PROVIDER", "anthropic").lower()
     provider = (provider or env_provider).lower()
     # honor env LLM_MODEL only when using the env's provider; otherwise use that provider's default

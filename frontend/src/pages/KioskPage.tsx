@@ -96,7 +96,7 @@ export default function KioskPage() {
   return (
     <div className="summer-bg min-h-svh bg-background text-foreground flex flex-col items-center px-4 py-8">
       <SpaceBackground />
-      <SplineRobot />
+      <SplineRobot ambient />
       <div className="relative z-10 flex flex-col items-center text-center mb-6">
         <SummerOrb size={380} state={loading ? "thinking" : "idle"} />
         <h1 className="mt-3 text-3xl font-semibold tracking-tight">Hi, I'm Summer.</h1>

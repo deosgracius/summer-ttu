@@ -235,6 +235,17 @@ def best_answer(db, question: str, min_score: int = 1):
         title = f"{ptitle}, " if ptitle else ""
         consider(f"{p.name} {ptitle} {p.department} {office} {p.email}",
                  f"{p.name} — {title}office {office}, email {p.email or 'not listed'}{extra}.")
+    # Staff are people too — without this, staff lookups (e.g. a coordinator) skip
+    # the deterministic path and fall to the LLM, which can fabricate a name.
+    if hasattr(models, "Staff"):
+        for s in db.query(models.Staff).all():
+            if not any(t in s.name.lower() or t in (s.email or "").lower() for t in toks):
+                continue
+            office = f"{s.office_building} {s.office_number}".strip() or "not listed"
+            stitle = getattr(s, "title", "") or ""
+            tprefix = f"{stitle}, " if stitle else ""
+            consider(f"{s.name} {stitle} {s.department} {office} {s.email} staff",
+                     f"{s.name} — {tprefix}office {office}, email {s.email or 'not listed'}.")
     for a in db.query(models.Advisor).all():
         if not any(t in a.name.lower() or t in (a.email or "").lower() for t in toks):
             continue

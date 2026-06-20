@@ -93,7 +93,13 @@ async def ask(data: Ask, request: Request, db: Session = Depends(get_db)):
     _rate_limit(request, "ask", ASK_MAX)
     result = await run_kiosk_agent(data.question, db)
     card = _person_card(db, data.question)
-    if card:
+    # Don't show a face if the written answer says the person isn't on file — that
+    # contradiction (photo of X while text says "no record") is confusing.
+    reply_low = (result.get("reply") or "").lower()
+    not_found = any(s in reply_low for s in (
+        "don't have", "do not have", "no record", "couldn't find", "could not find",
+        "isn't in", "is not in", "not in the", "not listed", "couldn't locate", "no one named"))
+    if card and not not_found:
         result["person"] = card
     return result
 

@@ -1,0 +1,28 @@
+# Non-secret config + a SECRET TEMPLATE. Never commit real secret values — create the
+# real Secret with `kubectl create secret` (see k8s/README.md) or a sealed-secret.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: summer-config
+data:
+  NEO4J_URI: "bolt://neo4j:7687"
+  NEO4J_USER: "neo4j"
+  CORS_ORIGINS: "http://localhost:8080"
+---
+# Template only — values are the base64 of placeholders. Replace before applying, or
+# create the secret imperatively instead (README).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: summer-secrets
+type: Opaque
+stringData:
+  DATABASE_URL: "postgresql+psycopg://summer:CHANGE_ME@postgres:5432/summer"
+  POSTGRES_USER: "summer"
+  POSTGRES_PASSWORD: "CHANGE_ME"
+  POSTGRES_DB: "summer"
+  NEO4J_PASSWORD: "CHANGE_ME"
+  NEO4J_AUTH: "neo4j/CHANGE_ME"
+  SECRET_KEY: "CHANGE_ME_long_random_string"
+  OPENAI_API_KEY: ""
+  ANTHROPIC_API_KEY: ""

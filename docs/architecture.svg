@@ -1,0 +1,73 @@
+<svg viewBox="0 0 980 660" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#64748b"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="980" height="660" fill="#ffffff"/>
+  <text x="490" y="32" text-anchor="middle" font-size="22" font-weight="700" fill="#0f172a">Summer — Architecture</text>
+
+  <!-- Browser -->
+  <rect x="330" y="50" width="320" height="44" rx="8" fill="#e8eef9" stroke="#2b4a8b"/>
+  <text x="490" y="77" text-anchor="middle" font-size="14" fill="#0f172a">Browser — React + TypeScript (Vite)</text>
+  <line x1="490" y1="94" x2="490" y2="128" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Backend -->
+  <rect x="140" y="130" width="700" height="44" rx="8" fill="#eaf3ec" stroke="#2f7a43"/>
+  <text x="490" y="157" text-anchor="middle" font-size="14" fill="#0f172a">FastAPI backend — routers: kiosk · agent · campus · docs · admin · security</text>
+
+  <!-- arrows to 3 agentic components -->
+  <line x1="300" y1="174" x2="175" y2="214" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="490" y1="174" x2="490" y2="214" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="680" y1="174" x2="805" y2="214" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Agentic layer -->
+  <rect x="40" y="216" width="270" height="64" rx="8" fill="#fdf3e7" stroke="#b5721f"/>
+  <text x="175" y="242" text-anchor="middle" font-size="14" font-weight="600" fill="#0f172a">Agent loop</text>
+  <text x="175" y="262" text-anchor="middle" font-size="11.5" fill="#475569">tool-calling · Claude / GPT / Gemini</text>
+
+  <rect x="355" y="216" width="270" height="64" rx="8" fill="#fdf3e7" stroke="#b5721f"/>
+  <text x="490" y="242" text-anchor="middle" font-size="14" font-weight="600" fill="#0f172a">LangGraph orchestrator</text>
+  <text x="490" y="262" text-anchor="middle" font-size="11.5" fill="#475569">route → retrieve → generate → validate ↺</text>
+
+  <rect x="670" y="216" width="270" height="64" rx="8" fill="#fdf3e7" stroke="#b5721f"/>
+  <text x="805" y="242" text-anchor="middle" font-size="14" font-weight="600" fill="#0f172a">MCP server</text>
+  <text x="805" y="262" text-anchor="middle" font-size="11.5" fill="#475569">reusable retrieval tools</text>
+
+  <!-- arrows to retrieval -->
+  <line x1="175" y1="280" x2="240" y2="330" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="490" y1="280" x2="490" y2="330" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="805" y1="280" x2="740" y2="330" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Retrieval layer -->
+  <rect x="40" y="332" width="900" height="96" rx="10" fill="#f6effc" stroke="#6b3aa0"/>
+  <text x="58" y="352" font-size="12.5" font-weight="700" fill="#6b3aa0">RETRIEVAL LAYER (RAG)</text>
+  <rect x="70" y="362" width="260" height="52" rx="6" fill="#ffffff" stroke="#6b3aa0"/>
+  <text x="200" y="384" text-anchor="middle" font-size="13" font-weight="600" fill="#0f172a">Graph</text>
+  <text x="200" y="402" text-anchor="middle" font-size="11" fill="#475569">Neo4j · Cypher prereq chains</text>
+  <rect x="360" y="362" width="260" height="52" rx="6" fill="#ffffff" stroke="#6b3aa0"/>
+  <text x="490" y="384" text-anchor="middle" font-size="13" font-weight="600" fill="#0f172a">Vector</text>
+  <text x="490" y="402" text-anchor="middle" font-size="11" fill="#475569">embeddings · cosine · RRF rerank</text>
+  <rect x="650" y="362" width="260" height="52" rx="6" fill="#ffffff" stroke="#6b3aa0"/>
+  <text x="780" y="384" text-anchor="middle" font-size="13" font-weight="600" fill="#0f172a">Documents</text>
+  <text x="780" y="402" text-anchor="middle" font-size="11" fill="#475569">PDF → chunk → embed → cite</text>
+
+  <!-- arrows to data -->
+  <line x1="335" y1="428" x2="335" y2="468" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="645" y1="428" x2="645" y2="468" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Data -->
+  <rect x="210" y="470" width="250" height="44" rx="8" fill="#eef1f3" stroke="#50606b"/>
+  <text x="335" y="497" text-anchor="middle" font-size="13" fill="#0f172a">Postgres + pgvector</text>
+  <rect x="520" y="470" width="250" height="44" rx="8" fill="#eef1f3" stroke="#50606b"/>
+  <text x="645" y="497" text-anchor="middle" font-size="13" fill="#0f172a">Neo4j</text>
+
+  <!-- Cross-cutting -->
+  <text x="40" y="560" font-size="12.5" font-weight="700" fill="#9b2f44">CROSS-CUTTING</text>
+  <rect x="40" y="570" width="440" height="50" rx="8" fill="#f7eef0" stroke="#9b2f44"/>
+  <text x="260" y="592" text-anchor="middle" font-size="13" font-weight="600" fill="#0f172a">Quality</text>
+  <text x="260" y="610" text-anchor="middle" font-size="11" fill="#475569">eval harness · red-team suite · tracing · CI gate</text>
+  <rect x="500" y="570" width="440" height="50" rx="8" fill="#f7eef0" stroke="#9b2f44"/>
+  <text x="720" y="592" text-anchor="middle" font-size="13" font-weight="600" fill="#0f172a">Deploy</text>
+  <text x="720" y="610" text-anchor="middle" font-size="11" fill="#475569">Docker · Kubernetes · GHCR CI/CD</text>
+</svg>

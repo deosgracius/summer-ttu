@@ -1,0 +1,27 @@
+# Routes external traffic: API path-prefixes go to the api Service, everything else
+# to the web (nginx) Service. nginx ALSO proxies the API internally, so either layer
+# works; this Ingress lets you expose the API directly too (e.g. for /docs).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: summer
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /docs
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 8000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 80

@@ -76,6 +76,25 @@ def find_professors(db, query: str):
     return out
 
 
+def find_staff(db, query: str):
+    out = []
+    for s in db.query(models.Staff).order_by(models.Staff.name).all():
+        hay = f"{s.name} {s.title} {s.department} {s.office_building} {s.office_number} {s.email}"
+        if _matches(hay, query):
+            out.append({
+                "name": s.name, "title": s.title, "department": s.department,
+                "email": s.email, "phone": s.phone,
+                "office": f"{s.office_building} {s.office_number}".strip(),
+                "photo": s.photo_url or "",
+                "cv": s.cv_url or "",
+                "bio": s.bio or "",
+                "semester": s.semester,
+            })
+        if len(out) >= _LIMIT:
+            break
+    return out
+
+
 def find_advisors(db, query: str):
     out = []
     for a in db.query(models.Advisor).order_by(models.Advisor.name).all():
@@ -150,6 +169,7 @@ def search_all(db, q: str, kind: str = "all"):
         res["courses"] = find_courses(db, q)
     if kind in ("all", "people"):
         res["professors"] = find_professors(db, q)
+        res["staff"] = find_staff(db, q)
         res["advisors"] = find_advisors(db, q)
     if kind in ("all", "buildings"):
         res["buildings"] = find_buildings(db, q)
@@ -191,7 +211,7 @@ def fast_answer(db, question: str):
     name = _NAME_STOP.sub(" ", qt).strip()
     name = re.sub(r"\s+", " ", name)
     if name and 1 <= len(name.split()) <= 3 and len(name) >= 3:
-        people = find_professors(db, name) + find_advisors(db, name)
+        people = find_professors(db, name) + find_staff(db, name) + find_advisors(db, name)
         if len(people) == 1:
             p = people[0]
             hours = p.get("office_hours") or p.get("schedule") or p.get("availability") or "not listed"

@@ -355,6 +355,12 @@ async def find_advisor(args, db, user):
     return {"matches": rows} if rows else {"matches": [], "note": "No advisor matched on file."}
 
 
+async def find_staff(args, db, user):
+    q = (args.get("query") or "").strip()
+    rows = _campus.find_staff(db, q)
+    return {"matches": rows} if rows else {"matches": [], "note": f"No staff member matching '{q}' on file."}
+
+
 async def campus_service_hours(args, db, user):
     rows = _campus.find_services(db, (args.get("query") or "").strip())
     return {"matches": rows} if rows else {"matches": [], "note": "No matching service/stockroom on file."}
@@ -475,6 +481,7 @@ TOOLS = {
     "find_course": _t("Look up an offered course section from the campus schedule by course code (e.g. 'ECE 3306'), course number alone ('3312'), title keyword, or instructor — returns room, building, days/times, instructor, prerequisites, permit requirement, campus, and graduate-level flag. Optional 'semester'. Students often use ABBREVIATIONS or nicknames — interpret them and search by the likely FULL TITLE or course number, and try multiple variations before giving up. Examples: 'E1'/'Electronics 1' -> Electronics; 'E2' -> Advanced Electronics; 'Digit' -> Digital Communications; 'Lab 1/2/3' or 'Capstone' -> the project/Capstone labs; 'ECE' = Electrical & Computer Engineering. If one term returns nothing, search a broader keyword (e.g. just 'electronics' or 'lab') and offer the closest matches rather than saying 'not found'.", ALL, {"query": {"type": "string"}, "semester": {"type": "string"}}, ["query"], find_course),
     "find_professor": _t("Look up a professor from the campus directory by name, title, or department — returns their title (e.g. Department Chair), office (building + number), office hours, office-hours policy, email, a short bio (research interests, education), a headshot photo URL, and a link to their CV / curriculum vitae when on file. When a single professor matches, the kiosk shows their photo and a CV link automatically, so just give their details in words and mention their CV is available if asked.", ALL, {"query": {"type": "string"}}, ["query"], find_professor),
     "find_advisor": _t("Look up an academic advisor by name or department — returns their office, schedule, availability, and email. Use for 'who do I talk to' / 'who's my advisor' questions, then point the student to that person (you are not the advisor).", ALL, {"query": {"type": "string"}}, ["query"], find_advisor),
+    "find_staff": _t("Look up a department staff member by name, job title, or role — coordinators, academic advisors, business/financial managers, technicians, buyers, machinists, lab support. Returns their job title, office, email, phone, and a headshot photo URL when on file. Use this for non-professor staff (e.g. 'who is the academic advisor', 'who handles purchasing/the stockroom buyer', 'administrative coordinator'). When a single staff member matches, the kiosk shows their photo automatically, so just give their details in words.", ALL, {"query": {"type": "string"}}, ["query"], find_staff),
     "campus_service_hours": _t("Look up hours and policy for a campus service or facility (e.g. the stockroom, a lab, a help desk) by name or location.", ALL, {"query": {"type": "string"}}, ["query"], campus_service_hours),
     "building_info": _t("Look up a campus building by name or code — returns address, hours, and description.", ALL, {"query": {"type": "string"}}, ["query"], building_info),
     "elective_catalog": _t("Look up which courses count as approved electives (and their prerequisites) from the departmental catalog/master list, by code, title, or category.", ALL, {"query": {"type": "string"}}, ["query"], elective_catalog),

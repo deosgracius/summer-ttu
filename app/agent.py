@@ -174,7 +174,7 @@ async def run_agent(goal, db, user, provider=None, voice=False):
 # hard-restricted to the campus lookups — the model literally cannot reach email,
 # calendar, system control, or any data-editing tool from here.
 # ---------------------------------------------------------------------------
-KIOSK_TOOLS = ("find_course", "find_professor", "find_advisor",
+KIOSK_TOOLS = ("find_course", "find_professor", "find_staff", "find_advisor",
                "campus_service_hours", "building_info", "elective_catalog",
                "course_prerequisites", "course_unlocks", "course_search",
                "search_documents")

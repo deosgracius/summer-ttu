@@ -31,12 +31,29 @@ from app import models, docs_rag
 UA = {"User-Agent": "Summer-TTU/1.0 (https://summer-ttu.fly.dev; deosgracius17@gmail.com)"}
 BASE = "https://www.depts.ttu.edu"
 FACULTY_URL = BASE + "/ece/faculty/"
+STAFF_URL = BASE + "/ece/staff/"
 SYLLABI_URL = BASE + "/ece/undergrad/syllabi/"
 LAB_PAGES = [
     ("Stockroom Policies", BASE + "/ece/undergrad/labs/stockroom_policies.php"),
     ("Project Laboratory Structure", BASE + "/ece/undergrad/labs/lab_structure.php"),
 ]
 DEPARTMENT = "Electrical & Computer Engineering"
+
+
+def _bios(html):
+    """Extract the Vue `bios:` JSON array embedded in a faculty/staff page."""
+    start = html.find("bios:")
+    br = html.find("[", start)
+    depth, end = 0, -1
+    for i in range(br, len(html)):
+        if html[i] == "[":
+            depth += 1
+        elif html[i] == "]":
+            depth -= 1
+            if depth == 0:
+                end = i
+                break
+    return json.loads(html[br:end + 1])
 
 
 def _get(client, url):
@@ -192,6 +209,82 @@ def import_faculty(db, client):
 
 
 # --------------------------------------------------------------------------- #
+# 1b. Staff (coordinators, advisors, business managers, technicians, ...)
+# --------------------------------------------------------------------------- #
+def import_staff(db, client):
+    html = _get(client, STAFF_URL)
+    bios = _bios(html)
+    print(f"  staff roster: {len(bios)} records")
+
+    STOPS = ["Personal Information", "Curriculum Vitae", "Education", "Interests",
+             "Research", "Mailing Address", "Office", "Phone", "Email", "Fax",
+             "Personal Website", "Follow Electrical", "Connect with Electrical",
+             "Electrical & Computer Engineering Follow"]
+    doc_parts = []
+    refreshed = 0
+    for i, b in enumerate(bios, 1):
+        name = " ".join(x for x in [b.get("firstname"), b.get("middlename"),
+                                    b.get("lastname")] if x and x != "None")
+        name = re.sub(r"\s+", " ", name).strip()
+        email = (b.get("email") or "").strip()
+        jobtitle = (b.get("jobtitle") or "").strip()
+        phone = (b.get("phone") or "").strip()
+
+        office = cv = ""
+        path = b.get("fullpagepath") or ""
+        if path:
+            try:
+                phtml = _get(client, BASE + path)
+                ptext = _visible_text(phtml)
+                office = _section(ptext, "Office", STOPS, 80)
+                mo = re.search(r"\b([A-Za-z]{2,4}\.?\s?\d{2,4}[A-Za-z]?)\b", office)
+                office = mo.group(1).strip() if mo else ""
+                cv = _cv_link(phtml)
+                time.sleep(0.4)  # be polite to the server
+            except Exception as e:
+                print(f"    ! {name}: profile fetch failed ({e})")
+
+        # Upsert into the Staff directory (match on email, else name).
+        row = None
+        if email:
+            row = db.query(models.Staff).filter(models.Staff.email == email).first()
+        if not row:
+            row = db.query(models.Staff).filter(models.Staff.name == name).first()
+        if not row:
+            row = models.Staff(name=name)
+            db.add(row)
+        row.name = name
+        row.email = email
+        row.phone = phone
+        row.department = DEPARTMENT
+        if jobtitle:
+            row.title = jobtitle
+        photo_src = (b.get("photo_src") or "").strip()
+        if photo_src:
+            row.photo_url = (BASE + photo_src) if photo_src.startswith("/") else photo_src
+        if cv:
+            row.cv_url = cv
+        row.office_building = ""
+        if office:
+            row.office_number = office
+        refreshed += 1
+
+        block = [f"{name} — {jobtitle}".strip(" —")]
+        if email:
+            block.append(f"Email: {email}")
+        if phone:
+            block.append(f"Phone: {phone}")
+        if office:
+            block.append(f"Office: {office}")
+        doc_parts.append("\n".join(block))
+        print(f"    [{i}/{len(bios)}] {name}")
+
+    db.commit()
+    _replace_doc(db, "TTU ECE Staff — Directory", STAFF_URL, "\n\n".join(doc_parts))
+    print(f"  staff refreshed: {refreshed}")
+
+
+# --------------------------------------------------------------------------- #
 # 2. Course descriptions
 # --------------------------------------------------------------------------- #
 def import_courses(db, client):
@@ -257,6 +350,9 @@ def main():
             if which in ("all", "faculty"):
                 print("Importing faculty...")
                 import_faculty(db, client)
+            if which in ("all", "staff"):
+                print("Importing staff...")
+                import_staff(db, client)
             if which in ("all", "courses"):
                 print("Importing course descriptions...")
                 import_courses(db, client)

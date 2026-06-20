@@ -76,6 +76,21 @@ def sync_people(db):
         _set_if(p, "schedule", ad.schedule)
         _set_if(p, "availability", ad.availability)
 
+    for st in db.query(models.Staff).all():
+        p = get(st.name, st.title or "Staff")
+        if not p:
+            continue
+        if p.role_label in ("", "Instructor"):
+            p.role_label = st.title or "Staff"
+        _set_if(p, "department", st.department)
+        _set_if(p, "email", st.email)
+        _set_if(p, "office_building", st.office_building)
+        _set_if(p, "office_number", st.office_number)
+        if not p.photo_url:
+            _set_if(p, "photo_url", st.photo_url)
+        if not p.bio:
+            _set_if(p, "bio", st.bio)
+
     for t in db.query(models.TutorAvailability).all():
         p = get(t.name, t.role_label or "Tutor")
         if not p:

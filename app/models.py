@@ -190,6 +190,27 @@ class Professor(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class Staff(Base):
+    """Department staff from the ECE staff directory — coordinators, academic
+    advisors, business managers, technicians, buyers, machinists, etc. Parallel to
+    Professor: a read-only campus lookup with an optional headshot. Loaded by
+    import_ttu_ece.py from the public staff page."""
+    __tablename__ = "staff"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    title = Column(String, nullable=False, default="")               # jobtitle, e.g. "Chief Academic Advisor"
+    email = Column(String, nullable=False, default="")
+    phone = Column(String, nullable=False, default="")
+    department = Column(String, nullable=False, default="")
+    office_building = Column(String, nullable=False, default="")
+    office_number = Column(String, nullable=False, default="")
+    photo_url = Column(String, nullable=False, default="")           # headshot link (shown when asked about them)
+    cv_url = Column(String, nullable=False, default="")              # CV link if one is published (rare for staff)
+    bio = Column(String, nullable=False, default="")
+    semester = Column(String, nullable=False, default="")
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class Advisor(Base):
     __tablename__ = "advisors"
     id = Column(Integer, primary_key=True, index=True)

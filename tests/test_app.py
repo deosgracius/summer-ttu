@@ -48,7 +48,10 @@ def test_task_crud_and_isolation():
     assert client.delete(f"/tasks/{tid}", headers=h1).status_code == 204
 
 
-def test_agent_without_key_is_graceful():
+def test_agent_without_key_is_graceful(monkeypatch):
+    # Force the no-key path even on a dev machine whose .env has real keys.
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     h = auth_headers("agent@x.com")
     r = client.post("/agent", json={"goal": "hi"}, headers=h)
     assert r.status_code == 200 and "key" in r.json()["reply"].lower()
@@ -118,7 +121,9 @@ def test_music_has_services():
     assert "youtube.com" in m["url"] and "spotify.com" in m["spotify"]
 
 
-def test_google_oauth_graceful():
+def test_google_oauth_graceful(monkeypatch):
+    monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_CLIENT_SECRET", raising=False)
     h = auth_headers("g@x.com")
     s = client.get("/oauth/google/status", headers=h).json()
     assert s["configured"] is False and s["connected"] is False
@@ -137,7 +142,9 @@ def test_calendar_not_connected():
     assert "connect" in str(res).lower()
 
 
-def test_spotify_status_and_play_graceful():
+def test_spotify_status_and_play_graceful(monkeypatch):
+    monkeypatch.delenv("SPOTIFY_CLIENT_ID", raising=False)
+    monkeypatch.delenv("SPOTIFY_CLIENT_SECRET", raising=False)
     h = auth_headers("sp@x.com")
     st = client.get("/oauth/spotify/status", headers=h).json()
     assert st["configured"] is False and st["connected"] is False

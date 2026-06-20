@@ -188,6 +188,97 @@ _NAME_STOP = re.compile(
     r"the|a|an|find|for|is|are|me|email|of|contact)\b", re.I)
 
 
+_STOP_TOKENS = {
+    "a", "an", "the", "is", "are", "was", "were", "of", "for", "to", "in", "on", "at",
+    "what", "whats", "where", "wheres", "when", "who", "whos", "whom", "which", "how",
+    "do", "does", "did", "i", "my", "me", "can", "could", "would", "you", "your",
+    "please", "tell", "give", "and", "or", "s", "there", "that", "this", "with",
+    "about", "need", "know", "find", "looking", "got", "have", "any", "it", "its"}
+
+
+def _content_tokens(q: str):
+    """Query tokens with stop-words removed — keeps names, codes, and topic words."""
+    out = []
+    for t in re.findall(r"[a-z0-9.@]+", (q or "").lower()):
+        if t.isdigit() or (t not in _STOP_TOKENS and len(t) >= 2):
+            out.append(t)
+    return out
+
+
+def best_answer(db, question: str, min_score: int = 1):
+    """A fair, deterministic 'search box': rank every campus record by how many
+    content tokens of the question it contains, and return the single best match
+    formatted as plain text. NO LLM. Returns None if nothing scores. Used both as
+    the evaluation baseline and as Summer's offline fallback when the model is down."""
+    toks = set(_content_tokens(question))
+    if not toks:
+        return None
+    best = (0, None)
+
+    def consider(haystack: str, text: str):
+        nonlocal best
+        h = haystack.lower()
+        score = sum(1 for t in toks if t in h)
+        if score > best[0]:
+            best = (score, text)
+
+    # A person result must actually match the person's NAME (or email) — otherwise a
+    # generic word like "hours" or "office" could pull up an unrelated professor.
+    for p in db.query(models.Professor).all():
+        if not any(t in p.name.lower() or t in (p.email or "").lower() for t in toks):
+            continue
+        office = f"{p.office_building} {p.office_number}".strip() or "not listed"
+        extra = f", office hours {p.office_hours}" if p.office_hours else ""
+        # `title` is added by the faculty-profiles change; tolerate its absence so
+        # this branch works independently of that migration.
+        ptitle = getattr(p, "title", "") or ""
+        title = f"{ptitle}, " if ptitle else ""
+        consider(f"{p.name} {ptitle} {p.department} {office} {p.email}",
+                 f"{p.name} — {title}office {office}, email {p.email or 'not listed'}{extra}.")
+    for a in db.query(models.Advisor).all():
+        if not any(t in a.name.lower() or t in (a.email or "").lower() for t in toks):
+            continue
+        office = f"{a.office_building} {a.office_number}".strip() or "not listed"
+        consider(f"{a.name} {a.department} {office} {a.email} advisor advising",
+                 f"{a.name} (advisor) — office {office}, email {a.email or 'not listed'}.")
+    for c in db.query(models.CourseSection).all():
+        where = f"{c.building} {c.room_number}".strip() or "not listed"
+        consider(f"{c.subject} {c.course} {c.subject}{c.course} {c.title} {c.instructor}",
+                 f"{c.subject} {c.course} {c.title} — meets {c.days or 'n/a'} "
+                 f"{c.times or ''} in {where}, instructor {c.instructor or 'not listed'}.")
+    for b in db.query(models.Building).all():
+        consider(f"{b.name} {b.code} {b.address}",
+                 f"{b.name} ({b.code}) — {b.address}, hours {b.hours_text or 'not listed'}.")
+    for s in db.query(models.ServiceHours).all():
+        pol = f" {s.policy}" if s.policy else ""
+        consider(f"{s.name} {s.location} stockroom service",
+                 f"{s.name} — {s.location}, hours {s.hours_text or 'not listed'}.{pol}")
+
+    return best[1] if best[0] >= min_score else None
+
+
+# Phrases that need the model's reasoning/judgement, semantic search, abbreviation
+# expansion, or a refusal — NEVER short-circuit these to a plain lookup.
+# Leading word boundary + optional suffix (\w*) so inflected forms also match —
+# "prerequisites", "researches", "recommends", "covers" must all trigger a defer.
+_NEEDS_LLM = re.compile(
+    r"\b(prereq\w*|before|after|unlock\w*|leads?|opens?\s+up|recommend\w*|"
+    r"should|which|eligible|register\w*|degree|plan|about|like|similar|compar\w*|"
+    r"explain\w*|why|how\s+(?:do|can|hard)|difference|advice|best|easier|hardest|"
+    r"topic\w*|interest\w*|research\w*|works?\s+on|cover\w*|deal\w*)\b", re.I)
+
+
+def confident_lookup(db, question: str, min_score: int = 2):
+    """Return a deterministic answer ONLY when we're confident this is a direct
+    FACTUAL lookup (office, email, instructor, where/when a class meets, building or
+    service hours), so the kiosk can answer instantly and for free without the LLM.
+    Anything that needs reasoning, advice, semantic/topic search, abbreviation
+    expansion, or a refusal returns None and falls through to the model."""
+    if _NEEDS_LLM.search(question or ""):
+        return None
+    return best_answer(db, question, min_score=min_score)
+
+
 def fast_answer(db, question: str):
     """Hybrid fast path: answer an exact course-code OR an exact professor/advisor
     name straight from the DB with no LLM call. Returns a short text answer, or

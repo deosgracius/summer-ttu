@@ -70,12 +70,16 @@ class BuildingOut(BuildingIn):
 
 class ProfessorIn(BaseModel):
     name: str
+    title: str = ""
     email: str = ""
     department: str = ""
     office_building: str = ""
     office_number: str = ""
     office_hours: str = ""
     office_hours_policy: str = ""
+    photo_url: str = ""
+    cv_url: str = ""
+    bio: str = ""
     semester: str = ""
 
 

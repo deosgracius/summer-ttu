@@ -176,12 +176,16 @@ class Professor(Base):
     __tablename__ = "professors"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
+    title = Column(String, nullable=False, default="")               # e.g. "Department Chair, Professor"
     email = Column(String, nullable=False, default="")
     department = Column(String, nullable=False, default="")
     office_building = Column(String, nullable=False, default="")
     office_number = Column(String, nullable=False, default="")
     office_hours = Column(String, nullable=False, default="")        # e.g. "Mon/Wed 2-4pm"
     office_hours_policy = Column(String, nullable=False, default="")  # e.g. "drop-in" / "by appointment"
+    photo_url = Column(String, nullable=False, default="")           # headshot link (shown when asked about them)
+    cv_url = Column(String, nullable=False, default="")              # link to their CV / curriculum vitae (PDF)
+    bio = Column(String, nullable=False, default="")                 # research interests, education, etc.
     semester = Column(String, nullable=False, default="")
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

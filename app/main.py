@@ -28,6 +28,11 @@ def _migrate():
                          ("location","VARCHAR"),("speaker","VARCHAR"),("image_url","VARCHAR"),("description","VARCHAR"),("layout","VARCHAR NOT NULL DEFAULT 'theater'")]:
             if col not in ecols:
                 conn.execute(text(f"ALTER TABLE events ADD COLUMN {col} {ddl}"))
+        pcols = [c["name"] for c in inspect(engine).get_columns("professors")]
+        for col, ddl in [("title","VARCHAR NOT NULL DEFAULT ''"),("photo_url","VARCHAR NOT NULL DEFAULT ''"),
+                         ("cv_url","VARCHAR NOT NULL DEFAULT ''"),("bio","VARCHAR NOT NULL DEFAULT ''")]:
+            if col not in pcols:
+                conn.execute(text(f"ALTER TABLE professors ADD COLUMN {col} {ddl}"))
         bcols = [c["name"] for c in inspect(engine).get_columns("bookings")]
         for col, ddl in [("category_id","INTEGER"),("quantity","INTEGER NOT NULL DEFAULT 1"),("amount","FLOAT NOT NULL DEFAULT 0")]:
             if col not in bcols:

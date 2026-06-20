@@ -59,13 +59,16 @@ def find_courses(db, query: str, semester: str = ""):
 def find_professors(db, query: str):
     out = []
     for p in db.query(models.Professor).order_by(models.Professor.name).all():
-        hay = f"{p.name} {p.department} {p.office_building} {p.office_number} {p.email}"
+        hay = f"{p.name} {p.title} {p.department} {p.office_building} {p.office_number} {p.email}"
         if _matches(hay, query):
             out.append({
-                "name": p.name, "department": p.department, "email": p.email,
+                "name": p.name, "title": p.title, "department": p.department, "email": p.email,
                 "office": f"{p.office_building} {p.office_number}".strip(),
                 "office_hours": p.office_hours or "not listed",
                 "office_hours_policy": p.office_hours_policy or "not listed",
+                "photo": p.photo_url or "",
+                "cv": p.cv_url or "",
+                "bio": p.bio or "",
                 "semester": p.semester,
             })
         if len(out) >= _LIMIT:

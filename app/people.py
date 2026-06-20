@@ -56,6 +56,12 @@ def sync_people(db):
         _set_if(p, "office_building", pr.office_building)
         _set_if(p, "office_number", pr.office_number)
         _set_if(p, "office_hours", pr.office_hours)
+        # Seed the photo/bio from the directory, but never overwrite an admin's own
+        # enrichment (those edits must survive future syncs).
+        if not p.photo_url:
+            _set_if(p, "photo_url", pr.photo_url)
+        if not p.bio:
+            _set_if(p, "bio", pr.bio)
 
     for ad in db.query(models.Advisor).all():
         p = get(ad.name, "Advisor")

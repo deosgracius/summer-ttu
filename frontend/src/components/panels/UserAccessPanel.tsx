@@ -66,6 +66,29 @@ export default function UserAccessPanel({ reloadKey }: { reloadKey?: number }) {
     }
   }
 
+  async function approveUser(u: AdminUser) {
+    try {
+      await api.post(`/admin/users/${u.id}/approve`)
+      toast.success(`Approved ${u.email}`)
+      setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, approved: true } : x)))
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not approve user")
+      load()
+    }
+  }
+
+  async function removeUser(u: AdminUser) {
+    if (!window.confirm(`Remove ${u.email}? This permanently deletes their account and personal data.`)) return
+    try {
+      await withStepUp(() => api.del(`/admin/users/${u.id}`))
+      toast.success(`Removed ${u.email}`)
+      setUsers((prev) => prev.filter((x) => x.id !== u.id))
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not remove user")
+      load()
+    }
+  }
+
   async function toggleServices(uid: number) {
     if (svcOpen === uid) {
       setSvcOpen(null)
@@ -113,7 +136,21 @@ export default function UserAccessPanel({ reloadKey }: { reloadKey?: number }) {
           <span className="flex-1 truncate">
             {u.email}
             {u.id === me?.id && <span className="text-muted-foreground"> (you)</span>}
+            {u.approved === false && (
+              <span className="ml-2 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-amber-500">
+                Pending
+              </span>
+            )}
           </span>
+          {u.approved === false && (
+            <button
+              onClick={() => approveUser(u)}
+              className="text-xs text-emerald-500 hover:underline"
+              title={`Approve ${u.email}`}
+            >
+              Approve
+            </button>
+          )}
           {canGrant && (
             <button onClick={() => toggleServices(u.id)} className="text-xs text-primary/80 hover:underline">
               {svcOpen === u.id ? "Services ▾" : "Services ▸"}
@@ -133,6 +170,15 @@ export default function UserAccessPanel({ reloadKey }: { reloadKey?: number }) {
             </select>
           ) : (
             <span className="text-xs text-muted-foreground">{ROLE_LABELS[u.role]}</span>
+          )}
+          {isCentral && u.id !== me?.id && u.role !== "central_admin" && (
+            <button
+              onClick={() => removeUser(u)}
+              className="text-xs text-destructive/80 hover:underline"
+              title={`Remove ${u.email}`}
+            >
+              Remove
+            </button>
           )}
         </div>
 

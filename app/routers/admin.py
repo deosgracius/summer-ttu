@@ -14,8 +14,25 @@ PRICES = {"anthropic": (0.80, 4.00), "openai": (0.15, 0.60)}
 
 @router.get("/users")
 def list_users(db: Session = Depends(get_db), user: models.User = Depends(require_roles("admin"))):
-    return [{"id": u.id, "email": u.email, "role": u.role}
+    return [{"id": u.id, "email": u.email, "role": u.role, "approved": bool(getattr(u, "approved", True))}
             for u in db.query(models.User).order_by(models.User.id).all()]
+
+
+@router.post("/users/{uid}/approve")
+def approve_user(uid: int, db: Session = Depends(get_db),
+                 actor: models.User = Depends(require_roles("admin"))):
+    """Approve a pending sign-up so they can log in. Admin / central admin."""
+    target = db.get(models.User, uid)
+    if not target:
+        raise HTTPException(404, "User not found.")
+    if getattr(target, "approved", True):
+        return {"id": uid, "email": target.email, "approved": True}
+    target.approved = True
+    from .. import audit
+    audit.log(db, actor, "approve_user", f"Approved sign-up {target.email}",
+              {"user_id": uid, "email": target.email})
+    db.commit()
+    return {"id": uid, "email": target.email, "approved": True}
 
 
 @router.get("/usage")
@@ -146,6 +163,36 @@ def assign_role(data: AssignRole, db: Session = Depends(get_db),
               {"target": target.email, "from": old_role, "to": new_role})
     db.commit()
     return {"email": target.email, "role": target.role, "by": actor.email}
+
+
+@router.delete("/users/{uid}")
+def delete_user(uid: int, db: Session = Depends(get_db),
+                actor: models.User = Depends(require_roles("central_admin"))):
+    """Remove a user and all of their personal data. Central admin only.
+    You can't remove yourself or a central admin (reassign their role first)."""
+    if uid == actor.id:
+        raise HTTPException(400, "You can't remove your own account.")
+    target = db.get(models.User, uid)
+    if not target:
+        raise HTTPException(404, "User not found.")
+    if target.role == "central_admin":
+        raise HTTPException(403, "Reassign this person's central-admin role before removing them.")
+    email = target.email
+    # Generic cascade: clear rows in every table that references this user, then the
+    # user — so it stays correct as new user-linked tables are added by other work.
+    for mapper in models.Base.registry.mappers:
+        cls = mapper.class_
+        if cls is models.User:
+            continue
+        cols = cls.__table__.columns
+        for fk_col in ("user_id", "owner_id", "proposer_id"):
+            if fk_col in cols:
+                db.query(cls).filter(getattr(cls, fk_col) == uid).delete(synchronize_session=False)
+    db.query(models.User).filter(models.User.id == uid).delete(synchronize_session=False)
+    from .. import audit
+    audit.log(db, actor, "delete_user", f"Removed user {email}", {"user_id": uid, "email": email})
+    db.commit()
+    return {"deleted": uid, "email": email}
 
 
 # --- Per-user service grants (central admin enables a service for one person) ---

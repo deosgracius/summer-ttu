@@ -365,6 +365,42 @@ def set_delegation(data: DelegationCfg, db: Session = Depends(get_db),
     return delegation.status(db)
 
 
+# --- Quick links (named URLs Summer opens by voice) ---
+
+class QuickLink(BaseModel):
+    name: str
+    url: str = ""
+
+
+@router.get("/links")
+def list_links(db: Session = Depends(get_db),
+               actor: models.User = Depends(require_roles("admin"))):
+    from .. import quicklinks
+    return quicklinks.get_links(db)
+
+
+@router.post("/links")
+def add_link(data: QuickLink, db: Session = Depends(get_db),
+             actor: models.User = Depends(require_roles("admin"))):
+    """Save a named quick link (e.g. 'gantt chart' -> https://...) that Summer can
+    open by voice. http(s) URLs only."""
+    from .. import quicklinks, audit
+    try:
+        links = quicklinks.set_link(db, data.name, data.url)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    audit.log(db, actor, "set_quick_link", f"Quick link: {data.name}",
+              {"name": data.name, "url": data.url})
+    return links
+
+
+@router.delete("/links/{name}")
+def del_link(name: str, db: Session = Depends(get_db),
+             actor: models.User = Depends(require_roles("admin"))):
+    from .. import quicklinks
+    return quicklinks.remove_link(db, name)
+
+
 @router.post("/pending/{change_id}/reject")
 def reject_change(change_id: int, data: Decision, db: Session = Depends(get_db),
                   actor: models.User = Depends(require_roles("central_admin")),

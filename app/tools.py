@@ -42,6 +42,7 @@ SERVICES = {
     "ieee":             {"label": "IEEE info",              "tools": ("ieee_info",)},
     "system_control":   {"label": "Computer control",       "tools": ("system_control",)},
     "web_search":       {"label": "Web & part search (Google, Wikipedia, Amazon, DigiKey, Mouser)", "tools": ("web_search",)},
+    "research":         {"label": "Research & general knowledge (Wikipedia + web)", "tools": ("research", "read_webpage")},
 }
 
 
@@ -440,7 +441,7 @@ TOOLS = {
     "list_reminders": _t("List the user's reminders.", ALL, {}, [], list_reminders),
     "set_profile": _t("Save the user's timezone or location.", ALL, {"timezone": {"type": "string"}, "location": {"type": "string"}}, [], set_profile),
     "calendar_add_event": _t("Add an event to the user's Google Calendar. Provide start as a local ISO datetime like 2026-06-16T10:00:00, computed from the current local time in your context.", ALL, {"summary": {"type": "string"}, "start": {"type": "string"}, "duration_minutes": {"type": "integer"}}, ["summary", "start"], calendar_add_event),
-    "research": _t("Look a topic up and summarize it (for specific facts you are unsure of).", ALL, {"query": {"type": "string"}}, ["query"], research),
+    "research": _t("Research a general-knowledge topic: pulls the most relevant Wikipedia articles and returns their content so you can synthesize a thorough, intelligent, well-organized answer WITH sources. Use this for 'teach me about X', 'research Y', 'explain Z', or any general knowledge/research question. Central admin / granted users only.", CENTRAL, {"query": {"type": "string"}}, ["query"], research),
     "draft_email": _t("Write an email DRAFT for the user to review and approve before sending; never claim it is already sent.", ALL, {"to": {"type": "string"}, "subject": {"type": "string"}, "body": {"type": "string"}}, ["body"], draft_email),
     "list_events": _t("List upcoming events with ids, times, and seats available.", ALL, {}, [], list_events),
     "book_event": _t("Book a seat for an event by id (call list_events first).", ALL, {"event_id": {"type": "integer"}}, ["event_id"], book_event),
@@ -453,7 +454,7 @@ TOOLS = {
     "forget": _t("Forget a saved memory by its numeric id.", ALL, {"memory_id": {"type": "integer"}}, ["memory_id"], forget),
     "daily_brief": _t("Gather the user's open tasks, reminders, booked events, and upcoming Google Calendar events so you can summarize their day and flag conflicts/overloaded times with suggested fixes.", ADMINS, {}, [], daily_brief),
     "open_website": _t("Open a web page in the user's browser — e.g. a Ticketmaster event/booking page, or any link. Provide the full url.", ALL, {"url": {"type": "string"}}, ["url"], open_website),
-    "read_webpage": _t("Fetch a web page and return its text so you can read or summarize it (news articles, event pages, docs). Provide the url.", ALL, {"url": {"type": "string"}}, ["url"], read_webpage),
+    "read_webpage": _t("Fetch a web page and return its text so you can read or summarize it (news articles, event pages, docs). Provide the url. Central admin / research-granted users only.", CENTRAL, {"url": {"type": "string"}}, ["url"], read_webpage),
     "email_delete": _t("Move an email to trash by its message_id (Gmail or Outlook). Always confirm with the user before deleting.", ADMINS, {"provider": {"type": "string"}, "message_id": {"type": "string"}}, ["message_id"], email_delete),
     "read_emails": _t("Read the user's recent inbox emails from Gmail and/or Outlook. Automatically skips no-reply senders. Optional 'provider' (gmail or outlook).", ADMINS, {"provider": {"type": "string"}, "limit": {"type": "integer"}}, [], read_emails),
     "email_reply": _t("Reply to a specific inbox email by its message_id. Never replies to no-reply senders. Show the user your draft and confirm before sending.", ADMINS, {"provider": {"type": "string"}, "message_id": {"type": "string"}, "body": {"type": "string"}}, ["message_id", "body"], email_reply),

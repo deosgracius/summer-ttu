@@ -259,6 +259,11 @@ async def run_kiosk_traced(goal, db, provider=None):
     quick = campus_service.fast_answer(db, goal)
     if quick:
         return {"reply": quick, "actions": [], "latency_ms": 0.0}
+    # SPEECH-ROBUST PEOPLE: resolve a mispronounced/partial name (first OR last)
+    # deterministically — full public detail, or a disambiguation if several match.
+    person = campus_service.person_answer(db, goal)
+    if person:
+        return {"reply": person, "actions": [], "latency_ms": 0.0}
     # CONFIDENT FACTUAL LOOKUP: natural-language questions that clearly resolve to one
     # campus record (an office, instructor, building/service hours) are answered straight
     # from the DB — instant and free — instead of paying the LLM. Anything needing

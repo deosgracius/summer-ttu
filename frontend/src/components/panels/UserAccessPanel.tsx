@@ -174,10 +174,10 @@ export default function UserAccessPanel({ reloadKey }: { reloadKey?: number }) {
           {isCentral && u.id !== me?.id && u.role !== "central_admin" && (
             <button
               onClick={() => removeUser(u)}
-              className="text-xs text-destructive/80 hover:underline"
-              title={`Remove ${u.email}`}
+              className="shrink-0 rounded-md border border-destructive/50 px-2 py-1 text-xs font-medium text-destructive hover:bg-destructive/10"
+              title={`Remove ${u.email} from Summer`}
             >
-              Remove
+              🗑 Remove
             </button>
           )}
         </div>
@@ -226,7 +226,7 @@ export default function UserAccessPanel({ reloadKey }: { reloadKey?: number }) {
     <PanelCard title="User Access">
       <div className="text-xs text-muted-foreground">
         You can assign: {assignable.map((r) => ROLE_LABELS[r]).join(", ")}.
-        {isCentral && " Use Services to enable an admin-only service for one person."}
+        {isCentral && " As central admin you can also enable services per person, approve pending sign-ups, and remove a user with the 🗑 Remove button."}
       </div>
       <div className="mt-3">
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search users by email…" />

@@ -282,12 +282,17 @@ def import_staff(db, client):
             block.append(f"Phone: {phone}")
         if office:
             block.append(f"Office: {office}")
-        doc_parts.append("\n".join(block))
+        doc_parts.append((name, (BASE + path) if path else STAFF_URL, "\n".join(block)))
         print(f"    [{i}/{len(bios)}] {name}")
 
     db.commit()
-    _replace_doc(db, "TTU ECE Staff — Directory", STAFF_URL, "\n\n".join(doc_parts))
-    print(f"  staff refreshed: {refreshed}")
+    # One searchable document per staff member (symmetry with faculty), so staff
+    # lookups resolve cleanly. Clear the old combined/per-staff docs first.
+    for d in db.query(models.Document).filter(models.Document.title.like("TTU ECE Staff%")).all():
+        docs_rag.delete_document(db, d.id)
+    for nm, src, text in doc_parts:
+        docs_rag.ingest_document(db, title=f"TTU ECE Staff — {nm}", source=src, text=text)
+    print(f"  staff refreshed: {refreshed} (one searchable document each)")
 
 
 # --------------------------------------------------------------------------- #

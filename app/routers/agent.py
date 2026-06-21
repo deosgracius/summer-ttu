@@ -12,14 +12,17 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 
 
 @router.get("/welcome")
-async def welcome(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+async def welcome(hour: int = -1, db: Session = Depends(get_db),
+                  user: models.User = Depends(get_current_user)):
     """Spoken 'welcome back' briefing — gated on the 'daily_update' service
-    (admins always; others only if the central admin granted it)."""
+    (admins always; others only if the central admin granted it). `hour` is the
+    client's local hour (0-23) so the greeting matches the user's time, not the
+    UTC server clock."""
     is_admin = user.role in ("admin", "central_admin")
     if not is_admin and "daily_update" not in _granted_services_for(db, user.id):
         return {"text": "", "disabled": True}
     try:
-        return await compose_welcome(db, user)
+        return await compose_welcome(db, user, hour)
     except Exception as e:
         # Log server-side; don't leak internal exception detail to the client.
         import logging

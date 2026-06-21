@@ -6,6 +6,7 @@ public events (Ticketmaster, within 600 miles over the next three weeks), and
 returns it as one block of text the frontend reads aloud over background music.
 Every source is wrapped defensively — if email isn't connected or a lookup fails,
 that line is simply skipped, never an error."""
+import os
 import datetime
 import httpx
 from . import tools as _tools
@@ -74,9 +75,27 @@ async def _weather_brief(location):
         return None
 
 
-async def compose_welcome(db, user):
+def _local_hour(user, client_hour: int = -1) -> int:
+    """The user's real local hour for the greeting. Prefer the client's reported hour
+    (most accurate); else the user's configured timezone; else Central time — the
+    TTU/Lubbock campus zone. NEVER the UTC server clock (Fly runs in UTC)."""
+    if 0 <= client_hour <= 23:
+        return client_hour
+    tz = (getattr(user, "timezone", "") or "").strip()
+    if not tz or tz.upper() == "UTC":
+        tz = os.getenv("DEFAULT_TZ", "America/Chicago")
+    for zone in (tz, "America/Chicago"):
+        try:
+            from zoneinfo import ZoneInfo
+            return datetime.datetime.now(ZoneInfo(zone)).hour
+        except Exception:
+            continue
+    return datetime.datetime.utcnow().hour
+
+
+async def compose_welcome(db, user, client_hour: int = -1):
     name = _first_name(user)
-    hour = datetime.datetime.now().hour
+    hour = _local_hour(user, client_hour)
     greet = "Good morning" if hour < 12 else "Good afternoon" if hour < 18 else "Good evening"
     parts = [f"{greet}, {name}. Here's your update."]
 

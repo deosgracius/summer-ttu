@@ -32,7 +32,7 @@ from .agent import KIOSK_TOOLS
 # Tools the public kiosk must NEVER be able to reach (defense-in-depth assertion).
 _DANGEROUS = {"email_send", "email_reply", "read_emails", "email_delete", "draft_email",
               "system_control", "play_music", "play_playlist", "music_control",
-              "list_users", "create_event", "create_campaign", "calendar_add_event",
+              "list_users", "create_event", "calendar_add_event",
               "set_reminder", "remember", "open_website"}
 # The only tools that legitimately belong on the kiosk.
 _CAMPUS_OK = {"find_course", "find_professor", "find_staff", "find_advisor",

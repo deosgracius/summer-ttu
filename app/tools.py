@@ -321,19 +321,6 @@ async def system_control(args, db, user):
     return _sys_control(args.get("action", ""))
 
 
-async def create_campaign(args, db, user):
-    from .content_studio import generate_campaign
-    from . import models as _m
-    import json as _j
-    topic = args.get("topic", "")
-    plats = args.get("platforms") or ["Instagram", "TikTok", "Facebook", "YouTube"]
-    content = await generate_campaign(topic, plats)
-    d = _m.ContentDraft(user_id=user.id, topic=topic, platforms=",".join(plats),
-                        content=_j.dumps(content), status="draft")
-    db.add(d); db.commit()
-    return {"created": True, "topic": topic, "content": content}
-
-
 # --- Campus lookups (TTU summer app). Read-only over admin-loaded data. ---
 
 async def find_course(args, db, user):
@@ -453,7 +440,6 @@ TOOLS = {
     "book_event": _t("Book a seat for an event by id (call list_events first).", ALL, {"event_id": {"type": "integer"}}, ["event_id"], book_event),
     "cancel_event_booking": _t("Cancel the user's booking for an event by id.", ALL, {"event_id": {"type": "integer"}}, ["event_id"], cancel_event_booking),
     "my_event_bookings": _t("Show the user's event bookings.", ALL, {}, [], my_event_bookings),
-    "create_campaign": _t("Generate a social-media marketing campaign (platform captions, hashtags, a Veo 3 video prompt, and a Canva flyer spec) for an event or topic.", ("client", "admin", "central_admin"), {"topic": {"type": "string"}, "platforms": {"type": "array", "items": {"type": "string"}}}, ["topic"], create_campaign),
     "create_event": _t("Create a new event.", ("client", "admin", "central_admin"), {"title": {"type": "string"}, "when": {"type": "string"}, "capacity": {"type": "integer"}}, ["title"], create_event),
     "remember": _t("Save a durable fact or preference about the user (e.g. 'prefers morning meetings', 'dog is named Max').", ALL, {"text": {"type": "string"}}, ["text"], remember),
     "list_memories": _t("List the durable facts you remember about the user.", ALL, {}, [], list_memories),

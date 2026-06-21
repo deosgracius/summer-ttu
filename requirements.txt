@@ -8,17 +8,16 @@ cryptography>=48.0.1
 bcrypt
 python-multipart
 psycopg[binary]
+# (removed: stripe, reportlab — payments/receipts feature cut from the campus build)
 anthropic
 openai
 httpx
 pytest
 tzdata
-reportlab
 openpyxl
 pyotp
 webauthn
 python-dateutil
-stripe
 psycopg2-binary
 neo4j
 mcp

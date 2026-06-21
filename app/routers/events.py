@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from .. import models
@@ -136,28 +136,6 @@ async def _fanout(db, user, res):
                 await add_event(db, user, f"{label} (booked)", dt.isoformat(), 120)
         except Exception:
             pass
-    try:
-        from ..receipts import build_pdf
-        from .. import mailer
-        ev = db.get(_m.Event, res.get("event_id"))
-        owner = db.get(_m.User, ev.owner_id) if (ev and ev.owner_id) else None
-        r = {"booking_id": res.get("booking_id"), "event": label, "when": res.get("when"),
-             "location": res.get("location"), "speaker": res.get("speaker"),
-             "customer": user.email, "items": res.get("items", []), "total": res.get("total", 0)}
-        pdf = build_pdf(r)
-        recips = [user.email] + ([owner.email] if owner else [])
-        subject = f"Your Summer receipt - {label}"
-        body = (f"Thanks for your booking!\n\nEvent: {label}\nWhen: {res.get('when')}\n"
-                f"Total: ${res.get('total')}\n\nYour PDF receipt is attached.")
-        fname = f"summer-receipt-{res.get('booking_id')}.pdf"
-        if not mailer.send_with_pdf(recips, subject, body, pdf, fname):
-            try:
-                from ..gmail import send_with_pdf as _gpdf
-                await _gpdf(db, user, recips, subject, body, pdf, fname)
-            except Exception:
-                pass
-    except Exception:
-        pass
 
 
 @router.post("/{event_id}/book-seats")
@@ -171,22 +149,6 @@ async def book_seats_ep(event_id: int, data: BookSeats, db: Session = Depends(ge
         except Exception:
             pass
     return res
-
-
-@router.get("/receipt/{booking_id}")
-def receipt_pdf(booking_id: int, db: Session = Depends(get_db),
-                user: models.User = Depends(get_current_user)):
-    import json as _j
-    b = db.get(models.Booking, booking_id)
-    if not b or b.user_id != user.id:
-        raise HTTPException(404, "receipt not found")
-    ev = db.get(models.Event, b.event_id)
-    r = {"booking_id": b.id, "event": ev.title if ev else "", "when": ev.when_text if ev else "",
-         "location": getattr(ev, "location", None), "speaker": getattr(ev, "speaker", None),
-         "customer": user.email, "items": _j.loads(b.details or "[]"), "total": b.amount}
-    from ..receipts import build_pdf
-    return Response(content=build_pdf(r), media_type="application/pdf",
-                    headers={"Content-Disposition": f'inline; filename="summer-receipt-{b.id}.pdf"'})
 
 
 @router.delete("/{event_id}")

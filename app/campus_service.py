@@ -4,6 +4,7 @@ Everything here is a plain DB read scoped to what the admin imported — no advi
 no invention. If nothing matches, the tools say so and suggest who to contact.
 """
 import re
+import time
 import difflib
 from . import models
 
@@ -523,3 +524,48 @@ def fast_answer(db, question: str):
                     f"office {p.get('office') or 'not listed'}, "
                     f"hours {hours}, email {p.get('email') or 'not listed'}.")
     return None
+
+
+# ---- Speech-recognition vocabulary hint -------------------------------------
+# A short phrase fed to Whisper as a transcription bias so campus-specific names
+# (e.g. "Changzhi", "Erdmann") and course codes are heard correctly instead of being
+# mangled into something the fuzzy matcher then has to rescue. Cached in-process; it
+# only changes when the campus data is re-synced. Whisper biases on this prompt but
+# never invents from it, so provenance is unaffected.
+_HINT_CACHE = {"text": "", "exp": 0.0}
+_HINT_TTL = 600  # seconds
+
+
+def speech_hint(db) -> str:
+    now = time.time()
+    if _HINT_CACHE["text"] and now < _HINT_CACHE["exp"]:
+        return _HINT_CACHE["text"]
+    names = []
+    try:
+        for M in (models.Professor, models.Staff, models.Advisor):
+            for (n,) in db.query(M.name).all():
+                if n and n.strip():
+                    names.append(n.strip())
+    except Exception:
+        names = []
+    courses = []
+    try:
+        seen = set()
+        for subj, crs in db.query(models.CourseSection.subject, models.CourseSection.course).all():
+            code = f"{(subj or '').strip()} {(crs or '').strip()}".strip()
+            if code and code not in seen:
+                seen.add(code)
+                courses.append(code)
+    except Exception:
+        courses = []
+    parts = ["Texas Tech University ECE department."]
+    uniq = list(dict.fromkeys(names))  # de-dupe, keep order; names matter most
+    if uniq:
+        parts.append("People: " + ", ".join(uniq) + ".")
+    if courses:
+        parts.append("Courses: " + ", ".join(courses[:40]) + ".")
+    # Whisper's prompt is bounded (~224 tokens); cap so names aren't crowded out.
+    hint = " ".join(parts)[:850]
+    _HINT_CACHE["text"] = hint
+    _HINT_CACHE["exp"] = now + _HINT_TTL
+    return hint

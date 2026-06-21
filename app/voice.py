@@ -74,17 +74,24 @@ def stt_enabled() -> bool:
     return bool(os.getenv("OPENAI_API_KEY"))
 
 
-def transcribe(audio: bytes, filename: str = "audio.webm") -> str:
+def transcribe(audio: bytes, filename: str = "audio.webm", prompt: str | None = None) -> str:
     """Transcribe recorded mic audio via OpenAI Whisper. Reliable across networks
     and browsers (unlike the browser's Web Speech API). Synchronous — call it from
-    a sync route so FastAPI runs it in a threadpool. Raises on missing key/API error."""
+    a sync route so FastAPI runs it in a threadpool. Raises on missing key/API error.
+
+    `prompt` is an optional vocabulary bias (e.g. campus names + course codes) so
+    domain words transcribe correctly; Whisper only uses it to disambiguate audio,
+    never to add words that weren't spoken."""
     import openai
     key = os.getenv("OPENAI_API_KEY")
     if not key:
         raise RuntimeError("OpenAI not configured for transcription")
     client = openai.OpenAI(api_key=key)
     model = os.getenv("STT_MODEL", "whisper-1")
-    resp = client.audio.transcriptions.create(model=model, file=(filename, audio))
+    kwargs = {"model": model, "file": (filename, audio)}
+    if prompt:
+        kwargs["prompt"] = prompt[:900]
+    resp = client.audio.transcriptions.create(**kwargs)
     return (getattr(resp, "text", "") or "").strip()
 
 

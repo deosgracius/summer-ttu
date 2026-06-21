@@ -28,6 +28,13 @@ TTS_MAX = int(os.getenv("KIOSK_TTS_PER_MIN", "80"))   # one answer = several chu
 
 
 def _client_ip(request: Request) -> str:
+    # Fly-Client-IP is set by Fly's edge and cannot be spoofed by the caller (Fly
+    # overwrites it), so it's the trustworthy key for the per-IP cost guard. A
+    # client-supplied X-Forwarded-For could otherwise be rotated to evade the limit;
+    # fall back to it (then the peer) only for non-Fly/local runs.
+    fly = request.headers.get("fly-client-ip")
+    if fly:
+        return fly.strip()
     fwd = request.headers.get("x-forwarded-for")
     if fwd:
         return fwd.split(",")[0].strip()
@@ -103,7 +110,7 @@ def kiosk_search(request: Request, q: str = "", kind: str = "all", db: Session =
 
 
 @router.post("/stt")
-def kiosk_stt(request: Request, file: UploadFile = File(...)):
+def kiosk_stt(request: Request, file: UploadFile = File(...), db: Session = Depends(get_db)):
     """Public mic transcription for the kiosk (Whisper). Rate-limited like /ask."""
     _rate_limit(request, "ask", ASK_MAX)
     if not voice.stt_enabled():
@@ -114,7 +121,8 @@ def kiosk_stt(request: Request, file: UploadFile = File(...)):
     if len(data) > 25 * 1024 * 1024:
         raise HTTPException(413, "audio too large")
     try:
-        return {"text": voice.transcribe(data, file.filename or "audio.webm")}
+        hint = campus_service.speech_hint(db)
+        return {"text": voice.transcribe(data, file.filename or "audio.webm", prompt=hint)}
     except Exception as e:  # noqa
         import logging
         logging.getLogger("summer").warning("kiosk stt failed: %s", e)

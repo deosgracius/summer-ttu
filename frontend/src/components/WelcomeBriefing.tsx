@@ -65,9 +65,18 @@ export default function WelcomeBriefing() {
       return
     }
     if (!started) {
-      // Autoplay was blocked (no prior gesture) — fall back to a tap.
+      // Autoplay was blocked — this happens when the dashboard loads from a stored
+      // token (no login click to grant a gesture). Show the tap hint, but also start
+      // on the very FIRST interaction anywhere on the page, so it feels automatic.
       setText(r.text)
       setNeedsTap(true)
+      const kick = () => {
+        window.removeEventListener("pointerdown", kick)
+        window.removeEventListener("keydown", kick)
+        run()
+      }
+      window.addEventListener("pointerdown", kick, { once: true })
+      window.addEventListener("keydown", kick, { once: true })
       return
     }
     setStatus("playing")

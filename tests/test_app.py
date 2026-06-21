@@ -17,17 +17,20 @@ client = TestClient(app)
 
 def auth_headers(email="a@b.com", role="customer"):
     client.post("/auth/register", json={"email": email, "password": "pw12345"})
-    # Public sign-up is locked to "customer"; elevate directly in the DB for tests
-    # (in the real app this happens via center-admin /admin/assign-role).
-    if role != "customer":
-        from app.database import SessionLocal
-        from app import models
-        db = SessionLocal()
-        u = db.query(models.User).filter_by(email=email).first()
-        if u:
+    # Public sign-ups start unapproved and the requested role is locked to
+    # "customer"; approve the user (and elevate the role when asked) directly in
+    # the DB for tests. In the real app a central admin does this via
+    # /admin/approve and /admin/assign-role before the user can log in.
+    from app.database import SessionLocal
+    from app import models
+    db = SessionLocal()
+    u = db.query(models.User).filter_by(email=email).first()
+    if u:
+        u.approved = True
+        if role != "customer":
             u.role = role
-            db.commit()
-        db.close()
+        db.commit()
+    db.close()
     r = client.post("/auth/login", data={"username": email, "password": "pw12345"})
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 

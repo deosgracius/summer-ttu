@@ -8,7 +8,15 @@ from sqlalchemy.orm import Session
 from .database import get_db
 from . import models
 
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-me")
+_DEV_SECRET = "dev-secret-change-me"
+SECRET_KEY = os.getenv("SECRET_KEY", _DEV_SECRET)
+# Refuse to boot with the forgeable dev secret in production. Fly sets FLY_APP_NAME
+# automatically; WEB_DIST is set when serving the baked prod build. Either signals a
+# real deploy, where a missing/default SECRET_KEY would let anyone forge admin tokens.
+if SECRET_KEY == _DEV_SECRET and (os.getenv("FLY_APP_NAME") or os.getenv("WEB_DIST")):
+    raise RuntimeError(
+        "SECRET_KEY is unset or the dev default in a production environment. Set a "
+        "strong secret, e.g. `fly secrets set SECRET_KEY=$(openssl rand -hex 32)`.")
 ALGORITHM = "HS256"
 EXPIRE_MIN = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
@@ -32,6 +40,10 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
                             headers={"WWW-Authenticate": "Bearer"})
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        # A scoped token (e.g. purpose="reset") is not a login token — reject it so a
+        # password-reset link can't be replayed as a bearer credential.
+        if payload.get("purpose"):
+            raise cred_exc
         uid = int(payload.get("sub"))
     except Exception:
         raise cred_exc

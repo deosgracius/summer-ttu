@@ -3,6 +3,8 @@ uvicorn[standard]
 sqlalchemy
 pydantic
 pyjwt
+# Transitive (pyjwt/webauthn) but pinned: floor past GHSA-537c-gmf6-5ccf.
+cryptography>=48.0.1
 bcrypt
 python-multipart
 psycopg[binary]

@@ -3,10 +3,58 @@
 Everything here is a plain DB read scoped to what the admin imported — no advice,
 no invention. If nothing matches, the tools say so and suggest who to contact.
 """
+import os
 import re
 import time
+import datetime
 import difflib
 from . import models
+
+# How long a campus record may go un-resourced before it's flagged stale. A semester
+# (~120 days), since office/room/schedule facts are set per term and rarely change.
+STALE_DAYS = int(os.getenv("CAMPUS_STALE_DAYS", "120"))
+
+
+def _verified_at(*records):
+    """The most recent confirmation time among the given records. Every write to a
+    campus table (import from the live page, or an admin edit) bumps updated_at, so
+    it doubles as 'last verified'. Returns a datetime or None."""
+    dates = [d for r in records
+             for d in [getattr(r, "last_verified", None) or getattr(r, "updated_at", None)]
+             if d]
+    return max(dates) if dates else None
+
+
+def as_of(*records) -> str:
+    """An honest freshness label: 'As of YYYY-MM-DD; confirm with the office for
+    changes.' — or '' when no date is known. Append to any answer carrying a fact
+    that could drift (hours, office, schedule)."""
+    d = _verified_at(*records)
+    if not d:
+        return ""
+    try:
+        return f"As of {d.date().isoformat()}; confirm with the office for changes."
+    except Exception:
+        return ""
+
+
+def stale_records(db, days: int = STALE_DAYS):
+    """Campus records not re-confirmed within `days` — the staleness alarm's data."""
+    cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=days)
+    out = []
+    for kind, cls in (("professor", "Professor"), ("staff", "Staff"),
+                      ("advisor", "Advisor"), ("service", "ServiceHours"),
+                      ("building", "Building")):
+        M = getattr(models, cls, None)
+        if M is None:
+            continue
+        for r in db.query(M).all():
+            d = _verified_at(r)
+            if d and d < cutoff:
+                out.append({"kind": kind,
+                            "name": getattr(r, "name", "") or getattr(r, "code", ""),
+                            "as_of": d.date().isoformat()})
+    return sorted(out, key=lambda x: x["as_of"])
 
 # Every ECE office runs walk-in: if the door is open, first come, first served.
 WALK_IN = "These offices are walk-in — if the door is open, it's first come, first served."
@@ -368,6 +416,9 @@ def _person_detail(db, kind: str, r) -> str:
     if bio:
         parts.append(bio)
     parts.append(WALK_IN)
+    stamp = as_of(p, r)  # honest freshness on the office/hours we just stated
+    if stamp:
+        parts.append(stamp)
     parts.append(f"For more, see the TTU ECE directory: {DIRECTORY_URL}")
     return " ".join(parts)
 

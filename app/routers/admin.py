@@ -423,3 +423,23 @@ def audit_log(limit: int = 100, db: Session = Depends(get_db),
               .order_by(models.AuditLog.id.desc()).limit(min(limit, 500)).all())
     return [{"id": r.id, "actor": r.actor_email, "action": r.action,
              "summary": r.summary, "created_at": r.created_at} for r in rows]
+
+
+@router.get("/staleness")
+def staleness(days: int = 0, notify: int = 0, db: Session = Depends(get_db),
+              actor: models.User = Depends(require_roles("admin"))):
+    """Campus records not re-confirmed within `days` (default ~one semester). The
+    freshness alarm: surfaces silently-aging facts. With notify=1 it also emails the
+    support contact (DG) — point the weekly refresh job at this to get a heartbeat."""
+    import os
+    from .. import campus_service, mailer
+    d = days or campus_service.STALE_DAYS
+    rows = campus_service.stale_records(db, d)
+    emailed = False
+    if notify and rows:
+        to = os.getenv("SUPPORT_EMAIL", "deosgracius17@gmail.com")
+        lines = "\n".join(f"- {r['kind']}: {r['name']} (as of {r['as_of']})" for r in rows)
+        emailed = mailer.send_text([to], f"Summer: {len(rows)} campus records need re-verifying",
+                                   f"These records are older than {d} days:\n\n{lines}\n\n"
+                                   f"Re-confirm them in the admin People/Campus panels.")
+    return {"days": d, "count": len(rows), "notified": emailed, "stale": rows}

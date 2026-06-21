@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse, FileResponse
 from sqlalchemy import inspect, text
 from .database import Base, engine, SessionLocal
-from .routers import auth, tasks, events, reminders, emails, memories, admin, oauth, spotify, outlook, vision, agent, payments, content, voice, campus, security, kiosk, docs
+from .routers import auth, tasks, events, reminders, emails, memories, admin, oauth, spotify, outlook, vision, agent, voice, campus, security, kiosk, docs
 from .realtime import manager
 from . import models
 
@@ -175,7 +175,7 @@ async def _no_cache_ui(request, call_next):
         resp.headers["Expires"] = "0"
     return resp
 for r in (auth.router, tasks.router, events.router, reminders.router, emails.router,
-          memories.router, admin.router, oauth.router, spotify.router, outlook.router, vision.router, agent.router, payments.router, content.router, voice.router, campus.router, security.router, kiosk.router, docs.router):
+          memories.router, admin.router, oauth.router, spotify.router, outlook.router, vision.router, agent.router, voice.router, campus.router, security.router, kiosk.router, docs.router):
     app.include_router(r)
 
 

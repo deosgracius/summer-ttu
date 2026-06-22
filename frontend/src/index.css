@@ -151,12 +151,25 @@
   * {
     @apply border-border outline-ring/50;
     }
-  body {
-    @apply bg-background text-foreground;
-    }
   html {
     @apply font-sans;
+    -webkit-text-size-adjust: 100%;
     }
+  body {
+    @apply bg-background text-foreground antialiased;
+    /* Calmer, more readable baseline: slightly larger body text + generous line
+       height, with legibility features on the variable Geist font. */
+    font-size: 15.5px;
+    line-height: 1.6;
+    font-feature-settings: "cv11", "ss01";
+    text-rendering: optimizeLegibility;
+    -moz-osx-font-smoothing: grayscale;
+    }
+  h1, h2, h3, h4 {
+    @apply font-semibold tracking-tight;
+    text-wrap: balance;
+    }
+  p { text-wrap: pretty; }
 }
 
 /* ===== SUMMER accent + atmosphere (dark space console) ===== */
@@ -166,6 +179,9 @@
   --ring: oklch(0.82 0.13 210);
   --background: oklch(0.16 0.03 260);
   --card: oklch(0.2 0.035 262 / 85%);
+  /* brighter secondary text so labels/hints are comfortably readable on the kiosk */
+  --muted-foreground: oklch(0.77 0.02 255);
+  --border: oklch(0.42 0.03 258 / 60%);
 }
 .dark body {
   background:

@@ -108,8 +108,8 @@ export default function KioskPage() {
       <SplineRobot ambient />
       <div className="relative z-10 flex flex-col items-center text-center mb-6">
         <SummerOrb size={380} state={loading ? "thinking" : "idle"} />
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight">Hi, I'm Summer.</h1>
-        <p className="mt-2 text-muted-foreground max-w-lg">
+        <h1 className="mt-3 text-4xl font-semibold tracking-tight">Hi, I'm Summer.</h1>
+        <p className="mt-2 text-base text-muted-foreground max-w-xl leading-relaxed">
           Ask me about this department — classes, rooms, schedules, professors' office hours,
           advisors, buildings, and services like the stockroom.
         </p>
@@ -130,26 +130,26 @@ export default function KioskPage() {
           {turns.map((t, i) => (
             <div key={i} className="space-y-2">
               <div className="text-right">
-                <span className="inline-block rounded-2xl bg-primary/15 px-4 py-2 text-sm">
+                <span className="inline-block rounded-2xl bg-primary/15 px-4 py-2 text-base">
                   {t.q}
                 </span>
               </div>
-              <div className="rounded-2xl border bg-muted/40 px-4 py-3 text-sm leading-relaxed">
+              <div className="rounded-2xl border bg-muted/40 px-5 py-4 text-base leading-relaxed">
                 {t.person?.photo && /^(https?:\/\/|\/)/.test(t.person.photo) && (
-                  <div className="flex items-center gap-3 mb-3 pb-3 border-b text-left">
+                  <div className="flex items-center gap-4 mb-4 pb-4 border-b text-left">
                     <img
                       src={t.person.photo}
                       alt={t.person.name}
                       loading="lazy"
-                      className="size-16 rounded-xl object-cover shrink-0"
+                      className="size-20 rounded-2xl object-cover shrink-0 ring-1 ring-border"
                     />
                     <div className="min-w-0">
-                      <div className="font-semibold">{t.person.name}</div>
+                      <div className="text-lg font-semibold leading-tight">{t.person.name}</div>
                       {t.person.title && (
-                        <div className="text-xs text-muted-foreground">{t.person.title}</div>
+                        <div className="text-sm text-muted-foreground mt-0.5">{t.person.title}</div>
                       )}
                       {(t.person.office || t.person.email) && (
-                        <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                        <div className="text-sm text-muted-foreground mt-1 truncate">
                           {[t.person.office && `Office ${t.person.office}`, t.person.email]
                             .filter(Boolean)
                             .join(" · ")}
@@ -163,14 +163,14 @@ export default function KioskPage() {
             </div>
           ))}
           {loading && (
-            <div className="rounded-2xl border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+            <div className="rounded-2xl border bg-muted/40 px-5 py-4 text-base text-muted-foreground">
               Summer is looking that up…
             </div>
           )}
         </div>
 
         {voiceIn && wakeActive && (
-          <div className="flex items-center justify-center gap-2 text-xs text-primary/80 pb-1 min-h-5">
+          <div className="flex items-center justify-center gap-2 text-sm text-primary/80 pb-1 min-h-5">
             <span className="inline-block size-2 rounded-full bg-emerald-400 animate-pulse" />
             {heard ? <span className="text-foreground italic">“{heard}”</span> : awake ? <>Listening — just talk</> : <>Say <b>“Hey Summer”</b> to start, or tap the mic</>}
           </div>

@@ -1,6 +1,7 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { useSpeech } from "@/lib/useSpeech"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 
@@ -9,8 +10,24 @@ import { Input } from "@/components/ui/input"
  * (services are central-admin only). Shown until profile.onboarded is set. */
 export default function OnboardingModal({ onDone }: { onDone: () => void }) {
   const { me, refresh } = useAuth()
+  const { speak, primeAudio } = useSpeech()
   const isCentral = me?.role === "central_admin"
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+
+  const WELCOME =
+    "Hi, I'm Summer, your TTU ECE campus assistant. I can look up classes, rooms, " +
+    "professors, advisors, office hours, and campus services. Would you like your daily briefing?"
+
+  // Speak the welcome aloud when the modal appears (the login click grants the audio
+  // gesture). Falls back silently to the on-screen text if the browser blocks autoplay.
+  const spoke = useRef(false)
+  useEffect(() => {
+    if (spoke.current) return
+    spoke.current = true
+    primeAudio()
+    speak(WELCOME)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const [fullName, setFullName] = useState(me?.profile?.full_name || "")
   const [preferred, setPreferred] = useState(me?.profile?.preferred_name || "")
@@ -44,9 +61,9 @@ export default function OnboardingModal({ onDone }: { onDone: () => void }) {
       <div className="w-full max-w-md rounded-xl border bg-background p-6 shadow-xl">
         <div className="mb-1 text-sm font-semibold tracking-[0.3em] text-primary">SUMMER</div>
         <h2 className="text-lg font-semibold">Hi, I'm Summer — welcome.</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          I'm your TTU ECE campus assistant. Let me get a few details so I can address
-          you properly, then you're in.
+        <p className="mt-1 text-sm text-muted-foreground">{WELCOME}</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Let me get a few details so I can address you properly, then you're in.
         </p>
 
         <div className="mt-4 space-y-3">

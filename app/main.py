@@ -167,9 +167,16 @@ _HAS_WEB = bool(WEB_DIST) and os.path.isdir(WEB_DIST)
 
 @app.middleware("http")
 async def _no_cache_ui(request, call_next):
-    """Serve the app UI uncached so edits always show up (no stale index.html)."""
+    """Serve the app's HTML shell uncached so every deploy reaches the browser.
+
+    The React index.html is served from "/" and the SPA fallback (/kiosk, /login, …),
+    NOT just /ui — and without this it went out with no Cache-Control, so browsers
+    cached a stale index.html pointing at an OLD JS bundle and never saw new deploys.
+    We no-cache any text/html response; the hashed /assets (JS/CSS) stay immutable and
+    cacheable because their filename changes every build."""
     resp = await call_next(request)
-    if request.url.path.startswith("/ui"):
+    ctype = resp.headers.get("content-type", "")
+    if request.url.path.startswith("/ui") or ctype.startswith("text/html"):
         resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         resp.headers["Pragma"] = "no-cache"
         resp.headers["Expires"] = "0"

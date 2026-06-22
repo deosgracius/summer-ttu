@@ -118,6 +118,7 @@ export interface SecurityStatus {
 export interface Profile {
   full_name?: string
   preferred_name?: string
+  onboarded?: boolean
   address?: string
   emergency_name?: string
   emergency_email?: string

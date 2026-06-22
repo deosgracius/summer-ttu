@@ -1,5 +1,5 @@
 import json
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from .. import models, auth, approvals, security, tracing, delegation
@@ -423,3 +423,35 @@ def audit_log(limit: int = 100, db: Session = Depends(get_db),
               .order_by(models.AuditLog.id.desc()).limit(min(limit, 500)).all())
     return [{"id": r.id, "actor": r.actor_email, "action": r.action,
              "summary": r.summary, "created_at": r.created_at} for r in rows]
+
+
+# --- Intelligent file import (security-check -> understand -> PROPOSE -> apply) ---
+
+@router.post("/import/analyze")
+async def import_analyze(file: UploadFile = File(...),
+                         actor: models.User = Depends(require_roles("admin"))):
+    """Upload a data file. Summer security-checks it, figures out what it contains, and
+    returns a PROPOSAL (what it found + suggested actions). It does NOT write anything."""
+    from .. import file_import
+    data = await file.read()
+    if len(data) > file_import.MAX_BYTES:
+        raise HTTPException(413, "File too large.")
+    return file_import.analyze(file.filename or "upload", data)
+
+
+class ApplyImport(BaseModel):
+    kind: str
+    rows: list[dict] = []
+
+
+@router.post("/import/apply")
+def import_apply(data: ApplyImport, db: Session = Depends(get_db),
+                 actor: models.User = Depends(require_roles("central_admin"))):
+    """Apply a CONFIRMED import proposal. Central admin only, since it writes campus data."""
+    from .. import file_import, audit
+    res = file_import.apply(db, data.kind, data.rows)
+    if res.get("applied"):
+        audit.log(db, actor, "file_import", res.get("summary", ""),
+                  {"kind": data.kind, "rows": len(data.rows or [])})
+        db.commit()
+    return res

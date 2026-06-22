@@ -61,48 +61,17 @@ def _seed_events():
 
 
 def _seed_campus():
-    """Seed sample campus data so the TTU app is demonstrable on first run."""
+    """Seed minimal real campus scaffolding on first run. Faculty, staff, courses, and
+    labs come from import_ttu_ece.py — we do NOT seed fake demo people/courses (that's
+    how a 'Chemistry Stockroom' / 'Dr. Jane Smith' crept in). Only the ECE building and
+    the ECE Stockroom are seeded so a brand-new DB isn't empty."""
     db = SessionLocal()
     try:
         sem = "Fall 2026"
         if db.query(models.Building).count() == 0:
-            db.add_all([
-                models.Building(name="Engineering Center", code="ENGR",
-                                address="2500 Broadway", hours_text="Mon-Fri 7am-10pm",
-                                description="Engineering departments and labs", semester=sem),
-                models.Building(name="Chemistry Building", code="CHEM",
-                                address="1204 Boston Ave", hours_text="Mon-Fri 8am-6pm",
-                                description="Chemistry & Biochemistry", semester=sem),
-            ])
-        if db.query(models.Professor).count() == 0:
-            db.add_all([
-                models.Professor(name="Dr. Jane Smith", email="jane.smith@ttu.edu",
-                                 department="Computer Science", office_building="ENGR",
-                                 office_number="304", office_hours="Mon/Wed 2-4pm",
-                                 office_hours_policy="drop-in", semester=sem),
-                models.Professor(name="Dr. Alan Reyes", email="alan.reyes@ttu.edu",
-                                 department="Chemistry", office_building="CHEM",
-                                 office_number="118", office_hours="Tue/Thu 10-11:30am",
-                                 office_hours_policy="by appointment", semester=sem),
-            ])
-        if db.query(models.Advisor).count() == 0:
-            db.add(models.Advisor(name="Maria Lopez", email="advising.cs@ttu.edu",
-                                  department="Computer Science", office_building="ENGR",
-                                  office_number="210", schedule="Mon-Fri 9am-5pm",
-                                  availability="Walk-ins 1-3pm, else book online", semester=sem))
-        if db.query(models.CourseSection).count() == 0:
-            db.add_all([
-                models.CourseSection(crn="10001", subject="CS", course="1411", section="001",
-                                     title="Programming Principles I", instructor="Dr. Jane Smith",
-                                     building="ENGR", room_number="101", days="MWF",
-                                     times="10:00am-10:50am", campus="Lubbock TTU",
-                                     max_enroll=40, semester=sem),
-                models.CourseSection(crn="10002", subject="CHEM", course="1307", section="001",
-                                     title="General Chemistry", instructor="Dr. Alan Reyes",
-                                     building="CHEM", room_number="050", days="TR",
-                                     times="9:30am-10:50am", campus="Lubbock TTU",
-                                     max_enroll=60, semester=sem),
-            ])
+            db.add(models.Building(name="Engineering Center", code="ENGR",
+                                   address="2500 Broadway", hours_text="Mon-Fri 7am-10pm",
+                                   description="Engineering departments and labs", semester=sem))
         if db.query(models.ServiceHours).count() == 0:
             db.add(models.ServiceHours(name="ECE Stockroom", location="ECE building",
                                        hours_text="",  # admin enters real hours

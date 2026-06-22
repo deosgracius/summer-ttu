@@ -15,6 +15,7 @@ import SecurityPanel from "@/components/panels/SecurityPanel"
 import VoiceSettingsPanel from "@/components/panels/VoiceSettingsPanel"
 import ConnectionsPanel from "@/components/panels/ConnectionsPanel"
 import QuickLinksPanel from "@/components/panels/QuickLinksPanel"
+import FileImportPanel from "@/components/panels/FileImportPanel"
 import MyAvailabilityPanel from "@/components/panels/MyAvailabilityPanel"
 import WelcomeBriefing from "@/components/WelcomeBriefing"
 import SplineRobot from "@/components/SplineRobot"
@@ -66,6 +67,8 @@ export default function DashboardPage() {
 
         <UserAccessPanel reloadKey={reloadKey} />
 
+        {(me?.role === "admin" || me?.role === "central_admin") && <FileImportPanel />}
+
         <DelegationPanel />
 
         <SecurityPanel reloadKey={reloadKey} />
@@ -84,8 +87,7 @@ export default function DashboardPage() {
         </div>
 
         <p className="text-center text-xs text-muted-foreground pb-6">
-          More coming: events &amp; seat booking, voice mode, vision, settings,
-          content studio, admin.
+          Summer — TTU ECE campus assistant.
         </p>
       </main>
     </div>

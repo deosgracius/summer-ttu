@@ -240,7 +240,6 @@ BENCHMARK = [
     {"id": "course-3312-title", "kind": "factual", "input": "What is ECE 3312 about?", "want": ["Advanced Electronics"]},
     {"id": "course-3341-instr", "kind": "factual", "input": "Who is the instructor for ECE 3341?", "want": ["Samuel Storrs"]},
     {"id": "course-3309-title", "kind": "factual", "input": "What's the title of ECE 3309?", "want": ["Linear Algebra"]},
-    {"id": "cs1411-instr", "kind": "factual", "input": "Who teaches CS 1411?", "want": ["Jane Smith"]},
     {"id": "engr-hours", "kind": "factual", "input": "What are the Engineering Center hours?", "want": ["7am", "10pm"]},
     {"id": "engr-code", "kind": "factual", "input": "What building is ENGR?", "want": ["Engineering Center"]},
     {"id": "stockroom-contact", "kind": "factual", "input": "Who runs the ECE stockroom?", "want": ["Woodcock"]},

@@ -635,16 +635,43 @@ export function useSpeech() {
       stopListening()
       return
     }
+    // FULLY release the always-on wake-word recognizer first. If it keeps holding the
+    // mic, getUserMedia fails with NotReadableError and we'd wrongly say "blocked".
+    // Suppress its auto-restart (micOn=false) so it can't re-grab the device mid-tap.
+    const wakeWasOn = micOn.current
+    micOn.current = false
     try {
-      recRef.current?.abort() // free the mic from any wake-word recognizer
+      recRef.current?.abort()
     } catch {
       /* ignore */
+    }
+    await new Promise((r) => setTimeout(r, 150)) // let the OS release the mic
+    const restoreWake = () => {
+      if (wakeWasOn) {
+        micOn.current = true
+        try {
+          recRef.current?.start()
+        } catch {
+          /* already running */
+        }
+      }
     }
     let stream: MediaStream
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    } catch {
-      setHeard("⚠ microphone blocked — allow it in the address bar 🔒")
+    } catch (e) {
+      // Report the ACTUAL reason instead of always blaming permissions.
+      const name = (e as { name?: string })?.name || ""
+      const msg =
+        name === "NotAllowedError" || name === "SecurityError"
+          ? "⚠ microphone blocked — click the address-bar lock 🔒, set Microphone to Allow, then reload"
+          : name === "NotFoundError" || name === "DevicesNotFoundError"
+            ? "⚠ no microphone found on this device — plug in a mic or headset"
+            : name === "NotReadableError" || name === "TrackStartError"
+              ? "⚠ the microphone is busy in another app — close it (Teams/Zoom/etc.) and try again"
+              : "⚠ couldn't start the microphone" + (name ? ` (${name})` : "")
+      setHeard(msg)
+      restoreWake()
       return
     }
     stopSpeaking() // never record over Summer's own voice
@@ -666,6 +693,7 @@ export function useSpeech() {
       setListening(false)
       stopVad()
       stream.getTracks().forEach((t) => t.stop())
+      restoreWake() // hand the mic back to the wake-word recognizer
       const blob = new Blob(audioChunks.current, { type: rec.mimeType || "audio/webm" })
       if (blob.size < 1500) {
         setHeard("")
@@ -676,7 +704,7 @@ export function useSpeech() {
         const text = await transcribeBlob(blob)
         setHeard("")
         if (text) {
-          if (micOn.current) engage() // a mic tap starts/continues the conversation
+          engage() // a mic tap starts/continues the conversation
           onText(text)
         } else setHeard("⚠ didn't catch that — try again")
       } catch {

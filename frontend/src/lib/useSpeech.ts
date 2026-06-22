@@ -102,12 +102,10 @@ export function useSpeech() {
   const buffer = useRef("") // accumulates your speech until you pause
   const flushTimer = useRef<number | undefined>(undefined)
   const SILENCE_MS = 600 // wait this long after you stop before replying
-  // Conversation lifecycle: once engaged, Summer listens continuously (no wake word
-  // per turn) until an end phrase OR this many ms of silence, then drops back to
-  // dormant (wake-word-only). Kept generous so a normal pause — reading the answer on
-  // screen, thinking before the next question — does NOT force you to say "Summer"
-  // again; it only sleeps once someone has clearly stepped away. Tunable here.
-  const CONVO_IDLE_MS = 30000
+  // Conversation lifecycle: once the wake word engages Summer she listens
+  // continuously (no wake word per turn) until an end phrase OR this many ms of
+  // silence, then drops back to dormant (wake-word-only).
+  const CONVO_IDLE_MS = 8000
   const engaged = useRef(false)
   const convoTimer = useRef<number | undefined>(undefined)
 
@@ -340,15 +338,15 @@ export function useSpeech() {
     setHeard("")
     setAwake(false)
   }
-  // (Re)start the "no conversation" idle countdown (CONVO_IDLE_MS). Only counts while
-  // engaged and while Summer isn't talking; when it elapses we go dormant.
+  // (Re)start the 8-second "no conversation" countdown. Only counts while engaged
+  // and while Summer isn't talking; when it elapses we go dormant.
   function resetConvoTimer() {
     clearConvoTimer()
     if (!engaged.current || speaking.current || VOICE.speaking) return
     convoTimer.current = window.setTimeout(disengage, CONVO_IDLE_MS)
   }
   // Enter / stay in an ENGAGED conversation: listen continuously (no wake word per
-  // turn) until an end phrase or a long idle (CONVO_IDLE_MS) sends us back to dormant.
+  // turn) until an end phrase or 8s of silence sends us back to dormant.
   function engage() {
     engaged.current = true
     vstate.current = "active"
@@ -498,8 +496,8 @@ export function useSpeech() {
     recRef.current = rec
     micOn.current = true
     // Start RESPONSIVE so the mic works the instant someone speaks — no wake word
-    // needed for the first turn. It only drops to dormant after an end phrase or a
-    // long idle (CONVO_IDLE_MS), and "Summer" wakes it again from there.
+    // needed for the first turn. It only drops to dormant after an end phrase or 8s
+    // of silence, and re-engages easily (wake word OR a real question) from there.
     engaged.current = true
     vstate.current = "active"
     setAwake(true)

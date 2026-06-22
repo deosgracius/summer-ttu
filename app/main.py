@@ -110,6 +110,24 @@ _seed_events()
 _seed_campus()
 _seed_central_admin()
 
+
+# Keep the Neon (serverless) database warm. It auto-suspends after ~5 min idle, so the
+# first request after a long gap cold-started and failed ("connection error") even with
+# the network fine. The always-on machine pings it every few minutes so it never sleeps.
+def _db_keepalive():
+    import time as _t
+    while True:
+        _t.sleep(240)
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+        except Exception:
+            pass
+
+
+import threading as _threading
+_threading.Thread(target=_db_keepalive, daemon=True, name="db-keepalive").start()
+
 # Hide the interactive API docs / OpenAPI schema in production (set DISABLE_DOCS=1)
 # so the full endpoint surface isn't published to the public internet.
 _docs = None if os.getenv("DISABLE_DOCS") == "1" else "/docs"

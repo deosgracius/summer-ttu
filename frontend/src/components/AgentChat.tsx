@@ -23,6 +23,17 @@ export default function AgentChat({ onChanged }: Props) {
   const { supported: voiceIn, canSpeak, listening, wakeActive, awake, heard, listen, speak, stopSpeaking, startWakeWord, stopWakeWord, primeAudio } =
     useSpeech()
   const sendRef = useRef<(q?: string) => void>(() => {})
+  const clearTimer = useRef<number | undefined>(undefined)
+
+  // After Summer finishes an answer, clear the dialogue box ~5s later so it returns to
+  // a clean, ready state (a fresh send cancels the pending clear).
+  function scheduleClear() {
+    if (clearTimer.current) clearTimeout(clearTimer.current)
+    clearTimer.current = window.setTimeout(() => {
+      setReply("")
+      setLinks([])
+    }, 5000)
+  }
 
   // Speech mode is the DEFAULT: listen on load; audio unlocks on first interaction.
   useEffect(() => {
@@ -41,19 +52,26 @@ export default function AgentChat({ onChanged }: Props) {
   async function send(override?: string) {
     const text = (override ?? goal).trim()
     if (!text) return
+    if (clearTimer.current) clearTimeout(clearTimer.current)
     setGoal("")
     setState("thinking")
     setReply("…")
     setLinks([])
     try {
-      const data = await api.post<AgentReply>("/agent", {
-        goal: text,
-        provider: null,
-        voice: false,
-      })
+      const call = () => api.post<AgentReply>("/agent", { goal: text, provider: null, voice: false })
+      let data: AgentReply
+      try {
+        data = await call()
+      } catch {
+        // The first request after the database has idled can cold-start fail — retry
+        // once after a short pause (it succeeds once the DB has woken).
+        await new Promise((r) => setTimeout(r, 1200))
+        data = await call()
+      }
       const answer = data.reply || "(done)"
       setReply(answer)
-      if (!muted) speak(answer)
+      if (!muted) speak(answer).then(scheduleClear, scheduleClear)
+      else scheduleClear()
       const found: { label: string; href: string }[] = []
       for (const a of data.actions ?? []) {
         const r = a.result
@@ -79,7 +97,7 @@ export default function AgentChat({ onChanged }: Props) {
       setLinks(found)
       onChanged?.()
     } catch {
-      setReply("(connection error)")
+      setReply("Couldn't reach Summer just now — please try again.")
     } finally {
       setState("idle")
     }

@@ -8,6 +8,7 @@ supports filtering by `?semester=` and admins can bulk-clear a semester.
 """
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from .. import models, schemas, approvals, audit, people, graph, graph_sync, vector_store
 from ..database import get_db
@@ -15,6 +16,17 @@ from ..auth import get_current_user, require_roles
 from ..campus_import import parse_workbook
 
 router = APIRouter(prefix="/campus", tags=["campus"])
+
+
+@router.get("/photo/{photo_id}", include_in_schema=False)
+def campus_photo(photo_id: int, db: Session = Depends(get_db)):
+    """Serve a locally-cached headshot (public — the anonymous kiosk loads these via
+    <img>, so no auth). Cached hard since the bytes are immutable per id."""
+    p = db.get(models.CampusPhoto, photo_id)
+    if not p or not p.data:
+        raise HTTPException(404, "Photo not found.")
+    return Response(content=p.data, media_type=p.content_type or "image/jpeg",
+                    headers={"Cache-Control": "public, max-age=604800"})
 
 
 def _crud(name: str, model, schema_in, schema_out, search_fields):

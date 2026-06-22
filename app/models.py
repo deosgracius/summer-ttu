@@ -1,7 +1,19 @@
 from sqlalchemy import (Column, Integer, String, Boolean, DateTime, ForeignKey,
-                        UniqueConstraint, func, Float)
+                        UniqueConstraint, func, Float, LargeBinary)
 from sqlalchemy.orm import relationship
 from .database import Base
+
+
+class CampusPhoto(Base):
+    """A headshot downloaded from the TTU site and stored locally, so the kiosk/admin
+    serve it from our own origin instead of hotlinking TTU (whose server rate-limits
+    bursts of image requests, blanking the photos). Keyed by the original source URL."""
+    __tablename__ = "campus_photos"
+    id = Column(Integer, primary_key=True, index=True)
+    source_url = Column(String, nullable=False, default="", index=True)
+    content_type = Column(String, nullable=False, default="image/jpeg")
+    data = Column(LargeBinary, nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
 class User(Base):

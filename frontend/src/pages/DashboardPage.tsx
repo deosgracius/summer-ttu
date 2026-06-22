@@ -18,6 +18,7 @@ import QuickLinksPanel from "@/components/panels/QuickLinksPanel"
 import FileImportPanel from "@/components/panels/FileImportPanel"
 import MyAvailabilityPanel from "@/components/panels/MyAvailabilityPanel"
 import WelcomeBriefing from "@/components/WelcomeBriefing"
+import OnboardingModal from "@/components/OnboardingModal"
 import SplineRobot from "@/components/SplineRobot"
 import SpaceBackground from "@/components/SpaceBackground"
 
@@ -26,6 +27,8 @@ export default function DashboardPage() {
   // Bumping this key tells panels to reload (e.g. after the agent acts).
   const [reloadKey, setReloadKey] = useState(0)
   const refreshAll = () => setReloadKey((k) => k + 1)
+  // First-login welcome + details capture, until the user completes (or skips) it.
+  const [onboard, setOnboard] = useState(!me?.profile?.onboarded)
 
   const name =
     me?.profile?.preferred_name || me?.profile?.full_name || me?.email?.split("@")[0]
@@ -34,6 +37,7 @@ export default function DashboardPage() {
     <div className="summer-bg min-h-svh bg-background text-foreground">
       <SpaceBackground />
       <SplineRobot />
+      {onboard && <OnboardingModal onDone={() => setOnboard(false)} />}
       <header className="relative z-10 flex items-center justify-between px-6 py-4 border-b">
         <div className="flex items-center gap-3">
           <div className="summer-orb summer-orb--xs" aria-hidden />

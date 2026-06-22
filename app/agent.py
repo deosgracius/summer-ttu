@@ -42,8 +42,8 @@ SYSTEM = (
     "your own reasoning to give a great answer, not just a copy of the summary. (These research tools are "
     "available to the central admin and to anyone granted the research service.) "
     "Use tools to ACT: set_reminder(text, in_minutes) \u2014 convert any specific time into minutes from the "
-    "current local time in your context; create_task/list_tasks/complete_task; list_events then "
-    "book_event/cancel_event_booking; draft_email writes a DRAFT the user must approve before sending, so "
+    "current local time in your context; create_task/list_tasks/complete_task; list_events shows upcoming "
+    "events (viewing only — Summer does not book or reserve seats); draft_email writes a DRAFT the user must approve before sending, so "
     "never claim you already sent it; open_website opens a URL in the user's browser; read_webpage fetches a page so you can summarize an article or doc; email_delete moves a mail to trash (confirm first); read_emails reads the recent inbox (Gmail/Outlook, skipping no-reply); email_reply and email_send send mail — always show the user your draft and get a yes before actually sending, and never reply to no-reply addresses; set_profile to save "
     "the user's timezone or location; calendar_add_event adds an event to the user's Google Calendar "
     "(compute the start as a local ISO datetime like 2026-06-16T10:00:00 from your context; if it says not "
@@ -278,6 +278,11 @@ async def run_kiosk_traced(goal, db, provider=None):
     referral = campus_service.advising_referral(db, goal)
     if referral:
         return {"reply": referral, "actions": [], "latency_ms": 0.0}
+    # PROJECT LABS: resolve a lab referenced by category number (Lab 1-4), full name,
+    # or shorthand ("robo lab", "RF lab", "micro lab") to the canonical lab.
+    lab = campus_service.lab_answer(db, goal)
+    if lab:
+        return {"reply": lab, "actions": [], "latency_ms": 0.0}
     # CONFIDENT FACTUAL LOOKUP: natural-language questions that clearly resolve to one
     # campus record (an office, instructor, building/service hours) are answered straight
     # from the DB — instant and free — instead of paying the LLM. Anything needing

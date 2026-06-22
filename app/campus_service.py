@@ -569,3 +569,73 @@ def speech_hint(db) -> str:
     _HINT_CACHE["text"] = hint
     _HINT_CACHE["exp"] = now + _HINT_TTL
     return hint
+
+
+# ---- ECE project laboratories: shortcut / abbreviation resolver -------------
+# Students refer to a project lab three ways: by category number (Lab 1-4), by full
+# name (Robotic Project Lab), or by shorthand (robo lab, RF lab, micro lab). All must
+# resolve to the same lab. This encodes the NAMING students use (language), not facts:
+# room, section, and schedule still come from the course schedule / lab-structure
+# source, which we point to rather than invent.
+_LAB_INFO_URL = DIRECTORY_URL + "undergrad/labs/lab_structure.php"
+_PROJECT_LABS = {
+    "Robotic Project Lab": ["robotic", "robotics", "robot", "robo"],
+    "Power System Project Lab": ["power system", "power systems", "power"],
+    "Microcontroller Project Lab": ["microcontroller", "micro controller", "micro"],
+    "Software Development Project Lab": ["software development", "software dev", "software"],
+    "RF Communications Project Lab": ["rf communications", "rf comm", "rf"],
+    "Digital Communications Project Lab": ["digital communications", "digital comm",
+                                           "digit com", "dig com", "digital"],
+    "Computer Network Project Lab": ["computer network", "network"],
+    "FPGA Project Lab": ["fpga"],
+    "Capstone Project Lab": ["capstone"],
+}
+# Category number -> the lab(s) it maps to. Lab 2 and Lab 3 draw from the same set.
+_LAB_TIERS = {
+    "1": ["Robotic Project Lab"],
+    "2": ["Power System Project Lab", "Microcontroller Project Lab",
+          "Software Development Project Lab", "RF Communications Project Lab",
+          "Digital Communications Project Lab", "Computer Network Project Lab",
+          "FPGA Project Lab"],
+    "4": ["Capstone Project Lab"],
+}
+_LAB_TIERS["3"] = _LAB_TIERS["2"]
+_LAB_NUM_WORDS = {"one": "1", "two": "2", "three": "3", "four": "4"}
+_LAB_SOURCE = (f"For its room, section, and times, check the course schedule or the "
+               f"project-lab structure page ({_LAB_INFO_URL}); for equipment and lab "
+               f"support, contact the ECE stockroom.")
+
+
+def _lab_tier_of(name: str):
+    if name in _LAB_TIERS["1"]:
+        return "1"
+    if name in _LAB_TIERS["4"]:
+        return "4"
+    if name in _LAB_TIERS["2"]:
+        return "2 or 3"
+    return None
+
+
+def lab_answer(db, query: str):
+    """Resolve an ECE project-lab reference (category number, full name, or shorthand)
+    to the canonical lab and point to the authoritative source. None if not a lab query."""
+    q = (query or "").lower()
+    if "lab" not in q and "capstone" not in q:
+        return None
+    # Category number: "lab 1", "lab two", "lab #3"
+    m = re.search(r"\blab\s*#?\s*(one|two|three|four|[1-4])\b", q)
+    if m:
+        num = _LAB_NUM_WORDS.get(m.group(1), m.group(1))
+        names = _LAB_TIERS.get(num)
+        if names and len(names) == 1:
+            return f"Lab {num} is the {names[0]}. {_LAB_SOURCE}"
+        if names:
+            return (f"Lab {num} is a project lab you choose from: {'; '.join(names)}. "
+                    f"(Lab 2 and Lab 3 are picked from the same set.) {_LAB_SOURCE}")
+    # By full name or shorthand.
+    for name, aliases in _PROJECT_LABS.items():
+        if any(re.search(r"\b" + re.escape(a) + r"\b", q) for a in aliases):
+            tier = _lab_tier_of(name)
+            cat = f" (Lab {tier})" if tier else ""
+            return f"The {name}{cat} is one of the ECE project laboratories. {_LAB_SOURCE}"
+    return None

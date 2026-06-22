@@ -51,14 +51,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async login(email, password) {
       const token = await api.login(email, password)
       setToken(token)
-      // A fresh login should always replay the welcome briefing — clear the
-      // once-per-session gate so logging out and back in re-triggers it.
-      try { sessionStorage.removeItem("summer_welcomed") } catch { /* ignore */ }
       return loadMe()
     },
     async adoptToken(token) {
       setToken(token)
-      try { sessionStorage.removeItem("summer_welcomed") } catch { /* ignore */ }
       return loadMe()
     },
     async refresh() {
@@ -67,7 +63,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     logout() {
       setToken(null)
       setMe(null)
-      try { sessionStorage.removeItem("summer_welcomed") } catch { /* ignore */ }
     },
   }
 

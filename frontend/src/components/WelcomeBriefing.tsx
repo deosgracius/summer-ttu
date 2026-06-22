@@ -32,43 +32,29 @@ export default function WelcomeBriefing() {
 
   async function run() {
     setNeedsTap(false)
-    // Start the music FIRST, inside the user-gesture window from the login click, so
-    // the browser doesn't block autoplay. volume=0 keeps it silent until we know the
-    // user is eligible; then we fade it in. (Fetching the briefing first would spend
-    // the gesture window on a network round-trip, and autoplay would be blocked → tap.)
+    // Decide eligibility first — users without the 'daily_update' service get
+    // no briefing (and no music), so check before starting any audio.
+    let r: { text: string; disabled?: boolean }
+    try {
+      r = await api.get<{ text: string; disabled?: boolean }>("/agent/welcome")
+    } catch {
+      setStatus("done")
+      return
+    }
+    if (!r || r.disabled || !r.text) {
+      setDisabled(true)
+      setStatus("done")
+      return
+    }
     primeAudio()
     const audio = audioRef.current ?? new Audio("/welcome-music.mp3")
     audioRef.current = audio
     audio.loop = true
     audio.volume = 0
-    let started = false
     try {
       await audio.play()
-      started = true
     } catch {
-      started = false
-    }
-    // Now decide eligibility. The greeting uses the client's real local hour so it
-    // matches the user's time of day instead of the UTC server clock.
-    let r: { text: string; disabled?: boolean }
-    try {
-      r = await api.get<{ text: string; disabled?: boolean }>(`/agent/welcome?hour=${new Date().getHours()}`)
-    } catch {
-      audio.pause()
-      setStatus("done")
-      return
-    }
-    if (!r || r.disabled || !r.text) {
-      audio.pause()
-      setDisabled(true)
-      setStatus("done")
-      return
-    }
-    if (!started) {
-      // Autoplay was blocked (dashboard loaded from a stored token, no login click).
-      // Just show the "Play briefing" button. We deliberately do NOT auto-start on the
-      // next page interaction — that hijacked the mic tap, so tapping 🎤 started the
-      // briefing (Summer talking, mic suppressed) instead of listening.
+      // Browser blocked autoplay — needs a tap to start.
       setText(r.text)
       setNeedsTap(true)
       return

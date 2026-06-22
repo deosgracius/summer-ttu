@@ -135,7 +135,7 @@ export default function KioskPage() {
                 </span>
               </div>
               <div className="rounded-2xl border bg-muted/40 px-4 py-3 text-sm leading-relaxed">
-                {t.person?.photo && /^https?:\/\//.test(t.person.photo) && (
+                {t.person?.photo && /^(https?:\/\/|\/)/.test(t.person.photo) && (
                   <div className="flex items-center gap-3 mb-3 pb-3 border-b text-left">
                     <img
                       src={t.person.photo}

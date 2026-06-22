@@ -143,6 +143,43 @@ def _section(text, label, stop_labels, maxlen=600):
 # --------------------------------------------------------------------------- #
 # 1. Faculty
 # --------------------------------------------------------------------------- #
+_IMG_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/124 Safari/537.36"),
+    "Referer": FACULTY_URL,
+    "Accept": "image/avif,image/webp,image/*,*/*",
+}
+
+
+def _cache_photo(db, client, url):
+    """Download a headshot once and store it locally; return the served path
+    (/campus/photo/{id}). The TTU image server rate-limits bursts, so hotlinking it
+    from the kiosk blanks the photos — self-hosting fixes that. Falls back to the raw
+    URL if the download fails, so a photo link is never lost."""
+    if not url:
+        return ""
+    try:
+        r = client.get(url, headers=_IMG_HEADERS, timeout=25)
+        if r.status_code >= 400 or "image" not in r.headers.get("content-type", ""):
+            time.sleep(1.0)  # one retry for a transient 503/rate-limit
+            r = client.get(url, headers=_IMG_HEADERS, timeout=25)
+        if r.status_code >= 400 or "image" not in r.headers.get("content-type", ""):
+            return url
+        ct = r.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+        existing = db.query(models.CampusPhoto).filter(models.CampusPhoto.source_url == url).first()
+        if existing:
+            existing.content_type = ct
+            existing.data = r.content
+            db.flush()
+            return f"/campus/photo/{existing.id}"
+        ph = models.CampusPhoto(source_url=url, content_type=ct, data=r.content)
+        db.add(ph)
+        db.flush()
+        return f"/campus/photo/{ph.id}"
+    except Exception:
+        return url
+
+
 def import_faculty(db, client):
     html = _get(client, FACULTY_URL)
     # ALL categories: tenured/tenure-track, Lecturers, Instructors, Professors of
@@ -207,7 +244,8 @@ def import_faculty(db, client):
         # absolute URL so the kiosk can show it when a student asks about them.
         photo_src = (b.get("photo_src") or "").strip()
         if photo_src:
-            row.photo_url = (BASE + photo_src) if photo_src.startswith("/") else photo_src
+            src = (BASE + photo_src) if photo_src.startswith("/") else photo_src
+            row.photo_url = _cache_photo(db, client, src)
         if cv:
             row.cv_url = cv
         bio_parts = []
@@ -313,7 +351,8 @@ def import_staff(db, client):
             row.title = jobtitle
         photo_src = (b.get("photo_src") or "").strip()
         if photo_src:
-            row.photo_url = (BASE + photo_src) if photo_src.startswith("/") else photo_src
+            src = (BASE + photo_src) if photo_src.startswith("/") else photo_src
+            row.photo_url = _cache_photo(db, client, src)
         if cv:
             row.cv_url = cv
         row.office_building = ""

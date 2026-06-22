@@ -339,36 +339,37 @@ def find_people_fuzzy(db, query: str, threshold: float = 0.82, limit: int = 5):
     return out[:limit]
 
 
-def _person_detail(db, kind: str, r) -> str:
-    """Full public detail for one person + the walk-in policy + where to learn more.
-    Hours/availability come from the admin-entered Person profile (editable in the
-    People panel) when set, so "Jennifer's schedule" returns real hours once entered."""
+def _person_detail(db, kind: str, r, full: bool = False) -> str:
+    """Public detail for one person. CONCISE by default — name, role, office, office
+    hours/availability + open-door policy, and the walk-in note — which is all most
+    students want. Email/phone/bio/directory are added only when the student asks for
+    more (full=True). Hours come from the admin-entered Person profile when set."""
     title = getattr(r, "title", "") or ("Academic Advisor" if kind == "advisor" else "")
     head = r.name + (f" — {title}" if title else "")
-    facts = []
-    office = f"{r.office_building} {r.office_number}".strip()
-    if office:
-        facts.append(f"office {office}")
-    if getattr(r, "email", ""):
-        facts.append(r.email)
-    if getattr(r, "phone", ""):
-        facts.append(r.phone)
-    parts = [head + ((": " + ", ".join(facts) + ".") if facts else ".")]
     # Prefer admin-entered hours/availability/bio from the unified Person profile.
     p = db.query(models.Person).filter(models.Person.name == r.name).first() if hasattr(models, "Person") else None
+    office = f"{r.office_building} {r.office_number}".strip()
     hrs = ((getattr(p, "office_hours", "") or getattr(p, "schedule", "")) if p else "") \
         or getattr(r, "office_hours", "") or getattr(r, "schedule", "")
     avail = (getattr(p, "availability", "") if p else "") or getattr(r, "availability", "")
-    bio = getattr(r, "bio", "") or (getattr(p, "bio", "") if p else "")
+    pol = getattr(r, "office_hours_policy", "")
+    parts = [head + ((f": office {office}.") if office else ".")]
     if hrs:
-        pol = getattr(r, "office_hours_policy", "")
-        parts.append(f"Hours: {hrs}" + (f" ({pol})" if pol else "") + ".")
-    if avail:
+        parts.append(f"Office hours: {hrs}" + (f" ({pol})" if pol else "") + ".")
+    if avail and avail != hrs:
         parts.append(f"Availability: {avail}.")
-    if bio:
-        parts.append(bio)
+    if not hrs and not avail and pol:
+        parts.append(f"Office hours: {pol}.")
     parts.append(WALK_IN)
-    parts.append(f"For more, see the TTU ECE directory: {DIRECTORY_URL}")
+    if full:
+        # Extra detail only when the student explicitly asks for more.
+        contact = [x for x in (getattr(r, "email", ""), getattr(r, "phone", "")) if x]
+        if contact:
+            parts.append("Contact: " + ", ".join(contact) + ".")
+        bio = getattr(r, "bio", "") or (getattr(p, "bio", "") if p else "")
+        if bio:
+            parts.append(bio)
+        parts.append(f"More in the TTU ECE directory: {DIRECTORY_URL}")
     return " ".join(parts)
 
 
@@ -447,6 +448,12 @@ def advising_referral(db, query: str):
     return "\n".join(lines) if len(lines) > 2 else None
 
 
+# A student signalling they want MORE than the concise card (email, bio, research…).
+_WANTS_MORE = re.compile(
+    r"\b(more|everything|full|details?|bio|biography|research|cv|resume|"
+    r"e-?mail|phone|number|contact|about|tell me)\b", re.I)
+
+
 def person_answer(db, query: str):
     """Deterministic, speech-robust answer for a 'who/where/office/schedule is X'
     question. Disambiguates when a name matches more than one person. Returns None
@@ -468,7 +475,7 @@ def person_answer(db, query: str):
             lines.append(f"{r.name} ({t})" + (f", office {office}" if office else ""))
         return "\n".join(lines)
     kind, r, _ = matches[0]
-    return _person_detail(db, kind, r)
+    return _person_detail(db, kind, r, full=bool(_WANTS_MORE.search(query or "")))
 
 
 # Phrases that need the model's reasoning/judgement, semantic search, abbreviation

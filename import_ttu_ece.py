@@ -42,7 +42,7 @@ DEPARTMENT = "Electrical & Computer Engineering"
 
 
 def _bios(html):
-    """Extract the Vue `bios:` JSON array embedded in a faculty/staff page."""
+    """Extract the FIRST Vue `bios:` JSON array embedded in a faculty/staff page."""
     start = html.find("bios:")
     br = html.find("[", start)
     depth, end = 0, -1
@@ -55,6 +55,49 @@ def _bios(html):
                 end = i
                 break
     return json.loads(html[br:end + 1])
+
+
+def _all_bios(html):
+    """Extract EVERY `bios:` JSON array on the page and merge them. The faculty page
+    splits people into several arrays by category — tenured/tenure-track faculty,
+    Lecturers, Instructors, Professors of Practice, Adjunct, and Emeritus — so reading
+    only the first array dropped whole categories (and their photos/titles). Dedupes
+    by name+email, preserving order."""
+    out, seen, pos = [], set(), 0
+    while True:
+        start = html.find("bios:", pos)
+        if start < 0:
+            break
+        br = html.find("[", start)
+        if br < 0:
+            break
+        depth, end = 0, -1
+        for i in range(br, len(html)):
+            if html[i] == "[":
+                depth += 1
+            elif html[i] == "]":
+                depth -= 1
+                if depth == 0:
+                    end = i
+                    break
+        if end < 0:
+            break
+        pos = end + 1
+        try:
+            arr = json.loads(html[br:end + 1])
+        except Exception:
+            continue
+        for b in arr:
+            nm = " ".join(x for x in [b.get("firstname"), b.get("middlename"),
+                                      b.get("lastname")] if x and x != "None").strip().lower()
+            em = (b.get("email") or "").strip().lower()
+            if em == "none":
+                em = ""
+            key = nm + "|" + em
+            if nm and key not in seen:  # a real person (has a name), not yet seen
+                seen.add(key)
+                out.append(b)
+    return out
 
 
 def _get(client, url):
@@ -102,19 +145,10 @@ def _section(text, label, stop_labels, maxlen=600):
 # --------------------------------------------------------------------------- #
 def import_faculty(db, client):
     html = _get(client, FACULTY_URL)
-    start = html.find("bios:")
-    br = html.find("[", start)
-    depth, end = 0, -1
-    for i in range(br, len(html)):
-        if html[i] == "[":
-            depth += 1
-        elif html[i] == "]":
-            depth -= 1
-            if depth == 0:
-                end = i
-                break
-    bios = json.loads(html[br:end + 1])
-    print(f"  faculty roster: {len(bios)} records")
+    # ALL categories: tenured/tenure-track, Lecturers, Instructors, Professors of
+    # Practice, Adjunct, and Emeritus — each is a separate bios array on the page.
+    bios = _all_bios(html)
+    print(f"  faculty roster: {len(bios)} records (all categories incl. lecturers/instructors/emeritus)")
 
     STOPS = ["Personal Information", "Curriculum Vitae", "Education", "Interests",
              "Research", "Mailing Address", "Office", "Phone", "Email", "Fax",
@@ -126,9 +160,15 @@ def import_faculty(db, client):
         name = " ".join(x for x in [b.get("firstname"), b.get("middlename"),
                                     b.get("lastname")] if x and x != "None")
         name = re.sub(r"\s+", " ", name).strip()
+        # The roster uses the literal string "None" for blanks — treat it as empty so
+        # no-email people (e.g. some emeritus) aren't all collided onto email "None".
         email = (b.get("email") or "").strip()
+        if email.lower() == "none":
+            email = ""
         jobtitle = (b.get("jobtitle") or "").strip()
         phone = (b.get("phone") or "").strip()
+        if phone.lower() == "none":
+            phone = ""
 
         office = interests = education = website = cv = ""
         path = b.get("fullpagepath") or ""
@@ -232,9 +272,15 @@ def import_staff(db, client):
         name = " ".join(x for x in [b.get("firstname"), b.get("middlename"),
                                     b.get("lastname")] if x and x != "None")
         name = re.sub(r"\s+", " ", name).strip()
+        # The roster uses the literal string "None" for blanks — treat it as empty so
+        # no-email people (e.g. some emeritus) aren't all collided onto email "None".
         email = (b.get("email") or "").strip()
+        if email.lower() == "none":
+            email = ""
         jobtitle = (b.get("jobtitle") or "").strip()
         phone = (b.get("phone") or "").strip()
+        if phone.lower() == "none":
+            phone = ""
 
         office = cv = ""
         path = b.get("fullpagepath") or ""

@@ -25,7 +25,7 @@ interface Turn {
 const EXAMPLES = [
   "Where and when is ECE 3306?",
   "Who is the academic advisor?",
-  "Is the chemistry stockroom open now?",
+  "Who runs the ECE stockroom?",
   "What are Dr. Smith's office hours?",
 ]
 

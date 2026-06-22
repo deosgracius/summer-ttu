@@ -104,9 +104,10 @@ def _seed_campus():
                                      max_enroll=60, semester=sem),
             ])
         if db.query(models.ServiceHours).count() == 0:
-            db.add(models.ServiceHours(name="Chemistry Stockroom", location="CHEM 002",
-                                       hours_text="Mon-Fri 8am-5pm, closed 12-1pm",
-                                       policy="Student ID required to check out equipment",
+            db.add(models.ServiceHours(name="ECE Stockroom", location="ECE building",
+                                       hours_text="",  # admin enters real hours
+                                       policy=("Student ID required to check out equipment. Run by "
+                                               "Richard Woodcock, Lab Support (ECE 224)."),
                                        semester=sem))
         db.commit()
     finally:

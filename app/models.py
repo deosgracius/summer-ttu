@@ -433,7 +433,7 @@ class ServiceHours(Base):
     """Generic facility/service availability — stockroom, labs, help desks, etc."""
     __tablename__ = "service_hours"
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)               # e.g. "Chemistry Stockroom"
+    name = Column(String, nullable=False)               # e.g. "ECE Stockroom"
     location = Column(String, nullable=False, default="")
     hours_text = Column(String, nullable=False, default="")
     policy = Column(String, nullable=False, default="")

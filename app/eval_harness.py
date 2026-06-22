@@ -243,8 +243,8 @@ BENCHMARK = [
     {"id": "cs1411-instr", "kind": "factual", "input": "Who teaches CS 1411?", "want": ["Jane Smith"]},
     {"id": "engr-hours", "kind": "factual", "input": "What are the Engineering Center hours?", "want": ["7am", "10pm"]},
     {"id": "engr-code", "kind": "factual", "input": "What building is ENGR?", "want": ["Engineering Center"]},
-    {"id": "stockroom-hours", "kind": "factual", "input": "What are the stockroom hours?", "want": ["8am", "5pm"]},
-    {"id": "stockroom-loc", "kind": "factual", "input": "Where is the stockroom located?", "want": ["CHEM 002"]},
+    {"id": "stockroom-contact", "kind": "factual", "input": "Who runs the ECE stockroom?", "want": ["Woodcock"]},
+    {"id": "stockroom-loc", "kind": "factual", "input": "Where is the stockroom?", "want": ["Woodcock"]},
     # --- hard: a literal search box should miss these; the LLM should not ---
     {"id": "abbrev-e2", "kind": "hard", "input": "Where does E2 meet?", "want": ["118"]},
     {"id": "abbrev-e2-instr", "kind": "hard", "input": "Who teaches E2?", "want": ["Tarter"]},

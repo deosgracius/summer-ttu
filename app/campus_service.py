@@ -414,7 +414,11 @@ def advising_referral(db, query: str):
     the question isn't a routing/referral question."""
     q = (query or "").lower()
     stock = "stockroom" in q or "stock room" in q
-    if stock and re.search(r"\b(who|whom|contact|talk|speak|help|person|charge|reach|email|ask)\b", q):
+    # Route who/where/hours/open questions about the stockroom to Richard Woodcock, who
+    # runs it (ECE 224). Leave policy/checkout/how questions to the docs (search_documents).
+    if stock and re.search(
+            r"\b(who|whom|contact|talk|speak|help|person|charge|reach|email|ask|where|"
+            r"hours?|open|close[ds]?|located|location|when|find|run[s]?|in\s+charge)\b", q):
         line = _referral_line(db, _STOCKROOM_CONTACT, "the stockroom and lab support")
         return (line + " " + WALK_IN) if line else None
 

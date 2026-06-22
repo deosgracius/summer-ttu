@@ -28,13 +28,13 @@ export function PanelCard({
 }) {
   return (
     <Card className={`${GLASS} ${className ?? ""}`}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm uppercase tracking-widest text-primary/80">
+      <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 border-b border-border/40 pb-3">
+        <CardTitle className="text-[0.8rem] font-semibold uppercase tracking-[0.16em] text-primary">
           {title}
         </CardTitle>
         {action}
       </CardHeader>
-      <CardContent>{children}</CardContent>
+      <CardContent className="pt-4 text-sm leading-relaxed">{children}</CardContent>
     </Card>
   )
 }

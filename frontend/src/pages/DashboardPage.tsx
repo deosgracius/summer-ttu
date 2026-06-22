@@ -38,18 +38,22 @@ export default function DashboardPage() {
       <SpaceBackground />
       <SplineRobot />
       {onboard && <OnboardingModal onDone={() => setOnboard(false)} />}
-      <header className="relative z-10 flex items-center justify-between px-6 py-4 border-b">
+      <header className="sticky top-0 z-20 flex items-center justify-between px-6 py-4 border-b border-border/40 bg-background/70 backdrop-blur-xl">
         <div className="flex items-center gap-3">
           <div className="summer-orb summer-orb--xs" aria-hidden />
           <div>
             <div className="font-semibold tracking-[0.3em] text-primary">SUMMER</div>
             <div className="text-xs text-muted-foreground">
-              {name ? `Welcome back, ${name} · ${me?.role}` : "Personal AI assistant"}
+              {name ? (
+                <>Welcome back, {name} · <span className="capitalize">{me?.role?.replace("_", " ")}</span></>
+              ) : "Campus assistant"}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground">online</span>
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="inline-block size-2 rounded-full bg-emerald-400" /> online
+          </span>
           <Button variant="outline" size="sm" onClick={logout}>
             Log out
           </Button>

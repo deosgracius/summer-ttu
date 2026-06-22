@@ -4,7 +4,6 @@ from . import models
 from .realtime import manager
 from .research import web_research
 from .events_service import (list_events as _list_events, create_event as _create_event,
-                             book_seat as _book_seat, cancel_booking as _cancel_booking,
                              my_bookings as _my_bookings)
 from .extra_service import (create_reminder as _create_reminder, list_reminders as _list_reminders,
                             create_draft as _create_draft, music_link as _music_link,
@@ -82,26 +81,6 @@ async def list_reminders(args, db, user):
 
 async def list_events(args, db, user):
     return _list_events(db)
-
-
-async def book_event(args, db, user):
-    eid = args.get("event_id")
-    if eid is None:
-        return {"error": "event_id is required (call list_events first)"}
-    res = _book_seat(db, user, eid)
-    if res.get("booked"):
-        await manager.broadcast({"action": "event_booked", "event_id": eid})
-    return res
-
-
-async def cancel_event_booking(args, db, user):
-    eid = args.get("event_id")
-    if eid is None:
-        return {"error": "event_id is required"}
-    res = _cancel_booking(db, user, eid)
-    if res.get("cancelled"):
-        await manager.broadcast({"action": "event_cancelled", "event_id": eid})
-    return res
 
 
 async def my_event_bookings(args, db, user):
@@ -437,8 +416,6 @@ TOOLS = {
     "research": _t("Research a general-knowledge topic: pulls the most relevant Wikipedia articles and returns their content so you can synthesize a thorough, intelligent, well-organized answer WITH sources. Use this for 'teach me about X', 'research Y', 'explain Z', or any general knowledge/research question. Central admin / granted users only.", CENTRAL, {"query": {"type": "string"}}, ["query"], research),
     "draft_email": _t("Write an email DRAFT for the user to review and approve before sending; never claim it is already sent.", ALL, {"to": {"type": "string"}, "subject": {"type": "string"}, "body": {"type": "string"}}, ["body"], draft_email),
     "list_events": _t("List upcoming events with ids, times, and seats available.", ALL, {}, [], list_events),
-    "book_event": _t("Book a seat for an event by id (call list_events first).", ALL, {"event_id": {"type": "integer"}}, ["event_id"], book_event),
-    "cancel_event_booking": _t("Cancel the user's booking for an event by id.", ALL, {"event_id": {"type": "integer"}}, ["event_id"], cancel_event_booking),
     "my_event_bookings": _t("Show the user's event bookings.", ALL, {}, [], my_event_bookings),
     "create_event": _t("Create a new event.", ("client", "admin", "central_admin"), {"title": {"type": "string"}, "when": {"type": "string"}, "capacity": {"type": "integer"}}, ["title"], create_event),
     "remember": _t("Save a durable fact or preference about the user (e.g. 'prefers morning meetings', 'dog is named Max').", ALL, {"text": {"type": "string"}}, ["text"], remember),

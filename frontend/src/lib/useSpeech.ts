@@ -21,10 +21,13 @@ const SILENT_AUDIO =
 // Wake word: "Hey Summer" or just "Summer", matched ANYWHERE in what you say, and
 // tolerant of the common ways browser speech-to-text mishears it (sumer, summers,
 // somer, "a summer", etc.) so it triggers reliably instead of treating you as noise.
-const WAKE = /\b(?:hey\s+|okay\s+|ok\s+|hi\s+|yo\s+|hay\s+|a\s+)?(?:summer|summers|sumer|summa|somers?|sommer)\b/i
+// Accent-tolerant: many ways "Summer" is heard across accents (e.g. Nigerian
+// "summa", "suma", "sama"; dropped/!soft endings; "a summer", "ey summa"). We match
+// loosely so the wake word triggers reliably instead of being treated as noise.
+const WAKE = /\b(?:hey|hay|ey|eh|aye|okay|ok|hi|yo|a|uh)?\s*(?:summer|summers|summah|sumer|sumah|suma|summa|somer|somers|sommer|sammer|samma|sama|soma|zuma)\b/i
 // Only a LEADING wake phrase is stripped from the command (so "summer courses"
 // mid-sentence stays intact).
-const WAKE_LEAD = /^\s*(?:(?:hey|okay|ok|hi|yo|hay)[\s,]+)?(?:summer|summers|sumer|summa|somers?|sommer)\b[\s,.:!?-]*/i
+const WAKE_LEAD = /^\s*(?:(?:hey|hay|ey|eh|aye|okay|ok|hi|yo|uh)[\s,]+)?(?:summer|summers|summah|sumer|sumah|suma|summa|somer|somers|sommer|sammer|samma|sama|soma|zuma)\b[\s,.:!?-]*/i
 const ENDRE = /\b(thank you|thanks summer|thank you summer|we'?re done|that'?s all|that'?s it|i'?m done|stop|goodbye|good bye|bye summer|never ?mind|sleep|go to sleep|goodnight|good night|go to bed)\b/i
 
 // SHARED across every useSpeech instance: the welcome-briefing hook and the chat
@@ -101,11 +104,14 @@ export function useSpeech() {
   const speakSeq = useRef(0) // bumped to cancel an in-progress streamed reply
   const buffer = useRef("") // accumulates your speech until you pause
   const flushTimer = useRef<number | undefined>(undefined)
-  const SILENCE_MS = 600 // wait this long after you stop before replying
-  // Conversation lifecycle: once the wake word engages Summer she listens
-  // continuously (no wake word per turn) until an end phrase OR this many ms of
-  // silence, then drops back to dormant (wake-word-only).
-  const CONVO_IDLE_MS = 8000
+  // Wait this long after you stop talking before replying. Generous on purpose so
+  // Summer lets you FINISH your question (and any "uh…" mid-thought pauses) instead
+  // of cutting in early or asking for clarification before you're done.
+  const SILENCE_MS = 1500
+  // Conversation lifecycle: once engaged, Summer listens continuously (no wake word
+  // per turn) until an end phrase OR this many ms of silence, then drops back to
+  // dormant and resets the screen for the next person (kiosk hygiene).
+  const CONVO_IDLE_MS = 5000
   const engaged = useRef(false)
   const convoTimer = useRef<number | undefined>(undefined)
 
@@ -389,8 +395,14 @@ export function useSpeech() {
         if (!WAKE.test(raw)) return
         engage()
         const after = raw.replace(WAKE_LEAD, "").trim()
-        // "Hey Summer" on its own just wakes her — wait for the actual question.
-        if (after.length < 2 || (ENDRE.test(after) && after.split(/\s+/).length <= 4)) return
+        // "Hey Summer" on its own: ACKNOWLEDGE so the person knows they were heard,
+        // instead of silently waiting. Then listen for the actual question.
+        if (after.length < 2 || (ENDRE.test(after) && after.split(/\s+/).length <= 4)) {
+          setHeard("Yes? Go ahead — ask me anything.")
+          speak("Yes?")
+          resetConvoTimer()
+          return
+        }
         resetConvoTimer()
         onCmd.current(after)
         return

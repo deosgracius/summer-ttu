@@ -58,6 +58,15 @@ export default function KioskPage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" })
   }, [turns, loading])
 
+  // When Summer drops to sleep (no one talking for CONVO_IDLE_MS ~5s), clear the
+  // conversation so the screen is fresh and waiting for the next person's "Hey Summer".
+  useEffect(() => {
+    if (!awake) {
+      setTurns([])
+      setQuestion("")
+    }
+  }, [awake])
+
   // Speech mode is the DEFAULT: start listening on load. Audio output unlocks on
   // the first click/keypress anywhere (browser requirement) — no button needed.
   useEffect(() => {

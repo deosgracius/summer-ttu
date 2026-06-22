@@ -309,6 +309,13 @@ async def run_kiosk_traced(goal, db, provider=None):
         # LLM unreachable (e.g. depleted credits) — degrade to a direct DB lookup.
         return {"reply": _deterministic_fallback(db, goal), "actions": [],
                 "latency_ms": (time.perf_counter() - t0) * 1000}
+    # PROVENANCE GATE: an LLM reply may only state facts it actually retrieved this
+    # turn. Any ungrounded name/email/phone/room/course code → replace the whole reply
+    # with a safe referral rather than ship a confident fabrication.
+    from . import grounding
+    result["reply"] = grounding.enforce(
+        result.get("reply", ""),
+        grounding.evidence_from_actions(result.get("actions", [])))
     result["latency_ms"] = (time.perf_counter() - t0) * 1000
     u = result.get("usage")
     if u and (u.get("input") or u.get("output")):

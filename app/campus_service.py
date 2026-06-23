@@ -104,7 +104,6 @@ def find_courses(db, query: str, semester: str = ""):
                 "course": f"{c.subject} {c.course}".strip(),
                 "section": c.section,
                 "title": c.title,
-                "prerequisites": c.prerequisites or "none listed",
                 "permit_required": c.permit_required or "not listed",
                 "days": c.days or "(none/online)",
                 "times": c.times or "(none/online)",
@@ -215,7 +214,6 @@ def find_catalog(db, query: str):
         if _matches(hay, query):
             out.append({
                 "category": e.category, "code": e.code, "title": e.title,
-                "prerequisites": e.prerequisites or "none listed",
                 "notes": e.notes, "catalog_year": e.catalog_year,
             })
         if len(out) >= _LIMIT:
@@ -501,6 +499,29 @@ def advising_referral(db, query: str):
             lines.append(ln)
     lines.append(WALK_IN)
     return "\n".join(lines) if len(lines) > 2 else None
+
+
+# Prerequisites / "what should I take" are academic-advising decisions — NOT Summer's
+# job, and a hallucination risk. Detect them and redirect to the official catalog +
+# advisor, deterministically, before any model ever sees the question.
+_PREREQ_RE = re.compile(
+    r"\b(pre-?req\w*|pre-?requisite\w*|co-?req\w*|"
+    r"what (do|should|must) i (need|take|have|complete|pass) (to|before|first|prior)|"
+    r"need(ed)? (to take |to pass )?(before|first|prior)|required before|"
+    r"unlock\w*|opens? up|leads? to|what (comes|comes? )?(after|next)|"
+    r"qualify for|eligible (to take|for)|can i take|degree plan|which courses should)\b",
+    re.I)
+PREREQ_REDIRECT = (
+    "Prerequisites and which courses to take are academic-advising decisions, so I don't "
+    "provide them. Please check the official TTU catalog at catalog.ttu.edu, or talk to "
+    "your ECE academic advisor — say \"who is my advisor\" and I'll point you to the "
+    "right person.")
+
+
+def prereq_redirect(query: str):
+    """Redirect any prerequisite / course-planning question to the catalog + advisor.
+    Returns None when the question isn't about prerequisites."""
+    return PREREQ_REDIRECT if _PREREQ_RE.search(query or "") else None
 
 
 # A student signalling they want MORE than the concise card (email, bio, research…).

@@ -5,6 +5,7 @@
 // you deploy show up automatically on the next reload — you rarely rebuild this shell.
 const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, screen, shell } = require("electron")
 const path = require("path")
+const fs = require("fs")
 
 const ORIGIN = process.env.SUMMER_ORIGIN || "https://summer-ttu.fly.dev"
 const APP_URL = `${ORIGIN}/desktop`
@@ -68,7 +69,22 @@ if (!app.requestSingleInstanceLock()) {
     else { win.show(); win.focus() }
   }
 
+  // Auto-start on login: enable it ONCE (first run), then never override the user's
+  // later choice from the tray toggle. Uses the OS login-items registry (per-user).
+  function ensureAutoStartDefault() {
+    try {
+      const flag = path.join(app.getPath("userData"), ".autostart-set")
+      if (!fs.existsSync(flag)) {
+        app.setLoginItemSettings({ openAtLogin: true })
+        fs.writeFileSync(flag, "1")
+      }
+    } catch { /* non-fatal */ }
+  }
+  const autoStartOn = () => app.getLoginItemSettings().openAtLogin
+  const setAutoStart = (v) => app.setLoginItemSettings({ openAtLogin: !!v })
+
   app.whenReady().then(() => {
+    ensureAutoStartDefault()
     createWindow()
 
     const img = nativeImage.createFromPath(path.join(__dirname, "icon.png"))
@@ -77,6 +93,8 @@ if (!app.requestSingleInstanceLock()) {
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: "Show / Hide", click: toggle },
       { label: "Reload", click: () => win && win.reload() },
+      { label: "Start with Windows", type: "checkbox", checked: autoStartOn(),
+        click: (mi) => setAutoStart(mi.checked) },
       { type: "separator" },
       { label: "Quit", click: () => app.quit() },
     ]))

@@ -35,8 +35,12 @@ npm run dist
 
 This produces `desktop-app/dist/Summer Setup <version>.exe`. Run it on the target PC —
 it installs **per-user (no administrator rights)** and adds Start-menu and desktop
-shortcuts. To launch on login, drop a shortcut to "Summer" into the Startup folder
-(`Win + R` → `shell:startup`).
+shortcuts.
+
+**Starts with Windows automatically.** On its first run the orb registers itself to
+open at login (per-user, via the OS login items). Toggle it any time from the tray menu
+→ **Start with Windows**. So once installed, the orb greets the user at every boot with
+no extra setup.
 
 ## Notes
 

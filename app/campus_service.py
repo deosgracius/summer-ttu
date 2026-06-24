@@ -807,13 +807,66 @@ def _lab_tier_of(name: str):
     return None
 
 
+# "Who teaches / who's the instructor / taught by" — a request for the PERSON running
+# a lab, which should be answered with the instructor of record, not a generic blurb.
+_WHO_TEACHES = re.compile(
+    r"\b(who(?:'?s| is| are)?\s+(?:teach\w*|instruct\w*|run\w*|lead\w*|in\s+charge)|"
+    r"taught\s+by|teaches?|teaching|instructor|professor\s+for|who\s+do\s+i)\b", re.I)
+
+
+def _lab_instructors(db, lab_name: str):
+    """Instructor(s) of record for a named project lab, pulled from the registrar
+    sections. Returns [(instructor, course_code), ...], deduped, or [] when none."""
+    m = getattr(models, "CourseSection", None)
+    if m is None:
+        return []
+    key = lab_name.lower()
+    core = key.replace("project lab", "").replace("lab", "").strip()
+    seen = {}
+    try:
+        rows = db.query(m).all()
+    except Exception:
+        return []
+    for c in rows:
+        title = (getattr(c, "title", "") or "").strip().lower()
+        instr = (getattr(c, "instructor", "") or "").strip()
+        if instr and title and (title == key or (core and core in title)):
+            crs = re.sub(r"\*+$", "", (getattr(c, "course", "") or "").strip())
+            code = f"{(getattr(c, 'subject', '') or '').strip()} {crs}".strip()
+            seen.setdefault(instr, code)
+    return list(seen.items())
+
+
 def lab_answer(db, query: str):
-    """Resolve an ECE project-lab reference (category number, full name, or shorthand)
-    to the canonical lab and point to the authoritative source. None if not a lab query."""
+    """Resolve an ECE project-lab reference (category number, full name, or shorthand).
+    If the question asks WHO teaches a NAMED lab, answer with the instructor of record
+    from the schedule; otherwise point to the authoritative source. None if not a lab
+    query."""
     q = (query or "").lower()
     if "lab" not in q and "capstone" not in q:
         return None
-    # Category number: "lab 1", "lab two", "lab #3"
+    wants_teacher = bool(_WHO_TEACHES.search(q))
+    # A SPECIFIC named lab takes precedence over a bare category number, so
+    # "who teaches Lab 2 RF communications" resolves to the RF lab's instructor.
+    for name, aliases in _PROJECT_LABS.items():
+        if any(re.search(r"\b" + re.escape(a) + r"\b", q) for a in aliases):
+            if wants_teacher:
+                profs = _lab_instructors(db, name)
+                if len(profs) == 1:
+                    nm, code = profs[0]
+                    tail = f" ({code})" if code else ""
+                    return (f"The {name}{tail} is taught by {nm}. "
+                            f"Ask me about {nm} for office hours and contact details.")
+                if profs:
+                    listed = "; ".join(f"{nm}{(' (' + code + ')') if code else ''}"
+                                       for nm, code in profs)
+                    return f"The {name} is taught by: {listed}."
+                return (f"I don't have an instructor listed for the {name} in the current "
+                        f"schedule. {_LAB_SOURCE}")
+            tier = _lab_tier_of(name)
+            cat = f" (Lab {tier})" if tier else ""
+            return f"The {name}{cat} is one of the ECE project laboratories. {_LAB_SOURCE}"
+    # Category number with no specific lab named: "lab 1", "lab two", "lab #3".
     m = re.search(r"\blab\s*#?\s*(one|two|three|four|[1-4])\b", q)
     if m:
         num = _LAB_NUM_WORDS.get(m.group(1), m.group(1))
@@ -821,12 +874,8 @@ def lab_answer(db, query: str):
         if names and len(names) == 1:
             return f"Lab {num} is the {names[0]}. {_LAB_SOURCE}"
         if names:
+            hint = (" Tell me which one — for example, RF Communications — and I'll name "
+                    "its instructor.") if wants_teacher else ""
             return (f"Lab {num} is a project lab you choose from: {'; '.join(names)}. "
-                    f"(Lab 2 and Lab 3 are picked from the same set.) {_LAB_SOURCE}")
-    # By full name or shorthand.
-    for name, aliases in _PROJECT_LABS.items():
-        if any(re.search(r"\b" + re.escape(a) + r"\b", q) for a in aliases):
-            tier = _lab_tier_of(name)
-            cat = f" (Lab {tier})" if tier else ""
-            return f"The {name}{cat} is one of the ECE project laboratories. {_LAB_SOURCE}"
+                    f"(Lab 2 and Lab 3 are picked from the same set.){hint} {_LAB_SOURCE}")
     return None

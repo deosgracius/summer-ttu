@@ -122,6 +122,30 @@ def test_english_and_neutral_stay_english():
         assert cs.looks_non_english(q) is False, q
 
 
+# --- "who teaches the X lab" names the instructor of record --------------------
+def test_lab_who_teaches_names_instructor(db):
+    ans = cs.lab_answer(db, "who teaches RF communication lab")
+    assert "Derek Johnston" in ans and "RF Communications Project Lab" in ans
+
+
+def test_lab_named_beats_category_number(db):
+    # "Lab 2 RF communication" must resolve to the RF lab's instructor, not the Lab 2 list.
+    ans = cs.lab_answer(db, "Who teaches Lab 2 RF communication lab?")
+    assert "Derek Johnston" in ans and "RF Communications Project Lab" in ans
+
+
+def test_lab_what_is_stays_generic(db):
+    # Without a "who teaches" intent, the descriptive blurb is unchanged.
+    ans = cs.lab_answer(db, "what is the RF communications lab")
+    assert "Derek Johnston" not in ans and "project lab" in ans.lower()
+
+
+def test_lab_category_only_lists_options(db):
+    # A bare category number can't name one instructor (7 labs) — list them + a hint.
+    ans = cs.lab_answer(db, "who teaches lab 2")
+    assert "choose from" in ans and "RF Communications Project Lab" in ans
+
+
 def test_non_english_is_detected():
     for q in ("¿Dónde está la oficina del profesor?",   # Spanish
               "Où est le bureau du professeur?",          # French

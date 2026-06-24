@@ -385,11 +385,49 @@ def find_people_fuzzy(db, query: str, threshold: float = 0.82, limit: int = 5):
     return out[:limit]
 
 
+def _name_key(name: str):
+    """Alpha name tokens, lowercased, minus honorifics — for tolerant matching of a
+    professor against the registrar's instructor field, which may read "Derek Johnston",
+    "Johnston, Derek", or "Derek A Johnston"."""
+    return {t for t in re.findall(r"[a-z]+", (name or "").lower())
+            if len(t) >= 2 and t not in _NAME_NOISE}
+
+
+def _courses_taught(db, name: str, limit: int = 8) -> str:
+    """Grouped, deduped courses this person is the instructor of record for, pulled from
+    the imported registrar sections — so a professor's profile shows what they actually
+    teach (e.g. the summer project labs), alongside their typed/website profile. Returns
+    '' when none are on file."""
+    m = getattr(models, "CourseSection", None)
+    want = _name_key(name)
+    if m is None or not want:
+        return ""
+    try:
+        rows = db.query(m).all()
+    except Exception:
+        return ""
+    seen = {}
+    for c in rows:
+        instr = _name_key(getattr(c, "instructor", ""))
+        if instr and want <= instr:  # every name token present in the instructor field
+            crs = re.sub(r"\*+$", "", (getattr(c, "course", "") or "").strip())
+            code = f"{(getattr(c, 'subject', '') or '').strip()} {crs}".strip()
+            ttl = (getattr(c, "title", "") or "").strip()
+            if code and code not in seen:
+                seen[code] = ttl
+    if not seen:
+        return ""
+    items = [f"{code} {ttl}".strip() for code, ttl in list(seen.items())[:limit]]
+    extra = "" if len(seen) <= limit else f" (+{len(seen) - limit} more)"
+    return "Teaching: " + "; ".join(items) + extra + "."
+
+
 def _person_detail(db, kind: str, r, full: bool = False) -> str:
-    """Public detail for one person. CONCISE by default — name, role, office, office
-    hours/availability + open-door policy, and the walk-in note — which is all most
-    students want. Email/phone/bio/directory are added only when the student asks for
-    more (full=True). Hours come from the admin-entered Person profile when set."""
+    """Public detail for one person. CONCISE by default — the profile card the user
+    expects: name, title, office/room, office hours, email, and the courses they teach
+    (grouped from the imported registrar data). Phone, bio, availability, the walk-in
+    note, and the directory link are added only when the person explicitly asks for more
+    (full=True). Hours come from the admin-entered Person profile when set."""
     title = getattr(r, "title", "") or ("Academic Advisor" if kind == "advisor" else "")
     head = r.name + (f" — {title}" if title else "")
     # Prefer admin-entered hours/availability/bio from the unified Person profile.
@@ -399,19 +437,29 @@ def _person_detail(db, kind: str, r, full: bool = False) -> str:
         or getattr(r, "office_hours", "") or getattr(r, "schedule", "")
     avail = (getattr(p, "availability", "") if p else "") or getattr(r, "availability", "")
     pol = getattr(r, "office_hours_policy", "")
+    email = getattr(r, "email", "") or (getattr(p, "email", "") if p else "")
     parts = [head + ((f": office {office}.") if office else ".")]
     if hrs:
-        parts.append(f"Office hours: {hrs}" + (f" ({pol})" if pol else "") + ".")
-    if avail and avail != hrs:
-        parts.append(f"Availability: {avail}.")
-    if not hrs and not avail and pol:
+        parts.append(f"Office hours: {hrs}.")
+    elif avail:
+        parts.append(f"Office hours: {avail}.")
+    elif pol:
         parts.append(f"Office hours: {pol}.")
-    parts.append(WALK_IN)
+    if email:
+        parts.append(f"Email: {email}.")
+    taught = _courses_taught(db, r.name)
+    if taught:
+        parts.append(taught)
     if full:
         # Extra detail only when the student explicitly asks for more.
-        contact = [x for x in (getattr(r, "email", ""), getattr(r, "phone", "")) if x]
-        if contact:
-            parts.append("Contact: " + ", ".join(contact) + ".")
+        phone = getattr(r, "phone", "")
+        if phone:
+            parts.append(f"Phone: {phone}.")
+        if avail and avail != hrs:
+            parts.append(f"Availability: {avail}.")
+        if pol and hrs:
+            parts.append(f"({pol})")
+        parts.append(WALK_IN)
         bio = getattr(r, "bio", "") or (getattr(p, "bio", "") if p else "")
         if bio:
             parts.append(bio)
@@ -524,10 +572,12 @@ def prereq_redirect(query: str):
     return PREREQ_REDIRECT if _PREREQ_RE.search(query or "") else None
 
 
-# A student signalling they want MORE than the concise card (email, bio, research…).
+# A person explicitly signalling they want MORE than the concise card (bio, research,
+# phone, full background). Email is in the concise card now, and casual phrasings like
+# "tell me about X" must NOT trigger the full website dump — so they're excluded here.
 _WANTS_MORE = re.compile(
-    r"\b(more|everything|full|details?|bio|biography|research|cv|resume|"
-    r"e-?mail|phone|number|contact|about|tell me)\b", re.I)
+    r"\b(more|everything|full|details?|bio|biography|background|research|"
+    r"publications?|cv|resume|phone)\b", re.I)
 
 
 def person_answer(db, query: str):
@@ -552,6 +602,33 @@ def person_answer(db, query: str):
         return "\n".join(lines)
     kind, r, _ = matches[0]
     return _person_detail(db, kind, r, full=bool(_WANTS_MORE.search(query or "")))
+
+
+def person_card(db, query: str):
+    """If the query resolves to exactly ONE professor/staff/advisor (speech-robust
+    fuzzy match) who has a headshot on file, return a small card the UI can show their
+    picture from. No card when the name is ambiguous (several match) or has no photo —
+    so a face never contradicts or guesses. Shared by the kiosk and the dashboard."""
+    try:
+        matches = find_people_fuzzy(db, query)
+    except Exception:
+        return None
+    if not matches:
+        return None
+    top = matches[0][2]
+    distinct = {}
+    for _kind, r, sc in matches:
+        if sc >= top - 0.04:
+            distinct.setdefault(r.name, r)
+    if len(distinct) != 1:
+        return None  # ambiguous → no face
+    r = matches[0][1]
+    photo = getattr(r, "photo_url", "") or ""
+    if not photo:
+        return None
+    office = f"{getattr(r, 'office_building', '')} {getattr(r, 'office_number', '')}".strip()
+    return {"name": r.name, "title": getattr(r, "title", "") or "",
+            "office": office, "email": getattr(r, "email", "") or "", "photo": photo}
 
 
 # Phrases that need the model's reasoning/judgement, semantic search, abbreviation
@@ -595,12 +672,18 @@ def fast_answer(db, question: str):
             return "\n".join(lines)
         return None
 
-    # 2) A short name-like query that matches exactly ONE professor or advisor.
+    # 2) A short name-like query that matches exactly ONE professor or advisor — render
+    # the SAME grounded profile card the dashboard uses (concise: title, office, hours,
+    # email, and the courses they teach), so both surfaces behave identically.
     name = _NAME_STOP.sub(" ", qt).strip()
     name = re.sub(r"\s+", " ", name)
     if name and 1 <= len(name.split()) <= 3 and len(name) >= 3:
         people = find_professors(db, name) + find_staff(db, name) + find_advisors(db, name)
         if len(people) == 1:
+            detailed = person_answer(db, qt)
+            if detailed:
+                return detailed
+            # Fallback compact line if the fuzzy matcher somehow disagrees.
             p = people[0]
             hours = p.get("office_hours") or p.get("schedule") or p.get("availability") or "not listed"
             return (f"{p['name']} ({p.get('department', '')}): "

@@ -1,4 +1,5 @@
 import os
+import hmac
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
@@ -12,6 +13,20 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 # Brute-force / abuse guards on the public auth surface (per client IP).
 LOGIN_MAX = int(os.getenv("LOGIN_PER_MIN", "10"))      # password attempts / min
 REGISTER_MAX = int(os.getenv("REGISTER_PER_MIN", "5"))  # new accounts / min
+CENTRAL_MAX = int(os.getenv("CENTRAL_PASSCODE_PER_MIN", "5"))  # passcode tries / min
+
+
+def _reset_link(token: str) -> str:
+    return f"{os.getenv('APP_URL', 'http://localhost:8000')}/ui/?reset={token}"
+
+
+def _central_passcode_ok(passcode: str) -> bool:
+    """Constant-time check of the one-time central passcode (the CENTRAL_ADMIN_PASSWORD
+    Fly secret). Returns False if the secret is unset, so an empty passcode never
+    passes. The passcode is NEVER logged and is usable ONLY for central register/reset
+    — it is not a login credential."""
+    expected = os.getenv("CENTRAL_ADMIN_PASSWORD", "")
+    return bool(expected) and hmac.compare_digest((passcode or "").encode(), expected.encode())
 
 def _out(user):
     try:
@@ -149,8 +164,8 @@ def forgot(data: ForgotReq, db: Session = Depends(get_db)):
     u = db.query(models.User).filter_by(email=data.email).first()
     if not u:
         return {"ok": True}
-    token = auth.create_reset_token(u.id)
-    link = f"{os.getenv('APP_URL', 'http://localhost:8000')}/ui/?reset={token}"
+    token = auth.create_reset_token(u.id, u.password_hash)
+    link = _reset_link(token)
     from .. import mailer
     body = f"Reset your Summer password using this link (valid 30 min):\n\n{link}"
     sent = mailer.send_text([u.email], "Reset your Summer password", body)
@@ -162,7 +177,7 @@ def forgot(data: ForgotReq, db: Session = Depends(get_db)):
 
 @router.post("/reset")
 def reset(data: ResetReq, db: Session = Depends(get_db)):
-    uid = auth.verify_reset_token(data.token)
+    uid = auth.verify_reset_token(data.token, db)
     if not uid:
         return {"error": "invalid or expired reset link"}
     u = db.get(models.User, uid)
@@ -172,6 +187,91 @@ def reset(data: ResetReq, db: Session = Depends(get_db)):
         return {"error": "password must be at least 6 characters"}
     u.password_hash = auth.hash_password(data.new_password); db.commit()
     return {"reset": True}
+
+
+# ---- Central-admin self-service (passcode-gated) ---------------------------------
+# The CENTRAL_ADMIN_PASSWORD secret is a one-time PASSCODE, used ONLY to (1) register
+# the central admin the first time, or (2) get a password-reset link. It is never a
+# login credential. After registering, the central admin signs in with their own
+# email + password like anyone else. Every endpoint is rate-limited and compares the
+# passcode in constant time; the passcode is never logged.
+class CentralStart(BaseModel):
+    passcode: str
+
+
+@router.post("/central/start")
+def central_start(data: CentralStart, request: Request, db: Session = Depends(get_db)):
+    """Verify the passcode and report whether a central admin already exists, so the UI
+    can offer registration (none yet) or a password reset (one exists)."""
+    ratelimit.check(f"central:{ratelimit.client_ip(request)}", CENTRAL_MAX)
+    if not _central_passcode_ok(data.passcode):
+        raise HTTPException(401, "Incorrect passcode")
+    has_account = db.query(models.User).filter_by(role="central_admin").count() > 0
+    return {"ok": True, "has_account": has_account}
+
+
+class CentralRegister(BaseModel):
+    passcode: str
+    email: str
+    password: str
+    location: str | None = None
+    timezone: str | None = None
+
+
+@router.post("/central/register")
+def central_register(data: CentralRegister, request: Request, db: Session = Depends(get_db)):
+    """First-time central-admin registration, gated by the passcode. Creates the
+    central_admin (or upgrades an existing account of that email), auto-approved, and
+    logs them in. Refuses to create a SECOND central admin under a different email — the
+    holder should reset the existing one instead."""
+    ratelimit.check(f"central:{ratelimit.client_ip(request)}", CENTRAL_MAX)
+    if not _central_passcode_ok(data.passcode):
+        raise HTTPException(401, "Incorrect passcode")
+    email = (data.email or "").strip().lower()
+    if "@" not in email or "." not in email:
+        raise HTTPException(400, "Enter a valid email")
+    if len(data.password or "") < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+    existing_central = db.query(models.User).filter_by(role="central_admin").first()
+    if existing_central and existing_central.email.lower() != email:
+        raise HTTPException(409, "A central admin account already exists. Use password reset instead.")
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if user:
+        user.role = "central_admin"
+        user.password_hash = auth.hash_password(data.password)
+        user.approved = True
+        if data.location is not None:
+            user.location = data.location
+        if data.timezone:
+            user.timezone = data.timezone
+    else:
+        user = models.User(email=email, password_hash=auth.hash_password(data.password),
+                           role="central_admin", approved=True,
+                           timezone=data.timezone or "UTC", location=data.location or "")
+        db.add(user)
+    db.commit(); db.refresh(user)
+    return {"ok": True, "access_token": auth.create_token(user.id), "token_type": "bearer"}
+
+
+class CentralResetLink(BaseModel):
+    passcode: str
+    email: str
+
+
+@router.post("/central/reset-link")
+def central_reset_link(data: CentralResetLink, request: Request, db: Session = Depends(get_db)):
+    """Passcode-gated password reset for the central admin: returns a single-use,
+    30-minute on-screen reset link (no email needed). The link opens the reset page
+    where they set a new password, then sign in normally."""
+    ratelimit.check(f"central:{ratelimit.client_ip(request)}", CENTRAL_MAX)
+    if not _central_passcode_ok(data.passcode):
+        raise HTTPException(401, "Incorrect passcode")
+    email = (data.email or "").strip().lower()
+    u = db.query(models.User).filter(models.User.email == email).first()
+    if not u:
+        raise HTTPException(404, "No account found with that email")
+    token = auth.create_reset_token(u.id, u.password_hash)
+    return {"ok": True, "reset_link": _reset_link(token)}
 
 
 class PwChange(BaseModel):

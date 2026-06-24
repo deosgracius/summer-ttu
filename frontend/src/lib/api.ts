@@ -165,9 +165,17 @@ export interface AgentAction {
   tool: string
   result?: Record<string, unknown> & { url?: string; open_url?: string; spotify?: string }
 }
+export interface PersonCard {
+  name: string
+  title?: string
+  office?: string
+  email?: string
+  photo?: string
+}
 export interface AgentReply {
   reply: string
   actions?: AgentAction[]
+  person?: PersonCard
 }
 
 // ---- Approvals & audit (TTU summer app) ----

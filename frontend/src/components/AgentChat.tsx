@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react"
-import { api, type AgentReply } from "@/lib/api"
+import { api, type AgentReply, type PersonCard } from "@/lib/api"
 import { useSpeech } from "@/lib/useSpeech"
 import SummerOrb from "@/components/SummerOrb"
 import { Button } from "@/components/ui/button"
@@ -17,6 +17,7 @@ interface Props {
 export default function AgentChat({ onChanged }: Props) {
   const [goal, setGoal] = useState("")
   const [reply, setReply] = useState<string>("")
+  const [person, setPerson] = useState<PersonCard | undefined>(undefined)
   const [links, setLinks] = useState<{ label: string; href: string }[]>([])
   const [state, setState] = useState<"idle" | "thinking">("idle")
   const [muted, setMuted] = useState(false)
@@ -32,6 +33,7 @@ export default function AgentChat({ onChanged }: Props) {
     clearTimer.current = window.setTimeout(() => {
       setReply("")
       setLinks([])
+      setPerson(undefined)
     }, 5000)
   }
 
@@ -57,6 +59,7 @@ export default function AgentChat({ onChanged }: Props) {
     setState("thinking")
     setReply("…")
     setLinks([])
+    setPerson(undefined)
     try {
       const call = () => api.post<AgentReply>("/agent", { goal: text, provider: null, voice: false })
       let data: AgentReply
@@ -70,6 +73,7 @@ export default function AgentChat({ onChanged }: Props) {
       }
       const answer = data.reply || "(done)"
       setReply(answer)
+      setPerson(data.person)
       if (!muted) speak(answer).then(scheduleClear, scheduleClear)
       else scheduleClear()
       const found: { label: string; href: string }[] = []
@@ -121,6 +125,29 @@ export default function AgentChat({ onChanged }: Props) {
 
         {reply && (
           <div className="mt-3 rounded-lg border bg-muted/40 p-4 text-sm whitespace-pre-wrap leading-relaxed">
+            {person?.photo && /^(https?:\/\/|\/)/.test(person.photo) && (
+              <div className="flex items-center gap-4 mb-3 pb-3 border-b">
+                <img
+                  src={person.photo}
+                  alt={person.name}
+                  loading="lazy"
+                  className="size-16 rounded-2xl object-cover shrink-0 ring-1 ring-border"
+                />
+                <div className="min-w-0">
+                  <div className="text-base font-semibold leading-tight">{person.name}</div>
+                  {person.title && (
+                    <div className="text-xs text-muted-foreground mt-0.5">{person.title}</div>
+                  )}
+                  {(person.office || person.email) && (
+                    <div className="text-xs text-muted-foreground mt-1 truncate">
+                      {[person.office && `Office ${person.office}`, person.email]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             {reply}
             {links.length > 0 && (
               <div className="mt-3 flex flex-col gap-1">

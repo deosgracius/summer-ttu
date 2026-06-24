@@ -56,30 +56,9 @@ class Ask(BaseModel):
 
 
 def _person_card(db, question: str):
-    """If the question resolves to exactly ONE professor/staff/advisor (speech-robust
-    fuzzy match) who has a headshot on file, return a small card for the kiosk to show
-    their picture. No card when the name is ambiguous (e.g. two Jennifers) or has no
-    photo — so the picture never contradicts or guesses."""
-    try:
-        matches = campus_service.find_people_fuzzy(db, question)
-    except Exception:
-        return None
-    if not matches:
-        return None
-    top = matches[0][2]
-    distinct = {}
-    for _kind, r, sc in matches:
-        if sc >= top - 0.04:
-            distinct.setdefault(r.name, r)
-    if len(distinct) != 1:
-        return None  # ambiguous → no face
-    r = matches[0][1]
-    photo = getattr(r, "photo_url", "") or ""
-    if not photo:
-        return None
-    office = f"{getattr(r, 'office_building', '')} {getattr(r, 'office_number', '')}".strip()
-    return {"name": r.name, "title": getattr(r, "title", "") or "",
-            "office": office, "email": getattr(r, "email", "") or "", "photo": photo}
+    """Kiosk person card — delegates to the shared campus_service.person_card so the
+    kiosk and the dashboard show the same grounded face/details from one source."""
+    return campus_service.person_card(db, question)
 
 
 @router.post("/ask")

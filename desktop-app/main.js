@@ -29,6 +29,7 @@ if (!app.requestSingleInstanceLock()) {
       resizable: true,
       alwaysOnTop: true,
       backgroundColor: "#00000000",
+      icon: path.join(__dirname, "icon.png"),
       webPreferences: {
         preload: path.join(__dirname, "preload.js"),
         contextIsolation: true,

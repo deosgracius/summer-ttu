@@ -43,6 +43,9 @@ fs.mkdirSync(appDir, { recursive: true })
 for (const f of ["main.js", "preload.js"]) {
   fs.copyFileSync(path.join(root, f), path.join(appDir, f))
 }
+// Bundle the tray/window icon if present (referenced by main.js via __dirname).
+const iconSrc = path.join(root, "icon.png")
+if (fs.existsSync(iconSrc)) fs.copyFileSync(iconSrc, path.join(appDir, "icon.png"))
 fs.writeFileSync(
   path.join(appDir, "package.json"),
   JSON.stringify(

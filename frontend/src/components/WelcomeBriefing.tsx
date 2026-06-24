@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { Play, Mail, Volume2, Music } from "lucide-react"
-import { api } from "@/lib/api"
+import { api, getToken } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useSpeech } from "@/lib/useSpeech"
 import { PanelCard } from "@/components/panels/PanelCard"
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
  * the briefing in order: identity/connections, city/time/weather, tasks, schedule, then
  * ASK before reading important emails (a separate phase). Email reading never happens
  * without an explicit yes. Falls back to on-screen text + buttons if autoplay is blocked. */
-const GREETED_KEY = "summer_greeted_v1"
+const GREETED_KEY = "summer_greeted_token"
 
 interface BriefResp {
   text: string
@@ -35,14 +35,17 @@ export default function WelcomeBriefing() {
   const GREETING = `Hey ${name}. Would you like your daily briefing?`
   const isEligible = me?.role === "admin" || me?.role === "central_admin"
 
-  // Auto-greet by voice once per login session — the login click primes the audio
-  // gesture. If the browser blocks autoplay, the on-screen text + buttons still work.
+  // Auto-greet by voice on every LOGIN — keyed to the auth token so it re-greets each
+  // time you log back in (a fresh token), but not on tab switches or reloads within the
+  // same session. The login click primes the audio gesture; if autoplay is blocked, the
+  // on-screen text + buttons still work.
   const greeted = useRef(false)
   useEffect(() => {
     if (greeted.current || !isEligible) return
     greeted.current = true
-    if (sessionStorage.getItem(GREETED_KEY)) return
-    sessionStorage.setItem(GREETED_KEY, "1")
+    const tok = getToken() || ""
+    if (tok && localStorage.getItem(GREETED_KEY) === tok) return
+    localStorage.setItem(GREETED_KEY, tok)
     primeAudio()
     speak(GREETING)
     // eslint-disable-next-line react-hooks/exhaustive-deps

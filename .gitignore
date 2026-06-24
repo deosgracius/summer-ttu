@@ -45,3 +45,7 @@ eval_benchmark.json
 
 # Local Claude Code config
 .claude/
+
+# Never commit the presentation deck
+Summer_TTU_Presentation.pptx
+*.pptx

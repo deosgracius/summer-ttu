@@ -99,8 +99,9 @@ def _suggest(kind: str, n: int):
         return [f"Update office hours for {n} people, matched by name or email. "
                 "Unmatched names will be reported, not created."]
     if kind == "people":
-        return [f"This looks like {n} staff/faculty records. I can preview them; applying "
-                "people changes will be added next — for now, confirm what you'd like."]
+        return [f"This looks like {n} staff/faculty records. I can update the office, email, "
+                "title, phone, and hours of people already in the directory, matched by name "
+                "or email. Unmatched names are reported, never created."]
     if kind == "courses":
         return [f"This looks like {n} course rows. Course schedule changes run through the "
                 "campus importer; I can preview but won't alter the schedule from here."]
@@ -181,27 +182,70 @@ def _set_hours(db, person, hours: str):
             prof.schedule = hours
 
 
+def _set_people_fields(db, person, r) -> list:
+    """Update an EXISTING directory person's editable fields from a row (never creates).
+    Returns the list of fields that changed. Office accepts split building/number columns
+    or a single 'office' like 'ECE 240'."""
+    changed = []
+    title = _get(r, "title", "role", "position", "jobtitle", "job title")
+    email = _get(r, "email", "e-mail")
+    phone = _get(r, "phone", "telephone", "tel")
+    bld = _get(r, "office_building", "building")
+    num = _get(r, "office_number", "office number", "room number", "room_number", "room")
+    office = _get(r, "office")
+    if office and not (bld or num):
+        parts = office.split()
+        bld, num = (parts[0], " ".join(parts[1:])) if len(parts) >= 2 else ("", office)
+    hrs = _get(r, "office_hours", "office hours", "hours", "schedule", "availability")
+    if title and hasattr(person, "title") and person.title != title:
+        person.title = title; changed.append("title")
+    if email and hasattr(person, "email") and (person.email or "").lower() != email.lower():
+        person.email = email; changed.append("email")
+    if phone and hasattr(person, "phone") and person.phone != phone:
+        person.phone = phone; changed.append("phone")
+    if bld and hasattr(person, "office_building"):
+        person.office_building = bld
+        if "office" not in changed:
+            changed.append("office")
+    if num and hasattr(person, "office_number"):
+        person.office_number = num
+        if "office" not in changed:
+            changed.append("office")
+    if hrs:
+        _set_hours(db, person, hrs)
+        changed.append("hours")
+    return changed
+
+
 def apply(db, kind: str, rows) -> dict:
-    """Apply a CONFIRMED proposal. Only 'office_hours' writes for now; it updates
-    existing people only (never creates) and reports anyone it couldn't match."""
-    if kind != "office_hours":
+    """Apply a CONFIRMED proposal. Supports 'office_hours' (hours only) and 'people'
+    (office/email/title/phone/hours). Both UPDATE existing directory people only — never
+    create — and report anyone they couldn't match."""
+    if kind not in ("office_hours", "people"):
         return {"applied": False,
-                "error": f"Applying '{kind}' isn't supported yet — office hours only."}
+                "error": f"Applying '{kind}' isn't supported — office hours and people updates only."}
     updated, unmatched = [], []
     for r in rows or []:
         nm = _get(r, "name", "full name", "professor", "instructor", "faculty", "staff")
         em = _get(r, "email", "e-mail")
-        hrs = _get(r, "office_hours", "office hours", "hours", "schedule", "availability")
-        if not hrs or (not nm and not em):
+        if not nm and not em:
             continue
         person = _find_person(db, nm, em)
         if not person:
             unmatched.append(nm or em)
             continue
-        _set_hours(db, person, hrs)
-        updated.append(person.name)
+        if kind == "office_hours":
+            hrs = _get(r, "office_hours", "office hours", "hours", "schedule", "availability")
+            if not hrs:
+                continue
+            _set_hours(db, person, hrs)
+            updated.append(person.name)
+        else:  # people
+            changed = _set_people_fields(db, person, r)
+            if changed:
+                updated.append(f"{person.name} ({', '.join(changed)})")
     db.commit()
+    noun = "person" if len(updated) == 1 else "people"
     return {"applied": True, "updated": updated, "unmatched": unmatched,
-            "summary": (f"Updated office hours for {len(updated)} "
-                        f"{'person' if len(updated) == 1 else 'people'}"
+            "summary": (f"Updated {len(updated)} {noun}"
                         + (f"; couldn't match {len(unmatched)}: {', '.join(unmatched)}." if unmatched else "."))}

@@ -55,3 +55,28 @@ def test_analyze_blocks_bad_file():
 def test_apply_rejects_unsupported_kind():
     res = fi.apply(None, "courses", [])
     assert not res["applied"]
+
+
+def test_apply_people_updates_existing_only():
+    """The 'people' import updates an existing directory person's fields and never
+    creates new records; unmatched names are reported."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from app.database import Base
+    from app import models
+    eng = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(eng)
+    db = sessionmaker(bind=eng)()
+    db.add(models.Professor(name="Tim Dallas", title="Professor", email="old@ttu.edu",
+                            department="ECE", office_building="ECE", office_number="100"))
+    db.commit()
+    res = fi.apply(db, "people", [
+        {"name": "Tim Dallas", "office": "ECE 240", "email": "tim.dallas@ttu.edu"},
+        {"name": "Ghost Person", "office": "ECE 999"},
+    ])
+    assert res["applied"] is True
+    assert res["unmatched"] == ["Ghost Person"]
+    assert db.query(models.Professor).count() == 1  # nothing created
+    p = db.query(models.Professor).filter_by(name="Tim Dallas").first()
+    assert p.office_number == "240" and p.email == "tim.dallas@ttu.edu"
+    db.close()

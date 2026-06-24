@@ -30,6 +30,20 @@ const WAKE = /\b(?:hey|hay|ey|eh|aye|okay|ok|hi|yo|a|uh)?\s*(?:summer|summers|su
 const WAKE_LEAD = /^\s*(?:(?:hey|hay|ey|eh|aye|okay|ok|hi|yo|uh)[\s,]+)?(?:summer|summers|summah|sumer|sumah|suma|summa|somer|somers|sommer|sammer|samma|sama|soma|zuma)\b[\s,.:!?-]*/i
 const ENDRE = /\b(thank you|thanks summer|thank you summer|we'?re done|that'?s all|that'?s it|i'?m done|stop|goodbye|good bye|bye summer|never ?mind|sleep|go to sleep|goodnight|good night|go to bed)\b/i
 
+// A one-shot spoken yes/no prompt (e.g. "would you like your daily briefing?"). While
+// one is pending, the wake-word listener answers it with a spoken yes/no BEFORE treating
+// the speech as a command — so the user never has to click. Module-level so the briefing
+// hook and the chat's wake-word hook (separate instances) share it.
+const YES_RE = /\b(yes|yeah|yep|yup|sure|ok|okay|of course|absolutely|please do|go ahead|do it|brief me|briefing|read them|read it)\b/i
+const NO_RE = /\b(no|nope|nah|not now|no thanks|no thank you|maybe later|later|skip|don'?t)\b/i
+let PENDING_YESNO: { onYes: () => void; onNo: () => void } | null = null
+export function awaitYesNo(onYes: () => void, onNo: () => void) {
+  PENDING_YESNO = { onYes, onNo }
+}
+export function clearYesNo() {
+  PENDING_YESNO = null
+}
+
 // SHARED across every useSpeech instance: the welcome-briefing hook and the chat
 // hook are two separate instances, but there is only ONE Summer voice. This
 // module-level object lets the chat's mic know the briefing is talking (and vice
@@ -387,6 +401,12 @@ export function useSpeech() {
       buffer.current = ""
       setHeard("")
       if (!raw) return
+      // PENDING PROMPT: if Summer just asked a yes/no question (e.g. the daily briefing
+      // offer), a spoken "yes"/"no" answers it — no wake word, no click needed.
+      if (PENDING_YESNO) {
+        if (YES_RE.test(raw)) { const h = PENDING_YESNO; PENDING_YESNO = null; h.onYes(); return }
+        if (NO_RE.test(raw)) { const h = PENDING_YESNO; PENDING_YESNO = null; h.onNo(); return }
+      }
       // DORMANT: ignore everything until the wake word ("Hey Summer" / "Summer").
       // Once it's heard, engage and answer the rest of what was said (if anything).
       if (!engaged.current) {

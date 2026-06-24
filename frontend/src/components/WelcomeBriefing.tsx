@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { Play, Mail, Volume2, Music } from "lucide-react"
 import { api, getToken } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
-import { useSpeech } from "@/lib/useSpeech"
+import { useSpeech, awaitYesNo, clearYesNo } from "@/lib/useSpeech"
 import { PanelCard } from "@/components/panels/PanelCard"
 import { Button } from "@/components/ui/button"
 
@@ -126,6 +126,16 @@ export default function WelcomeBriefing() {
     audioRef.current?.pause()
     setPhase("done")
   }
+
+  // Let a SPOKEN "yes"/"no" answer the current prompt (no click needed): the daily
+  // briefing offer, and then the "read your important emails?" follow-up.
+  useEffect(() => {
+    if (phase === "greeting") awaitYesNo(runBriefing, dismiss)
+    else if (phase === "emailOffer") awaitYesNo(readEmails, dismiss)
+    else clearYesNo()
+    return () => clearYesNo()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase])
 
   return (
     <PanelCard title="Welcome">

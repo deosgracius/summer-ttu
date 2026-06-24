@@ -73,6 +73,31 @@ _PERSON_QUERY_NOISE = {
 
 _LIMIT = 15
 
+# --- Language detection so Summer answers in the language it was asked in ----------
+# The deterministic lookups reply in English. When a question is clearly NOT English we
+# skip them and let the LLM answer (it is told to reply in the user's language and is
+# still held to the provenance gate). Conservative on purpose: a bare name or course
+# code ("Derek Johnston", "ECE 3333") must stay English so the free fast path keeps it.
+_NON_LATIN = re.compile(
+    r"[Ѐ-ӿ֐-׿؀-ۿऀ-ॿ"
+    r"぀-ヿ㐀-䶿一-鿿가-힯]")  # Cyrillic, Hebrew, Arabic, Devanagari, Kana, CJK, Hangul
+_ACCENTED = re.compile(r"[áéíóúñ¿¡àâçèêëîïôûœäöüßãõìòù]", re.I)
+# Unambiguous non-English markers (avoid English-colliding words like "come"/"como").
+_NON_EN_WORDS = re.compile(
+    r"\b(dónde|cuál|cuándo|quién|cómo|gracias|hola|profesor|oficina|horario|correo|"
+    r"où|bonjour|merci|bureau|salle|quelle|professeur|"
+    r"bitte|danke|hallo|büro|professorin|"
+    r"onde|olá|obrigado|obrigada|gabinete|"
+    r"dove|grazie|ciao|ufficio)\b", re.I)
+
+
+def looks_non_english(text: str) -> bool:
+    """True only when the text is clearly not English (non-Latin script, accented Latin
+    letters, or unambiguous foreign function words). False for plain English and for
+    language-neutral names/codes, so the deterministic English fast path keeps those."""
+    t = text or ""
+    return bool(_NON_LATIN.search(t) or _ACCENTED.search(t) or _NON_EN_WORDS.search(t))
+
 
 def _tokens(q: str):
     return [t for t in (q or "").lower().split() if t]

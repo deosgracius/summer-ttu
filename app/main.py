@@ -207,9 +207,15 @@ if _HAS_WEB:
     if os.path.isdir(_assets):
         app.mount("/assets", StaticFiles(directory=_assets), name="assets")
 
+    _WEB_ROOT = os.path.realpath(WEB_DIST)
+
     @app.get("/{full_path:path}", include_in_schema=False)
     def spa_fallback(full_path: str):
-        candidate = os.path.join(WEB_DIST, full_path)
-        if full_path and os.path.isfile(candidate):
+        # Serve a real built asset when one exists, else the SPA index. Resolve the
+        # path and confirm it stays INSIDE the web root, so a crafted URL with ".."
+        # can't escape the build dir to read arbitrary files (path traversal / LFI).
+        candidate = os.path.realpath(os.path.join(_WEB_ROOT, full_path))
+        if full_path and (candidate == _WEB_ROOT or candidate.startswith(_WEB_ROOT + os.sep)) \
+                and os.path.isfile(candidate):
             return FileResponse(candidate)
         return FileResponse(os.path.join(WEB_DIST, "index.html"))

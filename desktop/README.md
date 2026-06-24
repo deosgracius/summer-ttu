@@ -9,7 +9,27 @@ automatically says "Hey [name], would you like your daily briefing?" and, on yes
 the briefing aloud. `Summer-Desktop.bat` simply opens that dashboard in a clean,
 chromeless app window on login, with audio autoplay enabled so it can speak right away.
 
-## One-time setup
+## New computer? One command (recommended)
+
+On a brand-new Windows computer, open **PowerShell** and run:
+
+```powershell
+irm https://summer-ttu.fly.dev/setup.ps1 | iex
+```
+
+That downloads and runs the setup, which:
+- installs a small launcher under your user profile (`%LOCALAPPDATA%\Summer`),
+- adds a shortcut to your Startup folder so Summer opens at every login, and
+- opens Summer right away so you can sign in once (it remembers you afterward).
+
+No administrator rights are needed — it only writes to your own user profile and does
+not change any system settings. You can read the script first at
+<https://summer-ttu.fly.dev/setup.ps1> (it's also in `frontend/public/setup.ps1`).
+
+To remove it later, delete `Summer.lnk` from the Startup folder (`Win + R` →
+`shell:startup`).
+
+## Manual setup (no PowerShell)
 
 1. Sign in once: double-click `Summer-Desktop.bat`. In the window that opens, log in as
    the central admin. The login is remembered by the browser, so you won't have to log
@@ -20,8 +40,8 @@ chromeless app window on login, with audio autoplay enabled so it can speak righ
    - Right-drag `Summer-Desktop.bat` into that folder and choose "Create shortcuts here"
      (or copy a shortcut to it there).
 
-That's it. Next time you turn on the computer and sign in to Windows, Summer opens, the
-orb greets you, and offers your briefing.
+Either way: next time you sign in to Windows, Summer opens, the orb greets you, and
+offers your briefing.
 
 ## Notes
 

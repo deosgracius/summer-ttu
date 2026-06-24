@@ -39,6 +39,21 @@ export default function SplineRobot({ ambient = false }) {
   useEffect(() => {
     const sv = ref.current
     if (!sv) return
+    // Hide the "Built with Spline" badge that the viewer injects into its shadow DOM.
+    // It renders a moment after the scene loads, so poll briefly until it appears.
+    const hideBadge = () => {
+      try {
+        const root = sv.shadowRoot
+        if (!root) return false
+        const logo = root.querySelector("#logo") || root.querySelector('a[href*="spline.design"]')
+        if (logo) { logo.style.display = "none"; return true }
+      } catch { /* ignore */ }
+      return false
+    }
+    let badgeTries = 0
+    const badgeTimer = window.setInterval(() => {
+      if (hideBadge() || ++badgeTries > 75) window.clearInterval(badgeTimer)
+    }, 200)
     let canvas = null
     const getCanvas = () => {
       if (canvas && canvas.isConnected) return canvas
@@ -118,6 +133,7 @@ export default function SplineRobot({ ambient = false }) {
     }
 
     return () => {
+      window.clearInterval(badgeTimer)
       window.removeEventListener("pointermove", onMove, { capture: true })
       if (raf) cancelAnimationFrame(raf)
       if (dot) dot.remove()

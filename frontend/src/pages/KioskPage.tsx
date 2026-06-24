@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { Mic, Radio, Volume2, VolumeX } from "lucide-react"
 import { api } from "@/lib/api"
 import { useSpeech } from "@/lib/useSpeech"
 import SummerOrb from "@/components/SummerOrb"
@@ -197,7 +198,7 @@ export default function KioskPage() {
                 listen((t) => ask(t))
               }}
             >
-              {listening ? "●" : "🎤"}
+              {listening ? <span className="size-2.5 rounded-full bg-current" /> : <Mic className="size-5" />}
             </Button>
           )}
           <Button onClick={() => ask()} disabled={loading} className="h-12 px-6">
@@ -219,7 +220,7 @@ export default function KioskPage() {
           <div className="flex gap-3">
             {voiceIn && (
               <button
-                className="underline-offset-4 hover:underline"
+                className="inline-flex items-center gap-1.5 underline-offset-4 hover:underline"
                 onClick={() => {
                   if (wakeActive) stopWakeWord()
                   else {
@@ -228,18 +229,19 @@ export default function KioskPage() {
                   }
                 }}
               >
-                {wakeActive ? "🎙️ Hey-Summer on" : "🎙️ Hey-Summer off"}
+                <Radio className="size-3.5" /> {wakeActive ? "Wake word on" : "Wake word off"}
               </button>
             )}
             {canSpeak && (
               <button
-                className="underline-offset-4 hover:underline"
+                className="inline-flex items-center gap-1.5 underline-offset-4 hover:underline"
                 onClick={() => {
                   stopSpeaking()
                   setMuted((m) => !m)
                 }}
               >
-                {muted ? "🔇 Voice off" : "🔊 Voice on"}
+                {muted ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}
+                {muted ? "Voice off" : "Voice on"}
               </button>
             )}
             {turns.length > 0 && (

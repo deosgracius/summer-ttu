@@ -42,3 +42,6 @@ Thumbs.db
 # generated eval artifacts
 eval_report.json
 eval_benchmark.json
+
+# Local Claude Code config
+.claude/

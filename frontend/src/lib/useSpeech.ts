@@ -395,11 +395,11 @@ export function useSpeech() {
         if (!WAKE.test(raw)) return
         engage()
         const after = raw.replace(WAKE_LEAD, "").trim()
-        // "Hey Summer" on its own: ACKNOWLEDGE so the person knows they were heard,
-        // instead of silently waiting. Then listen for the actual question.
+        // "Hey Summer" / "Summer" on its own: ACKNOWLEDGE warmly and professionally so
+        // the person knows they were heard, then wait for their actual question.
         if (after.length < 2 || (ENDRE.test(after) && after.split(/\s+/).length <= 4)) {
-          setHeard("Yes? Go ahead — ask me anything.")
-          speak("Yes?")
+          setHeard("How can I help you?")
+          speak("How can I help you?")
           resetConvoTimer()
           return
         }
@@ -470,15 +470,15 @@ export function useSpeech() {
       // the mic button (server-side Whisper) still works.
       if (err === "network") {
         netFails++
-        if (netFails >= 3) setHeard("⚠ Voice wake-word isn't available in this browser — tap the mic 🎤 to talk")
+        if (netFails >= 3) setHeard("Voice wake word isn't available in this browser. Use the microphone button to talk.")
         return
       }
       const msg: Record<string, string> = {
-        "not-allowed": "microphone blocked — allow it in the address bar 🔒",
-        "service-not-allowed": "microphone blocked — allow it in the address bar 🔒",
-        "audio-capture": "no microphone found",
+        "not-allowed": "Microphone blocked. Allow it in the address bar.",
+        "service-not-allowed": "Microphone blocked. Allow it in the address bar.",
+        "audio-capture": "No microphone found.",
       }
-      setHeard("⚠ " + (msg[err] || err))
+      setHeard(msg[err] || err)
     }
     rec.onend = () => {
       // Only the CURRENT recognizer restarts itself — prevents the StrictMode
@@ -664,12 +664,12 @@ export function useSpeech() {
       const name = (e as { name?: string })?.name || ""
       const msg =
         name === "NotAllowedError" || name === "SecurityError"
-          ? "⚠ microphone blocked — click the address-bar lock 🔒, set Microphone to Allow, then reload"
+          ? "Microphone blocked. Click the address-bar lock, set Microphone to Allow, then reload."
           : name === "NotFoundError" || name === "DevicesNotFoundError"
-            ? "⚠ no microphone found on this device — plug in a mic or headset"
+            ? "No microphone found on this device. Plug in a mic or headset."
             : name === "NotReadableError" || name === "TrackStartError"
-              ? "⚠ the microphone is busy in another app — close it (Teams/Zoom/etc.) and try again"
-              : "⚠ couldn't start the microphone" + (name ? ` (${name})` : "")
+              ? "The microphone is busy in another app. Close it (Teams, Zoom, etc.) and try again."
+              : "Couldn't start the microphone" + (name ? ` (${name})` : "")
       setHeard(msg)
       restoreWake()
       return
@@ -706,9 +706,9 @@ export function useSpeech() {
         if (text) {
           engage() // a mic tap starts/continues the conversation
           onText(text)
-        } else setHeard("⚠ didn't catch that — try again")
+        } else setHeard("Didn't catch that. Please try again.")
       } catch {
-        setHeard("⚠ couldn't transcribe — check connection")
+        setHeard("Couldn't transcribe. Please check your connection.")
       }
     }
     recording.current = true

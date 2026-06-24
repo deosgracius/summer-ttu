@@ -1,4 +1,5 @@
 import os
+import hashlib
 import datetime
 import jwt
 import bcrypt
@@ -82,16 +83,33 @@ def require_roles(*roles):
     return dep
 
 
-def create_reset_token(sub: int) -> str:
+def _pw_version(pw_hash: str) -> str:
+    """A short fingerprint of the current password hash. Embedded in a reset token so
+    the link becomes SINGLE-USE: once the password changes, the fingerprint no longer
+    matches and the (still-unexpired) link is dead. No schema change needed."""
+    return hashlib.sha256((pw_hash or "").encode()).hexdigest()[:16]
+
+
+def create_reset_token(sub: int, pw_hash: str = "") -> str:
     exp = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=30)
-    return jwt.encode({"sub": str(sub), "purpose": "reset", "exp": exp}, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode({"sub": str(sub), "purpose": "reset", "pv": _pw_version(pw_hash), "exp": exp},
+                      SECRET_KEY, algorithm=ALGORITHM)
 
 
-def verify_reset_token(token: str):
+def verify_reset_token(token: str, db=None):
+    """Return the user id for a valid, unexpired, unused reset token, else None. When a
+    db session is given, the token is also checked against the user's current password
+    fingerprint so a link can't be reused after the password has already been reset."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         if payload.get("purpose") != "reset":
             return None
-        return int(payload.get("sub"))
+        uid = int(payload.get("sub"))
     except Exception:
         return None
+    pv = payload.get("pv")
+    if pv and db is not None:
+        u = db.get(models.User, uid)
+        if not u or _pw_version(u.password_hash) != pv:
+            return None  # password already changed — link is spent
+    return uid

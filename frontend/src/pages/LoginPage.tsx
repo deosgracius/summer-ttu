@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/card"
 import { toast } from "sonner"
 
-type Step = 0 | 1 | 2
+type Step = 0 | 1 | 2 | 3
 
 export default function LoginPage() {
   const { adoptToken } = useAuth()
@@ -30,6 +30,14 @@ export default function LoginPage() {
   // credentials
   const [email, setEmail] = useState("me@example.com")
   const [password, setPassword] = useState("pw12345")
+
+  // central-admin self-service (passcode-gated register / reset)
+  const [cMode, setCMode] = useState<"passcode" | "choose" | "register" | "reset" | "link">("passcode")
+  const [passcode, setPasscode] = useState("")
+  const [cEmail, setCEmail] = useState("")
+  const [cPassword, setCPassword] = useState("")
+  const [cCity, setCCity] = useState("Lubbock, TX")
+  const [resetLink, setResetLink] = useState("")
 
   // MFA second step
   const [mfa, setMfa] = useState(false)
@@ -132,6 +140,56 @@ export default function LoginPage() {
     }
   }
 
+  // ---- Central-admin self-service. The passcode (CENTRAL_ADMIN_PASSWORD) is used
+  // ONLY here, to register the central admin the first time or to get a reset link.
+  // It is never a login credential; after this they sign in with email + password. ----
+  async function centralStart() {
+    setBusy(true)
+    try {
+      const r = await api.post<{ ok: boolean; has_account: boolean }>(
+        "/auth/central/start", { passcode })
+      setCMode(r.has_account ? "reset" : "register")
+    } catch (e) {
+      toast.error(e instanceof ApiError ? "Incorrect passcode" : "Could not connect")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function centralRegister() {
+    setBusy(true)
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+      const r = await api.post<{ access_token?: string }>("/auth/central/register", {
+        passcode, email: cEmail.trim(), password: cPassword,
+        location: cCity.trim(), timezone: tz,
+      })
+      if (r.access_token) {
+        await adoptToken(r.access_token)
+        setStep(2) // go connect Google / Outlook / Spotify
+      }
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Registration failed")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function centralResetLink() {
+    setBusy(true)
+    try {
+      const r = await api.post<{ reset_link: string }>("/auth/central/reset-link", {
+        passcode, email: cEmail.trim(),
+      })
+      setResetLink(r.reset_link)
+      setCMode("link")
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Could not create reset link")
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const connect = (provider: "google" | "spotify" | "outlook") => {
     const token = localStorage.getItem("summer_token") || ""
     window.open(
@@ -185,12 +243,20 @@ export default function LoginPage() {
                   onKeyDown={(e) => e.key === "Enter" && handleLogin()}
                 />
               </div>
-              <button
-                onClick={forgot}
-                className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
-              >
-                Forgot password / username?
-              </button>
+              <div className="flex flex-col gap-1">
+                <button
+                  onClick={forgot}
+                  className="text-left text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
+                >
+                  Forgot password / username?
+                </button>
+                <button
+                  onClick={() => { setStep(3); setCMode("passcode") }}
+                  className="text-left text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
+                >
+                  Central admin setup or password reset
+                </button>
+              </div>
               {!mfa ? (
                 <div className="flex gap-2 pt-2">
                   <Button onClick={() => setStep(1)} disabled={busy}>
@@ -270,6 +336,130 @@ export default function LoginPage() {
                   Back
                 </Button>
               </div>
+            </CardContent>
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+            <CardHeader>
+              <CardTitle>Central admin</CardTitle>
+              <CardDescription>
+                {cMode === "passcode"
+                  ? "Enter the one-time central passcode. It's used only to set up or reset your access — not to log in."
+                  : cMode === "choose"
+                  ? "Do you already have an account?"
+                  : cMode === "register"
+                  ? "No account yet — register the central administrator."
+                  : cMode === "reset"
+                  ? "Reset the password for your central account."
+                  : "Your one-time reset link is ready."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {cMode === "passcode" && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="passcode">Central passcode</Label>
+                    <Input
+                      id="passcode"
+                      type="password"
+                      value={passcode}
+                      onChange={(e) => setPasscode(e.target.value)}
+                      placeholder="one-time passcode"
+                      onKeyDown={(e) => e.key === "Enter" && passcode && centralStart()}
+                    />
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <Button onClick={centralStart} disabled={busy || !passcode}>
+                      Continue →
+                    </Button>
+                    <Button variant="ghost" onClick={() => setStep(0)} disabled={busy}>
+                      Back
+                    </Button>
+                  </div>
+                </>
+              )}
+
+              {(cMode === "register" || cMode === "reset") && (
+                <div className="flex gap-2 text-sm">
+                  <button
+                    onClick={() => setCMode("register")}
+                    className={`underline-offset-4 hover:underline ${cMode === "register" ? "text-foreground font-medium" : "text-muted-foreground"}`}
+                  >
+                    I'm registering
+                  </button>
+                  <span className="text-muted-foreground">·</span>
+                  <button
+                    onClick={() => setCMode("reset")}
+                    className={`underline-offset-4 hover:underline ${cMode === "reset" ? "text-foreground font-medium" : "text-muted-foreground"}`}
+                  >
+                    I forgot my password
+                  </button>
+                </div>
+              )}
+
+              {cMode === "register" && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cemail">Your email</Label>
+                    <Input id="cemail" value={cEmail} onChange={(e) => setCEmail(e.target.value)}
+                           placeholder="you@ttu.edu" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cpw">Choose a password</Label>
+                    <Input id="cpw" type="password" value={cPassword}
+                           onChange={(e) => setCPassword(e.target.value)}
+                           placeholder="at least 8 characters" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="ccity">City (weather & time)</Label>
+                    <Input id="ccity" value={cCity} onChange={(e) => setCCity(e.target.value)} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    After this you'll connect Google Calendar, Outlook, and Spotify.
+                  </p>
+                  <div className="flex gap-2 pt-1">
+                    <Button onClick={centralRegister}
+                            disabled={busy || !cEmail.trim() || cPassword.length < 8}>
+                      Create account →
+                    </Button>
+                    <Button variant="ghost" onClick={() => setStep(0)} disabled={busy}>Back</Button>
+                  </div>
+                </>
+              )}
+
+              {cMode === "reset" && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cremail">Your account email</Label>
+                    <Input id="cremail" value={cEmail} onChange={(e) => setCEmail(e.target.value)}
+                           placeholder="you@ttu.edu"
+                           onKeyDown={(e) => e.key === "Enter" && cEmail.trim() && centralResetLink()} />
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <Button onClick={centralResetLink} disabled={busy || !cEmail.trim()}>
+                      Get reset link →
+                    </Button>
+                    <Button variant="ghost" onClick={() => setStep(0)} disabled={busy}>Back</Button>
+                  </div>
+                </>
+              )}
+
+              {cMode === "link" && (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    Open this single-use link (valid 30 minutes) to set a new password,
+                    then sign in normally.
+                  </p>
+                  <Button className="w-full" onClick={() => { window.location.href = resetLink }}>
+                    Open password reset page →
+                  </Button>
+                  <Input readOnly value={resetLink} onFocus={(e) => e.currentTarget.select()}
+                         className="text-xs" />
+                  <Button variant="ghost" onClick={() => setStep(0)}>Back to login</Button>
+                </>
+              )}
             </CardContent>
           </>
         )}

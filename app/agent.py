@@ -2,12 +2,25 @@
 Per-user memory + time/timezone/location context. Provider (brain) selectable
 per request: Anthropic (Claude) or OpenAI (GPT)."""
 import os
+import re
 import json
 import time
 import datetime
 from collections import defaultdict, deque
 from .tools import available_tools
 from . import models, tracing, appsettings
+
+# A plain "who/where is X" or "tell me about X" lookup is answered deterministically
+# from the directory (with the person's photo). But if the user wants to ACT on a
+# person — email, call, schedule, remind — that needs the LLM and its tools, so we do
+# NOT short-circuit those. We only treat an action word as an action when it's the
+# LEADING IMPERATIVE verb (optionally after "please"/"can you"), so the noun in a
+# lookup like "what is Derek's email" or "tell me about Dr. Johnston" is not mistaken
+# for a command.
+_PERSON_ACTION = re.compile(
+    r"^\s*(?:please\s+|can\s+you\s+|could\s+you\s+|would\s+you\s+|pls\s+|kindly\s+)?"
+    r"(e-?mail|mail|message|text|call|phone|draft|write|reply|remind|"
+    r"schedule|book|invite|introduce|send)\b", re.I)
 
 
 def _granted_services_for(db, user_id: int):
@@ -158,6 +171,24 @@ async def run_agent(goal, db, user, provider=None, voice=False):
         return {"reply": f"Opening your {name}.",
                 "actions": [{"tool": "open_website", "input": {"url": url},
                              "result": {"open_url": url, "opened": True}}]}
+    # DETERMINISTIC PEOPLE: a plain "who/where is X" or "tell me about X" lookup is
+    # answered straight from the directory — grounded in the department's published
+    # data (with the person's photo), never the model's prompt memory. This is the same
+    # path the kiosk uses; it fixes the dashboard answering a person question from the
+    # system prompt instead of the directory. Skip it when the user wants an ACTION on a
+    # person (email/call/schedule), which needs the LLM and its tools.
+    from . import campus_service
+    if not _PERSON_ACTION.search(goal or ""):
+        person_reply = campus_service.person_answer(db, goal)
+        if person_reply:
+            out = {"reply": person_reply, "actions": []}
+            card = campus_service.person_card(db, goal)
+            if card:
+                out["person"] = card
+            _HISTORY[user.id].append({"role": "user", "content": goal})
+            _HISTORY[user.id].append({"role": "assistant", "content": person_reply})
+            tracing.record("agent", goal, out, 0.0)
+            return out
     env_provider = os.getenv("LLM_PROVIDER", "anthropic").lower()
     provider = (provider or env_provider).lower()
     # honor env LLM_MODEL only when using the env's provider; otherwise use that provider's default

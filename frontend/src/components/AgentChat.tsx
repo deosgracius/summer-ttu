@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react"
-import { api, type AgentReply } from "@/lib/api"
+import { Mic, Radio, Volume2, VolumeX, ExternalLink } from "lucide-react"
+import { api, type AgentReply, type PersonCard } from "@/lib/api"
 import { useSpeech } from "@/lib/useSpeech"
 import SummerOrb from "@/components/SummerOrb"
 import { Button } from "@/components/ui/button"
@@ -17,6 +18,7 @@ interface Props {
 export default function AgentChat({ onChanged }: Props) {
   const [goal, setGoal] = useState("")
   const [reply, setReply] = useState<string>("")
+  const [person, setPerson] = useState<PersonCard | undefined>(undefined)
   const [links, setLinks] = useState<{ label: string; href: string }[]>([])
   const [state, setState] = useState<"idle" | "thinking">("idle")
   const [muted, setMuted] = useState(false)
@@ -32,6 +34,7 @@ export default function AgentChat({ onChanged }: Props) {
     clearTimer.current = window.setTimeout(() => {
       setReply("")
       setLinks([])
+      setPerson(undefined)
     }, 5000)
   }
 
@@ -57,6 +60,7 @@ export default function AgentChat({ onChanged }: Props) {
     setState("thinking")
     setReply("…")
     setLinks([])
+    setPerson(undefined)
     try {
       const call = () => api.post<AgentReply>("/agent", { goal: text, provider: null, voice: false })
       let data: AgentReply
@@ -70,6 +74,7 @@ export default function AgentChat({ onChanged }: Props) {
       }
       const answer = data.reply || "(done)"
       setReply(answer)
+      setPerson(data.person)
       if (!muted) speak(answer).then(scheduleClear, scheduleClear)
       else scheduleClear()
       const found: { label: string; href: string }[] = []
@@ -77,13 +82,13 @@ export default function AgentChat({ onChanged }: Props) {
         const r = a.result
         if (!r) continue
         if (a.tool === "play_music") {
-          if (r.spotify) found.push({ label: "▶ Open in Spotify", href: String(r.spotify) })
-          if (r.preview) found.push({ label: "▶ Preview (30s)", href: String(r.preview) })
-          if (r.url) found.push({ label: "▶ YouTube", href: String(r.url) })
+          if (r.spotify) found.push({ label: "Open in Spotify", href: String(r.spotify) })
+          if (r.preview) found.push({ label: "Preview (30s)", href: String(r.preview) })
+          if (r.url) found.push({ label: "Play on YouTube", href: String(r.url) })
         }
         if (a.tool === "play_apple_music") {
-          if (r.preview) found.push({ label: "▶ Preview (30s)", href: String(r.preview) })
-          if (r.apple_music) found.push({ label: "▶ Open in Apple Music", href: String(r.apple_music) })
+          if (r.preview) found.push({ label: "Preview (30s)", href: String(r.preview) })
+          if (r.apple_music) found.push({ label: "Open in Apple Music", href: String(r.apple_music) })
         }
         if (r.open_url) {
           found.push({ label: String(r.open_url), href: String(r.open_url) })
@@ -121,6 +126,29 @@ export default function AgentChat({ onChanged }: Props) {
 
         {reply && (
           <div className="mt-3 rounded-lg border bg-muted/40 p-4 text-sm whitespace-pre-wrap leading-relaxed">
+            {person?.photo && /^(https?:\/\/|\/)/.test(person.photo) && (
+              <div className="flex items-center gap-4 mb-3 pb-3 border-b">
+                <img
+                  src={person.photo}
+                  alt={person.name}
+                  loading="lazy"
+                  className="size-16 rounded-2xl object-cover shrink-0 ring-1 ring-border"
+                />
+                <div className="min-w-0">
+                  <div className="text-base font-semibold leading-tight">{person.name}</div>
+                  {person.title && (
+                    <div className="text-xs text-muted-foreground mt-0.5">{person.title}</div>
+                  )}
+                  {(person.office || person.email) && (
+                    <div className="text-xs text-muted-foreground mt-1 truncate">
+                      {[person.office && `Office ${person.office}`, person.email]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             {reply}
             {links.length > 0 && (
               <div className="mt-3 flex flex-col gap-1">
@@ -130,9 +158,9 @@ export default function AgentChat({ onChanged }: Props) {
                     href={l.href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-primary underline-offset-4 hover:underline break-all"
+                    className="inline-flex items-center gap-1.5 text-primary underline-offset-4 hover:underline break-all"
                   >
-                    🔗 {l.label}
+                    <ExternalLink className="size-3.5 shrink-0" /> {l.label}
                   </a>
                 ))}
               </div>
@@ -157,7 +185,7 @@ export default function AgentChat({ onChanged }: Props) {
                 listen((t) => send(t))
               }}
             >
-              {listening ? "●" : "🎤"}
+              {listening ? <span className="size-2 rounded-full bg-current" /> : <Mic className="size-4" />}
             </Button>
           )}
           <Button onClick={() => send()} disabled={state === "thinking"}>
@@ -167,7 +195,7 @@ export default function AgentChat({ onChanged }: Props) {
         <div className="mt-2 flex justify-end gap-3 text-xs text-muted-foreground">
           {voiceIn && (
             <button
-              className="underline-offset-4 hover:underline"
+              className="inline-flex items-center gap-1.5 underline-offset-4 hover:underline"
               onClick={() => {
                 if (wakeActive) stopWakeWord()
                 else {
@@ -176,18 +204,19 @@ export default function AgentChat({ onChanged }: Props) {
                 }
               }}
             >
-              {wakeActive ? "🎙️ Hey-Summer on" : "🎙️ Hey-Summer off"}
+              <Radio className="size-3.5" /> {wakeActive ? "Wake word on" : "Wake word off"}
             </button>
           )}
           {canSpeak && (
             <button
-              className="underline-offset-4 hover:underline"
+              className="inline-flex items-center gap-1.5 underline-offset-4 hover:underline"
               onClick={() => {
                 stopSpeaking()
                 setMuted((m) => !m)
               }}
             >
-              {muted ? "🔇 Voice off" : "🔊 Voice on"}
+              {muted ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}
+              {muted ? "Voice off" : "Voice on"}
             </button>
           )}
         </div>

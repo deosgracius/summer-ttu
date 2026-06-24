@@ -79,7 +79,7 @@ export default function VoiceSettingsPanel({ reloadKey }: { reloadKey?: number }
           placeholder="ElevenLabs Voice ID (e.g. 56bWURjYFHyYyVf490Dp)"
         />
         <Button variant="secondary" size="sm" disabled={busy} onClick={test}>
-          ▶ Test
+          Test
         </Button>
         <Button size="sm" onClick={save}>
           Save

@@ -56,7 +56,9 @@ export default function KioskPage() {
     return () => window.clearTimeout(idleTimer.current)
   }, [])
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" })
+    // Newest answer is rendered at the TOP, so keep the view scrolled up to it — no
+    // hunting down the bottom of a long conversation.
+    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })
   }, [turns, loading])
 
   // When Summer drops to sleep (no one talking for CONVO_IDLE_MS ~5s), clear the
@@ -128,8 +130,14 @@ export default function KioskPage() {
               ))}
             </div>
           )}
-          {turns.map((t, i) => (
-            <div key={i} className="space-y-2">
+          {loading && (
+            <div className="rounded-2xl border bg-muted/40 px-5 py-4 text-base text-muted-foreground">
+              Summer is looking that up…
+            </div>
+          )}
+          {/* Newest first: the latest answer sits at the top so it's never buried. */}
+          {turns.slice().reverse().map((t, i) => (
+            <div key={turns.length - 1 - i} className="space-y-2">
               <div className="text-right">
                 <span className="inline-block rounded-2xl bg-primary/15 px-4 py-2 text-base">
                   {t.q}
@@ -163,11 +171,6 @@ export default function KioskPage() {
               </div>
             </div>
           ))}
-          {loading && (
-            <div className="rounded-2xl border bg-muted/40 px-5 py-4 text-base text-muted-foreground">
-              Summer is looking that up…
-            </div>
-          )}
         </div>
 
         {voiceIn && wakeActive && (

@@ -112,3 +112,21 @@ def test_full_on_explicit_request_includes_bio(db):
 def test_kiosk_dashboard_parity(db):
     # The kiosk bare-name path (fast_answer) renders the SAME card as the dashboard.
     assert cs.fast_answer(db, "Derek Johnston") == cs.person_answer(db, "Derek Johnston")
+
+
+# --- language detection: non-English routes to the in-language LLM path -----------
+def test_english_and_neutral_stay_english():
+    # Plain English and language-neutral names/codes must NOT be flagged (keep fast path).
+    for q in ("who is Derek Johnston", "Derek Johnston", "ECE 3333",
+              "where is the stockroom", "what's Derek's email", "office hours"):
+        assert cs.looks_non_english(q) is False, q
+
+
+def test_non_english_is_detected():
+    for q in ("¿Dónde está la oficina del profesor?",   # Spanish
+              "Où est le bureau du professeur?",          # French
+              "Wo ist das Büro?",                          # German (Büro)
+              "gracias",                                   # Spanish word
+              "德里克的办公室在哪里",                          # Chinese (non-Latin)
+              "Где находится офис?"):                       # Russian (Cyrillic)
+        assert cs.looks_non_english(q) is True, q

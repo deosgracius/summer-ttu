@@ -178,7 +178,7 @@ async def run_agent(goal, db, user, provider=None, voice=False):
     # system prompt instead of the directory. Skip it when the user wants an ACTION on a
     # person (email/call/schedule), which needs the LLM and its tools.
     from . import campus_service
-    if not _PERSON_ACTION.search(goal or ""):
+    if not _PERSON_ACTION.search(goal or "") and not campus_service.looks_non_english(goal):
         person_reply = campus_service.person_answer(db, goal)
         if person_reply:
             out = {"reply": person_reply, "actions": []}
@@ -304,36 +304,41 @@ async def run_kiosk_traced(goal, db, provider=None):
     # database — no LLM call, instant, and free. Anything fuzzier falls through to
     # the model below.
     from . import campus_service
-    # PREREQUISITES / course-planning are academic-advising decisions, not Summer's job
-    # (and a hallucination risk) — redirect deterministically before anything else.
-    pr = campus_service.prereq_redirect(goal)
-    if pr:
-        return {"reply": pr, "actions": [], "latency_ms": 0.0}
-    quick = campus_service.fast_answer(db, goal)
-    if quick:
-        return {"reply": quick, "actions": [], "latency_ms": 0.0}
-    # SPEECH-ROBUST PEOPLE: resolve a mispronounced/partial name (first OR last)
-    # deterministically — full public detail, or a disambiguation if several match.
-    person = campus_service.person_answer(db, goal)
-    if person:
-        return {"reply": person, "actions": [], "latency_ms": 0.0}
-    # ADVISING / STOCKROOM ROUTING: send students to the right advisor or coordinator
-    # (undergrad CompE/EE, graduate, stockroom) before any generic lookup.
-    referral = campus_service.advising_referral(db, goal)
-    if referral:
-        return {"reply": referral, "actions": [], "latency_ms": 0.0}
-    # PROJECT LABS: resolve a lab referenced by category number (Lab 1-4), full name,
-    # or shorthand ("robo lab", "RF lab", "micro lab") to the canonical lab.
-    lab = campus_service.lab_answer(db, goal)
-    if lab:
-        return {"reply": lab, "actions": [], "latency_ms": 0.0}
-    # CONFIDENT FACTUAL LOOKUP: natural-language questions that clearly resolve to one
-    # campus record (an office, instructor, building/service hours) are answered straight
-    # from the DB — instant and free — instead of paying the LLM. Anything needing
-    # reasoning, topic search, abbreviation expansion, or a refusal falls through.
-    sure = campus_service.confident_lookup(db, goal)
-    if sure:
-        return {"reply": sure, "actions": [], "latency_ms": 0.0}
+    # LANGUAGE: the deterministic lookups below answer in English. If the question is
+    # clearly in another language, SKIP them and let the LLM answer — it is told to reply
+    # in the user's language and is still held to the provenance gate. (A bare name or
+    # course code stays English, so those keep the free fast path.)
+    if not campus_service.looks_non_english(goal):
+        # PREREQUISITES / course-planning are academic-advising decisions, not Summer's
+        # job (and a hallucination risk) — redirect deterministically before anything else.
+        pr = campus_service.prereq_redirect(goal)
+        if pr:
+            return {"reply": pr, "actions": [], "latency_ms": 0.0}
+        quick = campus_service.fast_answer(db, goal)
+        if quick:
+            return {"reply": quick, "actions": [], "latency_ms": 0.0}
+        # SPEECH-ROBUST PEOPLE: resolve a mispronounced/partial name (first OR last)
+        # deterministically — full public detail, or a disambiguation if several match.
+        person = campus_service.person_answer(db, goal)
+        if person:
+            return {"reply": person, "actions": [], "latency_ms": 0.0}
+        # ADVISING / STOCKROOM ROUTING: send students to the right advisor or coordinator
+        # (undergrad CompE/EE, graduate, stockroom) before any generic lookup.
+        referral = campus_service.advising_referral(db, goal)
+        if referral:
+            return {"reply": referral, "actions": [], "latency_ms": 0.0}
+        # PROJECT LABS: resolve a lab referenced by category number (Lab 1-4), full name,
+        # or shorthand ("robo lab", "RF lab", "micro lab") to the canonical lab.
+        lab = campus_service.lab_answer(db, goal)
+        if lab:
+            return {"reply": lab, "actions": [], "latency_ms": 0.0}
+        # CONFIDENT FACTUAL LOOKUP: natural-language questions that clearly resolve to one
+        # campus record (an office, instructor, building/service hours) are answered
+        # straight from the DB — instant and free — instead of paying the LLM. Anything
+        # needing reasoning, topic search, abbreviation expansion, or a refusal falls through.
+        sure = campus_service.confident_lookup(db, goal)
+        if sure:
+            return {"reply": sure, "actions": [], "latency_ms": 0.0}
     provider = (provider or os.getenv("LLM_PROVIDER", "anthropic")).lower()
     # Kiosk answers are quick lookups — use the FAST model for snappy replies,
     # regardless of the (possibly slower) dashboard model in LLM_MODEL.

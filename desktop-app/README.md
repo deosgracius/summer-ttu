@@ -7,10 +7,16 @@ It is a **thin shell**: the window just loads the live app at
 `https://summer-ttu.fly.dev/desktop`. That has two consequences worth knowing:
 
 - **Updates are automatic.** When you deploy changes to the website, the orb shows them
-  on its next reload (tray → Reload, or restart). You only rebuild/reinstall this shell
-  if you change the *window* behavior in `main.js` — which is rare.
+  on its next reload (tray → Reload, or restart). You only rebuild this shell if you
+  change the *window* behavior in `main.js` — which is rare.
 - **Sign in once.** The login is remembered in the app's own storage, so it stays signed
   in across restarts.
+
+## Clean dependencies
+
+This project depends on **`electron` only** — there is no `electron-builder` or other
+packager, so `npm install` reports **0 vulnerabilities**. Packaging is done by a small
+local script (`pack.js`) that copies the Electron runtime and zips it.
 
 ## Try it (developer)
 
@@ -25,7 +31,7 @@ npm start
 A floating orb appears bottom-right, always on top. Drag it by the top strip; minimize
 or hide it with the buttons; reopen from the tray icon.
 
-## Build an installer (to put it on a PC)
+## Build the distributable
 
 ```bash
 cd desktop-app
@@ -33,14 +39,24 @@ npm install
 npm run dist
 ```
 
-This produces `desktop-app/dist/Summer Setup <version>.exe`. Run it on the target PC —
-it installs **per-user (no administrator rights)** and adds Start-menu and desktop
-shortcuts.
+`npm run dist` produces, under `desktop-app/dist/`:
 
-**Starts with Windows automatically.** On its first run the orb registers itself to
-open at login (per-user, via the OS login items). Toggle it any time from the tray menu
-→ **Start with Windows**. So once installed, the orb greets the user at every boot with
-no extra setup.
+- **`Summer-win32-x64/`** — the ready-to-run app folder (`Summer.exe` inside), and
+- **`Summer-win-x64.zip`** — the same thing as one file, for copying to other PCs.
+
+## Install on a PC (no admin, no build)
+
+1. Copy **`Summer-win-x64.zip`** to the computer and extract it anywhere
+   (e.g. `C:\Users\<you>\Summer`).
+2. Run **`Summer.exe`** once and sign in.
+
+On that first run the orb **registers itself to start at Windows login** (per-user, via
+the OS login items). Toggle it any time from the tray menu → **Start with Windows**. So
+after step 2 it greets you at every boot — nothing else to set up.
+
+> Because it's unsigned, Windows SmartScreen may say "Windows protected your PC" the
+> first time — click **More info → Run anyway**. (Code signing needs a paid certificate;
+> ask if you want to go that route.)
 
 ## Notes
 

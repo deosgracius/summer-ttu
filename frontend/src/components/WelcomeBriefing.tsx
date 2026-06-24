@@ -5,6 +5,13 @@ import { useAuth } from "@/lib/auth"
 import { useSpeech, awaitYesNo, clearYesNo } from "@/lib/useSpeech"
 import { PanelCard } from "@/components/panels/PanelCard"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+
+// Generic mailbox local-parts that aren't a person's name — don't greet "Hey center".
+const GENERIC_MAILBOX = new Set([
+  "center", "admin", "office", "info", "support", "noreply",
+  "no-reply", "contact", "hello", "team", "ece", "help", "mail",
+])
 
 /** Spoken greeting on login + an OPT-IN daily briefing. For admins we greet by voice
  * once per login ("Hey [name], would you like your daily briefing?") and, on yes, read
@@ -20,20 +27,39 @@ interface BriefResp {
 }
 
 export default function WelcomeBriefing() {
-  const { me } = useAuth()
+  const { me, refresh } = useAuth()
   const { speak, primeAudio, stopSpeaking } = useSpeech()
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const [phase, setPhase] = useState<"greeting" | "playing" | "emailOffer" | "done">("greeting")
   const [text, setText] = useState("")
   const [note, setNote] = useState("")
+  const [editingName, setEditingName] = useState(false)
+  const [nameInput, setNameInput] = useState("")
+  const [savingName, setSavingName] = useState(false)
 
+  const localPart = me?.email?.split("@")[0] || ""
   const name =
-    me?.profile?.preferred_name ||
-    me?.profile?.full_name?.split(" ")[0] ||
-    me?.email?.split("@")[0] ||
+    me?.profile?.preferred_name?.trim() ||
+    me?.profile?.full_name?.trim()?.split(" ")[0] ||
+    (localPart && !GENERIC_MAILBOX.has(localPart.toLowerCase()) ? localPart : "") ||
     "there"
   const GREETING = `Hey ${name}. Would you like your daily briefing?`
   const isEligible = me?.role === "admin" || me?.role === "central_admin"
+
+  async function saveName() {
+    const v = nameInput.trim()
+    if (!v) return
+    setSavingName(true)
+    try {
+      await api.patch("/auth/me", { profile: { preferred_name: v } })
+      await refresh()
+      setEditingName(false)
+    } catch {
+      /* ignore — keep the field open to retry */
+    } finally {
+      setSavingName(false)
+    }
+  }
 
   // Auto-greet by voice on every LOGIN — keyed to the auth token so it re-greets each
   // time you log back in (a fresh token), but not on tab switches or reloads within the
@@ -140,7 +166,31 @@ export default function WelcomeBriefing() {
   return (
     <PanelCard title="Welcome">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm leading-relaxed text-muted-foreground">{GREETING}</p>
+        <div className="min-w-0">
+          <p className="text-sm leading-relaxed text-muted-foreground">{GREETING}</p>
+          {editingName ? (
+            <span className="mt-1 inline-flex items-center gap-1.5">
+              <Input
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && saveName()}
+                placeholder="what should I call you?"
+                className="h-7 w-44 text-xs"
+                autoFocus
+              />
+              <Button size="sm" className="h-7" disabled={savingName} onClick={saveName}>Save</Button>
+              <button className="text-xs text-muted-foreground hover:text-foreground"
+                      onClick={() => setEditingName(false)}>cancel</button>
+            </span>
+          ) : (
+            <button
+              className="mt-0.5 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+              onClick={() => { setNameInput(me?.profile?.preferred_name || ""); setEditingName(true) }}
+            >
+              {name === "there" ? "Tell Summer what to call you" : `Summer calls you ${name} — change`}
+            </button>
+          )}
+        </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           {phase === "greeting" && (
             <>

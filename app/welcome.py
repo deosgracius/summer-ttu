@@ -7,9 +7,14 @@ returns it as one block of text the frontend reads aloud over background music.
 Every source is wrapped defensively — if email isn't connected or a lookup fails,
 that line is simply skipped, never an error."""
 import os
+import json
 import datetime
 import httpx
 from . import tools as _tools
+
+# Generic mailbox local-parts that aren't a person's name — don't greet "Hey center".
+_GENERIC_MAILBOX = {"center", "admin", "office", "info", "support", "noreply",
+                    "no-reply", "contact", "hello", "team", "ece", "help", "mail"}
 
 # Lightweight "is this worth surfacing" hint for the briefing. Real triage (with
 # consent, replies, spam) is the agent's job; this just decides what to mention.
@@ -21,10 +26,20 @@ _IMPORTANT_HINTS = (
 
 
 def _first_name(user):
-    p = getattr(user, "profile", None)
-    if p and (getattr(p, "preferred_name", None) or getattr(p, "full_name", None)):
-        return (p.preferred_name or p.full_name).split()[0]
-    return (user.email or "there").split("@")[0]
+    """The name to greet by. Prefer the admin-entered preferred/full name (stored as
+    JSON on the user), then a real-looking email local part, else a neutral 'there' —
+    so a generic mailbox like center@ttu.edu never becomes 'Hey center'."""
+    try:
+        prof = json.loads(getattr(user, "profile_json", "") or "{}")
+    except Exception:
+        prof = {}
+    nm = str(prof.get("preferred_name") or prof.get("full_name") or "").strip()
+    if nm:
+        return nm.split()[0]
+    local = (getattr(user, "email", "") or "").split("@")[0].strip()
+    if local and local.lower() not in _GENERIC_MAILBOX:
+        return local
+    return "there"
 
 
 def _is_important(msg):

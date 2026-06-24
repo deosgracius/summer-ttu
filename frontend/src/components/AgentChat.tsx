@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react"
+import { Mic, Radio, Volume2, VolumeX, ExternalLink } from "lucide-react"
 import { api, type AgentReply, type PersonCard } from "@/lib/api"
 import { useSpeech } from "@/lib/useSpeech"
 import SummerOrb from "@/components/SummerOrb"
@@ -81,13 +82,13 @@ export default function AgentChat({ onChanged }: Props) {
         const r = a.result
         if (!r) continue
         if (a.tool === "play_music") {
-          if (r.spotify) found.push({ label: "▶ Open in Spotify", href: String(r.spotify) })
-          if (r.preview) found.push({ label: "▶ Preview (30s)", href: String(r.preview) })
-          if (r.url) found.push({ label: "▶ YouTube", href: String(r.url) })
+          if (r.spotify) found.push({ label: "Open in Spotify", href: String(r.spotify) })
+          if (r.preview) found.push({ label: "Preview (30s)", href: String(r.preview) })
+          if (r.url) found.push({ label: "Play on YouTube", href: String(r.url) })
         }
         if (a.tool === "play_apple_music") {
-          if (r.preview) found.push({ label: "▶ Preview (30s)", href: String(r.preview) })
-          if (r.apple_music) found.push({ label: "▶ Open in Apple Music", href: String(r.apple_music) })
+          if (r.preview) found.push({ label: "Preview (30s)", href: String(r.preview) })
+          if (r.apple_music) found.push({ label: "Open in Apple Music", href: String(r.apple_music) })
         }
         if (r.open_url) {
           found.push({ label: String(r.open_url), href: String(r.open_url) })
@@ -157,9 +158,9 @@ export default function AgentChat({ onChanged }: Props) {
                     href={l.href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-primary underline-offset-4 hover:underline break-all"
+                    className="inline-flex items-center gap-1.5 text-primary underline-offset-4 hover:underline break-all"
                   >
-                    🔗 {l.label}
+                    <ExternalLink className="size-3.5 shrink-0" /> {l.label}
                   </a>
                 ))}
               </div>
@@ -184,7 +185,7 @@ export default function AgentChat({ onChanged }: Props) {
                 listen((t) => send(t))
               }}
             >
-              {listening ? "●" : "🎤"}
+              {listening ? <span className="size-2 rounded-full bg-current" /> : <Mic className="size-4" />}
             </Button>
           )}
           <Button onClick={() => send()} disabled={state === "thinking"}>
@@ -194,7 +195,7 @@ export default function AgentChat({ onChanged }: Props) {
         <div className="mt-2 flex justify-end gap-3 text-xs text-muted-foreground">
           {voiceIn && (
             <button
-              className="underline-offset-4 hover:underline"
+              className="inline-flex items-center gap-1.5 underline-offset-4 hover:underline"
               onClick={() => {
                 if (wakeActive) stopWakeWord()
                 else {
@@ -203,18 +204,19 @@ export default function AgentChat({ onChanged }: Props) {
                 }
               }}
             >
-              {wakeActive ? "🎙️ Hey-Summer on" : "🎙️ Hey-Summer off"}
+              <Radio className="size-3.5" /> {wakeActive ? "Wake word on" : "Wake word off"}
             </button>
           )}
           {canSpeak && (
             <button
-              className="underline-offset-4 hover:underline"
+              className="inline-flex items-center gap-1.5 underline-offset-4 hover:underline"
               onClick={() => {
                 stopSpeaking()
                 setMuted((m) => !m)
               }}
             >
-              {muted ? "🔇 Voice off" : "🔊 Voice on"}
+              {muted ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}
+              {muted ? "Voice off" : "Voice on"}
             </button>
           )}
         </div>

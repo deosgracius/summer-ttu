@@ -72,9 +72,9 @@ def test_reset_link_is_single_use(db):
     link = A.central_reset_link(A.CentralResetLink(passcode="passcode-xyz", email="boss@ttu.edu"),
                                 _req(), db)["reset_link"]
     token = link.split("reset=")[1]
-    assert A.reset(A.ResetReq(token=token, new_password="brandnew123"), db).get("reset") is True
+    assert A.reset(A.ResetReq(token=token, new_password="brandnew123"), _req(), db).get("reset") is True
     # Reusing the same link fails — the password fingerprint no longer matches.
-    assert "error" in A.reset(A.ResetReq(token=token, new_password="another123"), db)
+    assert "error" in A.reset(A.ResetReq(token=token, new_password="another123"), _req(), db)
 
 
 def test_reset_link_unknown_email_404(db):

@@ -160,7 +160,9 @@ class ResetReq(BaseModel):
 
 
 @router.post("/forgot")
-def forgot(data: ForgotReq, db: Session = Depends(get_db)):
+def forgot(data: ForgotReq, request: Request, db: Session = Depends(get_db)):
+    # Rate-limit so the reset flow can't be used to spam mail or probe accounts.
+    ratelimit.check(f"forgot:{ratelimit.client_ip(request)}", REGISTER_MAX)
     u = db.query(models.User).filter_by(email=data.email).first()
     if not u:
         return {"ok": True}
@@ -176,7 +178,8 @@ def forgot(data: ForgotReq, db: Session = Depends(get_db)):
 
 
 @router.post("/reset")
-def reset(data: ResetReq, db: Session = Depends(get_db)):
+def reset(data: ResetReq, request: Request, db: Session = Depends(get_db)):
+    ratelimit.check(f"reset:{ratelimit.client_ip(request)}", LOGIN_MAX)
     uid = auth.verify_reset_token(data.token, db)
     if not uid:
         return {"error": "invalid or expired reset link"}

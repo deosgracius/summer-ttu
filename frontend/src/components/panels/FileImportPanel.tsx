@@ -82,7 +82,7 @@ export default function FileImportPanel() {
       </div>
 
       {prop && !prop.ok && (
-        <p className="mt-3 text-sm text-red-500">⚠ {prop.error}</p>
+        <p className="mt-3 text-sm text-red-500">{prop.error}</p>
       )}
 
       {prop && prop.ok && (

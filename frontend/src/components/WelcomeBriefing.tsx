@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { Play, Mail, Volume2, Music } from "lucide-react"
 import { api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useSpeech } from "@/lib/useSpeech"
@@ -131,25 +132,25 @@ export default function WelcomeBriefing() {
           {phase === "greeting" && (
             <>
               <Button size="sm" onClick={runBriefing}>
-                ▶ Yes, brief me
+                <Play className="size-4" /> Yes, brief me
               </Button>
               <Button size="sm" variant="ghost" onClick={dismiss}>
                 Not now
               </Button>
               <Button size="sm" variant="ghost" onClick={() => { primeAudio(); stopSpeaking(); speak(GREETING) }}>
-                🔊 Repeat
+                <Volume2 className="size-4" /> Repeat
               </Button>
             </>
           )}
           {phase === "playing" && (
             <Button size="sm" variant="outline" disabled>
-              ♪ Playing…
+              <Music className="size-4" /> Playing…
             </Button>
           )}
           {phase === "emailOffer" && (
             <>
               <Button size="sm" onClick={readEmails}>
-                📧 Read my important emails
+                <Mail className="size-4" /> Read my important emails
               </Button>
               <Button size="sm" variant="ghost" onClick={dismiss}>
                 No thanks
@@ -167,7 +168,7 @@ export default function WelcomeBriefing() {
                 runBriefing()
               }}
             >
-              ▶ Run my briefing again
+              <Play className="size-4" /> Run my briefing again
             </Button>
           )}
         </div>

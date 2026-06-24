@@ -1,0 +1,29 @@
+{
+  "name": "summer-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Summer floating desktop orb — a thin Electron shell over the live web app.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^32.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "edu.ttu.ece.summer",
+    "productName": "Summer",
+    "files": ["main.js", "preload.js", "icon.png"],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

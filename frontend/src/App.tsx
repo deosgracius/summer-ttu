@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/sonner"
 import LoginPage from "@/pages/LoginPage"
 import DashboardPage from "@/pages/DashboardPage"
 import KioskPage from "@/pages/KioskPage"
+import DesktopPage from "@/pages/DesktopPage"
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { me, loading } = useAuth()
@@ -30,6 +31,15 @@ function Routed() {
         element={
           <Protected>
             <DashboardPage />
+          </Protected>
+        }
+      />
+      {/* Compact view for the native desktop orb widget (Electron) */}
+      <Route
+        path="/desktop"
+        element={
+          <Protected>
+            <DesktopPage />
           </Protected>
         }
       />

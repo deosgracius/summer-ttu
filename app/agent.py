@@ -178,15 +178,25 @@ async def run_agent(goal, db, user, provider=None, voice=False):
     # system prompt instead of the directory. Skip it when the user wants an ACTION on a
     # person (email/call/schedule), which needs the LLM and its tools.
     from . import campus_service
+    # DETERMINISTIC CAMPUS LOOKUPS: answer plain campus questions (people, exact course
+    # codes, advisor routing, project labs, prerequisite redirects) straight from the DB
+    # using the SAME chain the kiosk uses — so the dashboard is fully in sync with its own
+    # database and never lets the LLM decide a person "isn't in the directory" when the
+    # data has them. Skip when the user wants an ACTION (email/call/remind) or writes in
+    # another language; the LLM and its tools handle those.
     if not _PERSON_ACTION.search(goal or "") and not campus_service.looks_non_english(goal):
-        person_reply = campus_service.person_answer(db, goal)
-        if person_reply:
-            out = {"reply": person_reply, "actions": []}
+        det = (campus_service.prereq_redirect(goal)
+               or campus_service.fast_answer(db, goal)
+               or campus_service.person_answer(db, goal)
+               or campus_service.advising_referral(db, goal)
+               or campus_service.lab_answer(db, goal))
+        if det:
+            out = {"reply": det, "actions": []}
             card = campus_service.person_card(db, goal)
             if card:
                 out["person"] = card
             _HISTORY[user.id].append({"role": "user", "content": goal})
-            _HISTORY[user.id].append({"role": "assistant", "content": person_reply})
+            _HISTORY[user.id].append({"role": "assistant", "content": det})
             tracing.record("agent", goal, out, 0.0)
             return out
     env_provider = os.getenv("LLM_PROVIDER", "anthropic").lower()

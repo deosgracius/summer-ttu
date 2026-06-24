@@ -2,13 +2,15 @@
 person's photo), the same grounded way the kiosk does — instead of letting the LLM
 answer 'who is X' from its system-prompt memory. Guards against hijacking action
 requests like 'email X'."""
+import asyncio
+from types import SimpleNamespace
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
 from app import models, campus_service as cs
-from app.agent import _PERSON_ACTION
+from app.agent import _PERSON_ACTION, run_agent
 
 
 @pytest.fixture()
@@ -112,6 +114,26 @@ def test_full_on_explicit_request_includes_bio(db):
 def test_kiosk_dashboard_parity(db):
     # The kiosk bare-name path (fast_answer) renders the SAME card as the dashboard.
     assert cs.fast_answer(db, "Derek Johnston") == cs.person_answer(db, "Derek Johnston")
+
+
+# --- the dashboard agent answers campus lookups deterministically (full DB sync) ---
+def _u():
+    return SimpleNamespace(id=1, email="center@ttu.edu", role="central_admin",
+                           timezone="America/Chicago", location=None)
+
+
+def test_dashboard_agent_finds_person(db):
+    r = asyncio.run(run_agent("who is Derek Johnston", db, _u()))
+    assert r["actions"] == []  # answered from the DB, never the LLM
+    assert "Derek Johnston" in r["reply"] and "ECE 125" in r["reply"]
+    assert r.get("person", {}).get("photo") == "/campus/photo/35"
+
+
+def test_dashboard_agent_course_and_lab(db):
+    rc = asyncio.run(run_agent("ECE 3333", db, _u()))
+    assert rc["actions"] == [] and "ECE 3333" in rc["reply"]
+    rl = asyncio.run(run_agent("who teaches RF communication lab", db, _u()))
+    assert rl["actions"] == [] and "Derek Johnston" in rl["reply"]
 
 
 # --- language detection: non-English routes to the in-language LLM path -----------

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 import json
-from .. import models, schemas, auth, ratelimit
+from .. import models, schemas, auth, ratelimit, audit
 from ..database import get_db
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -18,6 +18,22 @@ CENTRAL_MAX = int(os.getenv("CENTRAL_PASSCODE_PER_MIN", "5"))  # passcode tries 
 
 def _reset_link(token: str) -> str:
     return f"{os.getenv('APP_URL', 'http://localhost:8000')}/ui/?reset={token}"
+
+
+def _log_login(db, request: Request, ok: bool, *, user=None, email: str = "", reason: str = ""):
+    """Record a login attempt (success or failure) with the client IP in the append-only
+    audit log, so an intrusion review can query who tried to sign in and when. Best-effort
+    — it never blocks or breaks the login response."""
+    try:
+        ip = ratelimit.client_ip(request)
+        em = (getattr(user, "email", "") or email or "?")
+        summary = (f"Login from {ip}" if ok
+                   else f"Failed login ({reason or 'bad credentials'}) for {em} from {ip}")
+        audit.log(db, user, "login" if ok else "login_failed", summary,
+                  {"email": em, "ip": ip, "ok": ok, "reason": reason})
+        db.commit()
+    except Exception:
+        db.rollback()
 
 
 def _central_passcode_ok(passcode: str) -> bool:
@@ -68,14 +84,17 @@ def login(request: Request, form: OAuth2PasswordRequestForm = Depends(), db: Ses
     ratelimit.check(f"login:{ratelimit.client_ip(request)}", LOGIN_MAX)
     user = db.query(models.User).filter(models.User.email == form.username).first()
     if not user or not auth.verify_password(form.password, user.password_hash):
+        _log_login(db, request, False, email=form.username, reason="bad password")
         raise HTTPException(401, "Incorrect email or password")
     if not getattr(user, "approved", True):
+        _log_login(db, request, False, user=user, reason="pending approval")
         raise HTTPException(403, PENDING_MSG)
     # If MFA is enabled, the password alone is NOT enough — a second factor is
     # required at /auth/login/mfa. A stolen password gets nowhere on its own.
     from .. import security
     if security.mfa_enabled(db, user):
-        return {"mfa_required": True, "email": user.email}
+        return {"mfa_required": True, "email": user.email}  # not a completed login yet
+    _log_login(db, request, True, user=user)
     return {"access_token": auth.create_token(user.id), "token_type": "bearer"}
 
 
@@ -94,16 +113,20 @@ def login_mfa(data: MfaLogin, request: Request, db: Session = Depends(get_db)):
     from .. import security, webauthn_svc
     user = db.query(models.User).filter(models.User.email == data.email).first()
     if not user or not auth.verify_password(data.password, user.password_hash):
+        _log_login(db, request, False, email=data.email, reason="bad password")
         raise HTTPException(401, "Incorrect email or password")
     if not getattr(user, "approved", True):
+        _log_login(db, request, False, user=user, reason="pending approval")
         raise HTTPException(403, PENDING_MSG)
     sec = security.get_security(db, user)
     if sec and sec.totp_enabled and not security.verify_factor(db, user, data.code):
+        _log_login(db, request, False, user=user, reason="bad MFA code")
         raise HTTPException(401, "Invalid verification code")
     if security.has_passkey(db, user):
         return {"passkey_required": True, "email": user.email,
-                "options": webauthn_svc.auth_begin(db, user)}
+                "options": webauthn_svc.auth_begin(db, user)}  # not completed yet
     security.mark_stepup(db, user)  # a fresh login is also a fresh step-up
+    _log_login(db, request, True, user=user)
     return {"access_token": auth.create_token(user.id), "token_type": "bearer"}
 
 
@@ -120,10 +143,13 @@ def login_passkey(data: PasskeyLogin, request: Request, db: Session = Depends(ge
     from .. import security, webauthn_svc
     user = db.query(models.User).filter(models.User.email == data.email).first()
     if not user or not auth.verify_password(data.password, user.password_hash):
+        _log_login(db, request, False, email=data.email, reason="bad password")
         raise HTTPException(401, "Incorrect email or password")
     if not getattr(user, "approved", True):
+        _log_login(db, request, False, user=user, reason="pending approval")
         raise HTTPException(403, PENDING_MSG)
     webauthn_svc.auth_verify(db, user, data.credential)  # raises on failure; marks step-up
+    _log_login(db, request, True, user=user)
     return schemas.Token(access_token=auth.create_token(user.id))
 
 

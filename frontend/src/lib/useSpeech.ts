@@ -176,25 +176,30 @@ export function useSpeech() {
     return audioRef.current
   }
 
-  function playUrl(objUrl: string): Promise<void> {
-    return new Promise<void>((resolve) => {
+  // Resolves true if the clip actually played, false if playback was BLOCKED (autoplay)
+  // or errored — so the caller can fall back to the browser voice instead of going silent.
+  function playUrl(objUrl: string): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
       const a = ensureAudio()
       a.muted = false
-      const done = () => {
+      let settled = false
+      const finish = (ok: boolean) => {
+        if (settled) return
+        settled = true
         URL.revokeObjectURL(objUrl)
         a.onended = null
         a.onerror = null
-        resolve()
+        resolve(ok)
       }
       try {
         a.pause()
       } catch {
         /* ignore */
       }
-      a.onended = done
-      a.onerror = done
+      a.onended = () => finish(true)
+      a.onerror = () => finish(false)
       a.src = objUrl
-      a.play().catch(done)
+      a.play().catch(() => finish(false)) // play() rejects when autoplay is blocked
     })
   }
 
@@ -262,7 +267,13 @@ export function useSpeech() {
           break
         }
         nextSynth = i + 1 < chunks.length ? synthChunk(chunks[i + 1]).catch(() => "") : Promise.resolve("")
-        await playUrl(objUrl)
+        const played = await playUrl(objUrl)
+        if (!played) {
+          // ElevenLabs synth was fine but the browser BLOCKED playback (autoplay) — fall
+          // back to the browser voice so the greeting/answer is still heard, not silent.
+          if (i === 0 && !cancelled()) await browserTTS(clean)
+          break
+        }
         if (cancelled()) break
       }
     } catch {

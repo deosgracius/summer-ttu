@@ -29,6 +29,10 @@ const WAKE = /\b(?:hey|hay|ey|eh|aye|okay|ok|hi|yo|a|uh)?\s*(?:summer|summers|su
 // mid-sentence stays intact).
 const WAKE_LEAD = /^\s*(?:(?:hey|hay|ey|eh|aye|okay|ok|hi|yo|uh)[\s,]+)?(?:summer|summers|summah|sumer|sumah|suma|summa|somer|somers|sommer|sammer|samma|sama|soma|zuma)\b[\s,.:!?-]*/i
 const ENDRE = /\b(thank you|thanks summer|thank you summer|we'?re done|that'?s all|that'?s it|i'?m done|stop|goodbye|good bye|bye summer|never ?mind|sleep|go to sleep|goodnight|good night|go to bed)\b/i
+// Pure filler / noise utterances (a lone "uh", "hmm", "okay", a cough) — while engaged
+// these are treated as thinking/background, NOT a question: ignored but they keep the
+// conversation alive rather than ending it or being sent to Summer as a command.
+const FILLER = /^(uh+|um+|umm+|hmm+|mhm+|mm+|ah+|oh+|eh+|er+|huh|huhh?|yeah|yep|nah|ok|okay|right|so|like|well|and|the|a|i)$/i
 
 // A one-shot spoken yes/no prompt (e.g. "would you like your daily briefing?"). While
 // one is pending, the wake-word listener answers it with a spoken yes/no BEFORE treating
@@ -124,8 +128,9 @@ export function useSpeech() {
   const SILENCE_MS = 1500
   // Conversation lifecycle: once engaged, Summer listens continuously (no wake word
   // per turn) until an end phrase OR this many ms of silence, then drops back to
-  // dormant and resets the screen for the next person (kiosk hygiene).
-  const CONVO_IDLE_MS = 5000
+  // dormant. Generous so a started conversation isn't cut off while you think — Summer
+  // waits ~10s of silence before ending it.
+  const CONVO_IDLE_MS = 12000
   const engaged = useRef(false)
   const convoTimer = useRef<number | undefined>(undefined)
 
@@ -432,6 +437,9 @@ export function useSpeech() {
       // back to dormant. Summer stays muted while speaking, so she never self-replies.
       const cmd = raw.replace(WAKE_LEAD, "").trim()
       if (cmd.length < 2) return
+      // Lone filler / background noise ("uh", "okay", a cough) → not a question. Ignore
+      // it but KEEP the conversation alive (don't end it just because you paused).
+      if (FILLER.test(cmd)) { resetConvoTimer(); return }
       if (ENDRE.test(cmd) && cmd.split(/\s+/).length <= 4) {
         disengage()
         return

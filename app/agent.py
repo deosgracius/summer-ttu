@@ -122,7 +122,22 @@ SYSTEM = (
 )
 MAX_STEPS = 6
 DEFAULT_MODEL = {"anthropic": "claude-haiku-4-5", "openai": "gpt-4o-mini"}
-_HISTORY = defaultdict(lambda: deque(maxlen=12))
+_HISTORY = defaultdict(lambda: deque(maxlen=16))
+
+
+def _kiosk_hist(history):
+    """Turn the kiosk's recent on-screen turns ([{q, a}, ...]) into chat messages so the
+    LLM can follow the thread — resolve 'his/that course', build on the last answer.
+    Capped and stateless: it's only the current conversation echoed back, never stored."""
+    msgs = []
+    for t in (history or [])[-6:]:
+        q = (t.get("q") or "").strip() if isinstance(t, dict) else ""
+        a = (t.get("a") or "").strip() if isinstance(t, dict) else ""
+        if q:
+            msgs.append({"role": "user", "content": q[:500]})
+        if a:
+            msgs.append({"role": "assistant", "content": a[:1000]})
+    return msgs
 
 
 def _memories(db, user):
@@ -302,10 +317,12 @@ KIOSK_SYSTEM = (
 )
 
 
-async def run_kiosk_traced(goal, db, provider=None):
+async def run_kiosk_traced(goal, db, provider=None, history=None):
     """The full kiosk run INCLUDING the internal tool trace, token usage, and latency.
     The eval harness and observability use this; the public kiosk uses
-    run_kiosk_agent below, which strips the trace down to just the spoken answer."""
+    run_kiosk_agent below, which strips the trace down to just the spoken answer.
+    `history` is the recent on-screen conversation ([{q, a}, ...]) so a follow-up can
+    build on the thread; deterministic answers ignore it, the LLM path uses it."""
     goal = (goal or "").strip()[:500]  # cap input length (public endpoint)
     if not goal:
         return {"reply": "Ask me about a class, professor, office hours, a room, or the stockroom!",
@@ -356,12 +373,13 @@ async def run_kiosk_traced(goal, db, provider=None):
     from .tools import TOOLS
     avail = {n: TOOLS[n] for n in KIOSK_TOOLS if n in TOOLS}
     system = KIOSK_SYSTEM + f"\nToday's date: {datetime.date.today().isoformat()}."
+    hist = _kiosk_hist(history)
     t0 = time.perf_counter()
     try:
         if provider == "anthropic":
-            result = await _run_anthropic(goal, db, None, avail, system, [], model)
+            result = await _run_anthropic(goal, db, None, avail, system, hist, model)
         elif provider == "openai":
-            result = await _run_openai(goal, db, None, avail, system, [], model)
+            result = await _run_openai(goal, db, None, avail, system, hist, model)
         else:
             return {"reply": "The kiosk assistant isn't configured.", "actions": [], "latency_ms": 0.0}
     except Exception:
@@ -388,10 +406,11 @@ async def run_kiosk_traced(goal, db, provider=None):
     return result
 
 
-async def run_kiosk_agent(goal, db, provider=None):
-    """One anonymous Q&A turn for the public kiosk — no user, no memory, no history,
-    campus tools only. Returns only the spoken answer (no internal tool trace)."""
-    result = await run_kiosk_traced(goal, db, provider)
+async def run_kiosk_agent(goal, db, provider=None, history=None):
+    """One anonymous Q&A turn for the public kiosk — campus tools only, no stored state.
+    `history` is the current conversation's recent turns (sent by the client each turn)
+    so Summer can follow the thread; it is never persisted. Returns just the answer."""
+    result = await run_kiosk_traced(goal, db, provider, history=history)
     return {"reply": result.get("reply", "")}
 
 

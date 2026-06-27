@@ -63,12 +63,23 @@ function sphereMesh(color: string, radius: number) {
   return new THREE.Mesh(new THREE.SphereGeometry(radius, 16, 16), new THREE.MeshLambertMaterial({ color }))
 }
 
+// hex -> rgba string, so links can carry their own opacity (bright when focused, faint otherwise).
+function hexA(hex: string, a: number) {
+  const h = hex.replace("#", "")
+  return `rgba(${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)},${a})`
+}
+
 export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const elRef = useRef<HTMLDivElement>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const gRef = useRef<any>(null)
   const onPick = useRef<(id: string | null) => void>(() => {})
+  // Focus state (drives the highlight): the hovered node, falling back to the selected one.
+  const focusRef = useRef<string | null>(null)
+  const selIdRef = useRef<string | null>(null)
+  const neighRef = useRef<Map<string, Set<string>>>(new Map())
+  const refreshHi = useRef<() => void>(() => {})
   const [data, setData] = useState<GraphData | null>(null)
   const [err, setErr] = useState("")
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -84,6 +95,13 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
   }
   useEffect(() => () => { if (idleRef.current) clearTimeout(idleRef.current) }, [])
   useEffect(() => { onPick.current = setSelectedId }, [])
+  // When the selected node changes (click or a panel chip), refocus the highlight on it.
+  useEffect(() => {
+    selIdRef.current = selectedId
+    if (!gRef.current) return
+    focusRef.current = selectedId
+    refreshHi.current()
+  }, [selectedId])
 
   useEffect(() => {
     api.get<GraphData>("/campus/knowledge-graph").then(setData).catch(() => setErr("Couldn't load the knowledge graph."))
@@ -137,6 +155,15 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
       ...data.teaches.map((l) => ({ source: l.s, target: l.t, kind: "teach" })),
       ...data.researches.map((l) => ({ source: l.s, target: l.t, kind: "research", areaName: idx[l.t]?.name })),
     ]
+    // Adjacency, so hovering/selecting a node can light up exactly its connections.
+    const neigh = new Map<string, Set<string>>()
+    const edge = (a: string, b: string) => { if (!neigh.has(a)) neigh.set(a, new Set()); neigh.get(a)!.add(b) }
+    data.teaches.forEach(({ s, t }) => { edge(s, t); edge(t, s) })
+    data.researches.forEach(({ s, t }) => { edge(s, t); edge(t, s) })
+    neighRef.current = neigh
+    const endId = (e: GNode) => (typeof e === "object" ? e.id : e)
+    const hot = (l: GNode) => { const f = focusRef.current; return !!f && (endId(l.source) === f || endId(l.target) === f) }
+    const baseLink = (l: GNode) => l.kind === "research" ? (AREA_COLORS[l.areaName] || "#8aa0c8") : "#5b6b8c"
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const G = (new ForceGraph3D(elRef.current) as any)
       .backgroundColor("#0a0e18")
@@ -172,16 +199,49 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
         g.add(label)
         return g
       })
-      .linkColor((l: GNode) => l.kind === "research" ? (AREA_COLORS[l.areaName] || "#888") : "#5b6b8c")
-      .linkOpacity(0.32)
-      .linkWidth(0.5)
+      .linkColor((l: GNode) => { const c = baseLink(l); return !focusRef.current ? hexA(c, l.kind === "research" ? 0.34 : 0.26) : hot(l) ? hexA(c, 0.96) : hexA(c, 0.05) })
+      .linkOpacity(1)
+      .linkWidth((l: GNode) => hot(l) ? 1.6 : 0.5)
+      .linkDirectionalParticles((l: GNode) => hot(l) ? 4 : 0)
+      .linkDirectionalParticleWidth(2)
+      .linkDirectionalParticleSpeed(0.012)
+      .onNodeHover((n: GNode | null) => {
+        if (elRef.current) elRef.current.style.cursor = n ? "pointer" : ""
+        focusRef.current = n ? n.id : selIdRef.current
+        updateHighlight()
+      })
       .onNodeClick((n: GNode) => {
         onPick.current(n.id)
+        focusRef.current = n.id
+        updateHighlight()
         const d = 90, ratio = 1 + d / Math.hypot(n.x, n.y, n.z || 0)
         G.cameraPosition({ x: n.x * ratio, y: n.y * ratio, z: (n.z || 0) * ratio }, n, 900)
       })
-      .onBackgroundClick(() => onPick.current(null))
+      .onBackgroundClick(() => { onPick.current(null); focusRef.current = null; updateHighlight() })
     gRef.current = G
+
+    // Highlight = brighten the focused node's links (with flowing particles) and fade every
+    // node that isn't the focus or one of its direct neighbours, so the relationship pops.
+    function applyNodeDim() {
+      const f = focusRef.current
+      const bright = f ? new Set<string>([f, ...(neigh.get(f) ?? [])]) : null
+      G.graphData().nodes.forEach((n: GNode) => {
+        const obj = n.__threeObj
+        if (!obj) return
+        const op = !bright || bright.has(n.id) ? 1 : 0.12
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        obj.traverse((o: any) => { if (o.material) { o.material.transparent = true; o.material.opacity = op } })
+      })
+    }
+    function updateHighlight() {
+      G.linkColor(G.linkColor()).linkWidth(G.linkWidth()).linkDirectionalParticles(G.linkDirectionalParticles())
+      try { applyNodeDim() } catch { /* node objects not ready yet */ }
+    }
+    refreshHi.current = updateHighlight
+
+    // Frame the whole graph once the force layout settles, so it always opens nicely.
+    let framed = false
+    G.onEngineStop(() => { if (!framed) { framed = true; G.zoomToFit(700, 70) } })
 
     const fit = () => { const r = elRef.current!.getBoundingClientRect(); G.width(r.width).height(r.height) }
     fit()

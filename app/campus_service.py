@@ -69,7 +69,11 @@ _PERSON_QUERY_NOISE = {
     "phone", "room", "when", "where", "located", "location", "contact", "number",
     "tell", "know", "more", "detail", "details", "info", "information", "reach",
     "find", "looking", "talk", "meet", "see", "who", "whos", "about", "have",
-    "research", "teach", "teaches", "teaching", "class", "advisor", "staff"}
+    "research", "teach", "teaches", "teaching", "class", "advisor", "staff",
+    # Pronouns — so a follow-up like "what does HE teach" isn't matched to a professor
+    # whose surname is "He" (Miao He, Rui He). Full-name searches still work via the
+    # first name. Lets pronoun follow-ups fall through to the LLM, which has the context.
+    "he", "she", "him", "her", "his", "hers", "they", "them", "their", "theirs"}
 
 _LIMIT = 15
 

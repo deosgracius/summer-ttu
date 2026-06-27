@@ -54,7 +54,7 @@ export default function DashboardPage() {
   ]
 
   return (
-    <div className="summer-bg min-h-svh bg-background text-foreground">
+    <div className="summer-bg flex min-h-svh flex-col bg-background text-foreground">
       <SpaceBackground />
       <SplineRobot />
       {onboard && <OnboardingModal onDone={() => setOnboard(false)} />}
@@ -105,61 +105,65 @@ export default function DashboardPage() {
         </div>
       </nav>
 
-      <main className="relative z-10 mx-auto max-w-5xl px-4 sm:px-6 py-8 space-y-6">
-        {tab === "assistant" && (
-          <>
-            <WelcomeBriefing />
-            <AgentChat onChanged={refreshAll} pendingAsk={pendingAsk} onAsked={() => setPendingAsk(null)} />
-          </>
-        )}
-
-        {tab === "campus" && (
-          <>
-            <CampusPanel reloadKey={reloadKey} />
-            <PeoplePanel reloadKey={reloadKey} />
-            <QuickLinksPanel />
-          </>
-        )}
-
-        {tab === "graph" && (
-          <Suspense fallback={<p className="text-sm text-muted-foreground">Loading 3D graph…</p>}>
+      {tab === "graph" ? (
+        // Full-bleed: the graph uses the entire area below the header/nav, edge to edge,
+        // with no card chrome — so it fills the screen without the fullscreen toggle.
+        <div className="relative z-10 min-h-0 flex-1">
+          <Suspense fallback={<p className="p-4 text-sm text-muted-foreground">Loading 3D graph…</p>}>
             <KnowledgeGraph onAsk={(q) => { setPendingAsk(q); setTab("assistant") }} />
           </Suspense>
-        )}
+        </div>
+      ) : (
+        <main className="relative z-10 mx-auto w-full max-w-5xl px-4 sm:px-6 py-8 space-y-6">
+          {tab === "assistant" && (
+            <>
+              <WelcomeBriefing />
+              <AgentChat onChanged={refreshAll} pendingAsk={pendingAsk} onAsked={() => setPendingAsk(null)} />
+            </>
+          )}
 
-        {tab === "items" && (
-          <>
-            <MyAvailabilityPanel reloadKey={reloadKey} />
-            <div className="grid gap-6 md:grid-cols-2">
-              <TasksPanel reloadKey={reloadKey} />
-              <RemindersPanel reloadKey={reloadKey} />
-              <DraftsPanel reloadKey={reloadKey} />
-              <MemoriesPanel reloadKey={reloadKey} />
-            </div>
-          </>
-        )}
+          {tab === "campus" && (
+            <>
+              <CampusPanel reloadKey={reloadKey} />
+              <PeoplePanel reloadKey={reloadKey} />
+              <QuickLinksPanel />
+            </>
+          )}
 
-        {tab === "admin" && isAdmin && (
-          <>
-            <ApprovalsPanel reloadKey={reloadKey} onApplied={refreshAll} />
-            <UserAccessPanel reloadKey={reloadKey} />
-            <DelegationPanel />
-            <FileImportPanel />
-          </>
-        )}
+          {tab === "items" && (
+            <>
+              <MyAvailabilityPanel reloadKey={reloadKey} />
+              <div className="grid gap-6 md:grid-cols-2">
+                <TasksPanel reloadKey={reloadKey} />
+                <RemindersPanel reloadKey={reloadKey} />
+                <DraftsPanel reloadKey={reloadKey} />
+                <MemoriesPanel reloadKey={reloadKey} />
+              </div>
+            </>
+          )}
 
-        {tab === "settings" && (
-          <>
-            <SecurityPanel reloadKey={reloadKey} />
-            <VoiceSettingsPanel reloadKey={reloadKey} />
-            <ConnectionsPanel reloadKey={reloadKey} />
-          </>
-        )}
+          {tab === "admin" && isAdmin && (
+            <>
+              <ApprovalsPanel reloadKey={reloadKey} onApplied={refreshAll} />
+              <UserAccessPanel reloadKey={reloadKey} />
+              <DelegationPanel />
+              <FileImportPanel />
+            </>
+          )}
 
-        <p className="text-center text-xs text-muted-foreground pb-6">
-          Summer — TTU ECE campus assistant.
-        </p>
-      </main>
+          {tab === "settings" && (
+            <>
+              <SecurityPanel reloadKey={reloadKey} />
+              <VoiceSettingsPanel reloadKey={reloadKey} />
+              <ConnectionsPanel reloadKey={reloadKey} />
+            </>
+          )}
+
+          <p className="text-center text-xs text-muted-foreground pb-6">
+            Summer — TTU ECE campus assistant.
+          </p>
+        </main>
+      )}
     </div>
   )
 }

@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from "react"
-import { Maximize2, X, Mail, MessageSquare } from "lucide-react"
+import { Maximize2, X, Mail, MessageSquare, Crosshair, Shuffle } from "lucide-react"
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore — 3d-force-graph ships loose types
 import ForceGraph3D from "3d-force-graph"
 import * as THREE from "three"
 import { api } from "@/lib/api"
-import { PanelCard } from "@/components/panels/PanelCard"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 
@@ -81,6 +80,17 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
     if (!document.fullscreenElement) el?.requestFullscreen?.()
     else document.exitFullscreen?.()
   }
+  // Recenter so every node is back in view (after spinning/zooming away).
+  function fitView() {
+    gRef.current?.zoomToFit?.(700, 60)
+  }
+  // Re-run the force layout so the cluster untangles, then fit it back on screen.
+  function rearrange() {
+    const G = gRef.current
+    if (!G) return
+    G.d3ReheatSimulation?.()
+    window.setTimeout(() => G.zoomToFit?.(700, 60), 1400)
+  }
 
   useEffect(() => {
     if (!data || !elRef.current) return
@@ -127,6 +137,7 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
 
     const fit = () => { const r = elRef.current!.getBoundingClientRect(); G.width(r.width).height(r.height) }
     fit()
+    requestAnimationFrame(fit) // re-measure once the flex layout has settled
     window.addEventListener("resize", fit)
     document.addEventListener("fullscreenchange", fit)
     return () => {
@@ -188,17 +199,25 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
     )
   }
 
+  const btn = "h-8 bg-background/80 backdrop-blur border-border/60"
   return (
-    <PanelCard title="Knowledge Graph">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-muted-foreground">Drag to spin, scroll to zoom, click a node for details. Faculty cluster by research area.</p>
-        <div className="flex shrink-0 items-center gap-2">
-          <Input value={query} onChange={(e) => { setQuery(e.target.value); const q = e.target.value.trim().toLowerCase(); const m = data?.profs.find((p) => p.name.toLowerCase().includes(q)); if (q && m) go(m.id) }} placeholder="find a professor…" className="h-8 w-40 text-sm" />
-          <Button size="sm" variant="outline" className="h-8" onClick={fullscreen}><Maximize2 className="size-4" /> Fullscreen</Button>
-        </div>
+    // Full-bleed: the graph fills the whole area below the header — controls and legend
+    // float on top of the canvas instead of stacking above/below it.
+    <div ref={wrapRef} className="relative h-full w-full overflow-hidden bg-[#0a0e18]">
+      <div ref={elRef} className="absolute inset-0" style={{ display: data ? "block" : "none" }} />
+      {err && <p className="absolute inset-0 grid place-items-center p-4 text-sm text-muted-foreground">{err}</p>}
+      {!err && !data && <p className="absolute inset-0 grid place-items-center p-4 text-sm text-muted-foreground">Loading 3D graph…</p>}
+
+      {/* Floating toolbar (top-left): search + fit/re-arrange + fullscreen. */}
+      <div className="absolute left-3 top-3 z-10 flex flex-wrap items-center gap-2">
+        <Input value={query} onChange={(e) => { setQuery(e.target.value); const q = e.target.value.trim().toLowerCase(); const m = data?.profs.find((p) => p.name.toLowerCase().includes(q)); if (q && m) go(m.id) }} placeholder="find a professor…" className="h-8 w-44 bg-background/80 text-sm backdrop-blur" />
+        <Button size="sm" variant="outline" className={btn} onClick={fitView}><Crosshair className="size-4" /> Fit</Button>
+        <Button size="sm" variant="outline" className={btn} onClick={rearrange}><Shuffle className="size-4" /> Re-arrange</Button>
+        <Button size="sm" variant="outline" className={btn} onClick={fullscreen}><Maximize2 className="size-4" /> Fullscreen</Button>
       </div>
-      {/* Reference / legend — what the nodes, links, and colors mean. */}
-      <div className="mt-3 space-y-1.5 rounded-lg border border-border/40 bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
+
+      {/* Reference / legend (bottom-left): what the nodes, links, and colors mean. */}
+      <div className="absolute bottom-3 left-3 z-10 max-w-[min(94vw,720px)] space-y-1.5 rounded-lg border border-border/40 bg-background/70 px-3 py-2 text-[11px] text-muted-foreground backdrop-blur">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
           <span className="font-medium text-foreground/70">Nodes</span>
           <span className="inline-flex items-center gap-1.5"><span className="inline-block size-3.5 rounded-full bg-teal-400 ring-1 ring-white/50" /> Faculty (headshot)</span>
@@ -214,14 +233,10 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
           <span className="font-medium text-foreground/70">Areas</span>
           {Object.entries(AREA_COLORS).map(([k, v]) => <span key={k} className="inline-flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full" style={{ background: v }} /> {k}</span>)}
         </div>
+        <div className="pt-0.5 text-[10px] opacity-80">Teaching links are exact; research areas are derived from each professor's bio.</div>
       </div>
-      <div ref={wrapRef} className="relative mt-3 rounded-xl border border-border/50 bg-[#0a0e18] overflow-hidden">
-        {err && <p className="p-4 text-sm text-muted-foreground">{err}</p>}
-        {!err && !data && <p className="p-4 text-sm text-muted-foreground">Loading 3D graph…</p>}
-        <div ref={elRef} className="w-full" style={{ height: "84vh", minHeight: 560, display: data ? "block" : "none" }} />
-        <Panel />
-      </div>
-      <p className="mt-2 text-xs text-muted-foreground">Teaching links are exact; research areas are derived from each professor's bio.</p>
-    </PanelCard>
+
+      <Panel />
+    </div>
   )
 }

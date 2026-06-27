@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { startAuthentication } from "@simplewebauthn/browser"
 import { useAuth } from "@/lib/auth"
+import { useSpeech } from "@/lib/useSpeech"
 import { api, ApiError, type Profile } from "@/lib/api"
 import SummerOrb from "@/components/SummerOrb"
 import SplineRobot from "@/components/SplineRobot"
@@ -22,6 +23,7 @@ type Step = 0 | 1 | 2 | 3
 
 export default function LoginPage() {
   const { adoptToken } = useAuth()
+  const { primeAudio } = useSpeech()
   const navigate = useNavigate()
 
   const [step, setStep] = useState<Step>(0)
@@ -49,6 +51,9 @@ export default function LoginPage() {
     setP((prev) => ({ ...prev, [k]: v }))
 
   async function handleLogin() {
+    // This click is a user gesture — unlock audio NOW so the dashboard's spoken
+    // greeting/briefing can play after we navigate (browsers block autoplay otherwise).
+    primeAudio()
     setBusy(true)
     try {
       const r = await api.loginStart(email, password)
@@ -66,6 +71,7 @@ export default function LoginPage() {
   }
 
   async function completeMfa() {
+    primeAudio() // gesture → unlock audio for the post-login spoken greeting
     setBusy(true)
     try {
       const r = await api.loginMfa(email, password, mfaCode)

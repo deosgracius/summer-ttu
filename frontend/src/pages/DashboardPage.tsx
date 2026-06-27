@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { lazy, Suspense, useState } from "react"
 import { MessageSquare, GraduationCap, ListChecks, ShieldCheck, Settings as SettingsIcon, Network } from "lucide-react"
 import { useAuth } from "@/lib/auth"
 import { Button } from "@/components/ui/button"
@@ -19,8 +19,9 @@ import QuickLinksPanel from "@/components/panels/QuickLinksPanel"
 import FileImportPanel from "@/components/panels/FileImportPanel"
 import MyAvailabilityPanel from "@/components/panels/MyAvailabilityPanel"
 import WelcomeBriefing from "@/components/WelcomeBriefing"
-import KnowledgeGraph from "@/components/KnowledgeGraph"
 import OnboardingModal from "@/components/OnboardingModal"
+// 3D graph pulls in three.js — lazy-load so it only ships when the tab is opened.
+const KnowledgeGraph = lazy(() => import("@/components/KnowledgeGraph"))
 import SplineRobot from "@/components/SplineRobot"
 import SpaceBackground from "@/components/SpaceBackground"
 
@@ -34,6 +35,8 @@ export default function DashboardPage() {
   // First-login welcome + details capture, until the user completes (or skips) it.
   const [onboard, setOnboard] = useState(!me?.profile?.onboarded)
   const [tab, setTab] = useState<TabId>("assistant")
+  // A question handed to the Assistant tab (e.g. "Ask Summer about X" from the graph).
+  const [pendingAsk, setPendingAsk] = useState<string | null>(null)
 
   const isAdmin = me?.role === "admin" || me?.role === "central_admin"
   const name =
@@ -106,7 +109,7 @@ export default function DashboardPage() {
         {tab === "assistant" && (
           <>
             <WelcomeBriefing />
-            <AgentChat onChanged={refreshAll} />
+            <AgentChat onChanged={refreshAll} pendingAsk={pendingAsk} onAsked={() => setPendingAsk(null)} />
           </>
         )}
 
@@ -118,7 +121,11 @@ export default function DashboardPage() {
           </>
         )}
 
-        {tab === "graph" && <KnowledgeGraph />}
+        {tab === "graph" && (
+          <Suspense fallback={<p className="text-sm text-muted-foreground">Loading 3D graph…</p>}>
+            <KnowledgeGraph onAsk={(q) => { setPendingAsk(q); setTab("assistant") }} />
+          </Suspense>
+        )}
 
         {tab === "items" && (
           <>

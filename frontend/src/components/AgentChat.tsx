@@ -9,13 +9,17 @@ import { Card, CardContent } from "@/components/ui/card"
 
 interface Props {
   onChanged?: () => void
+  // A question handed in from elsewhere (e.g. "Ask Summer about X" on the graph) —
+  // sent automatically when it arrives; onAsked clears it.
+  pendingAsk?: string | null
+  onAsked?: () => void
 }
 
 /**
  * Text chat with the Summer agent (POST /agent).
  * Voice / orb / speech come in a later slice — this is the typed path.
  */
-export default function AgentChat({ onChanged }: Props) {
+export default function AgentChat({ onChanged, pendingAsk, onAsked }: Props) {
   const [goal, setGoal] = useState("")
   const [reply, setReply] = useState<string>("")
   const [person, setPerson] = useState<PersonCard | undefined>(undefined)
@@ -108,6 +112,13 @@ export default function AgentChat({ onChanged }: Props) {
     }
   }
   sendRef.current = send
+
+  // A question handed in (e.g. from the knowledge graph's "Ask Summer about X") is sent
+  // automatically when it arrives.
+  useEffect(() => {
+    if (pendingAsk) { sendRef.current(pendingAsk); onAsked?.() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingAsk])
 
   return (
       <Card className="relative overflow-hidden rounded-2xl border-border/40 bg-background/55 backdrop-blur-xl shadow-[0_25px_80px_rgba(15,23,42,0.35)]">

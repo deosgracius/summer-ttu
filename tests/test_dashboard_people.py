@@ -187,3 +187,18 @@ def test_knowledge_graph_structure(db):
     codes = {c["code"] for c in g["courses"]}
     assert "ECE 3333" in codes
     assert any(t["s"] == "p:Derek Johnston" and t["t"] == "c:ECE 3333" for t in g["teaches"])
+
+
+def test_pronoun_not_matched_to_surname_he():
+    """A follow-up pronoun ("what does he teach") must NOT match a professor whose
+    surname is "He" — it should fall through (to the LLM, which has the context)."""
+    from sqlalchemy import create_engine as _ce
+    from sqlalchemy.orm import sessionmaker as _sm
+    eng = _ce("sqlite:///:memory:"); Base.metadata.create_all(eng); d = _sm(bind=eng)()
+    d.add(models.Professor(name="Miao He", title="Professor", email="miao.he@ttu.edu",
+                           department="ECE", office_building="ECE", office_number="110"))
+    d.commit()
+    assert cs.person_answer(d, "what does he teach") is None
+    assert cs.person_answer(d, "and what does he do") is None
+    assert "Miao He" in (cs.person_answer(d, "Miao He") or "")  # full name still works
+    d.close()

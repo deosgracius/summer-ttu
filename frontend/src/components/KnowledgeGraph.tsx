@@ -98,15 +98,15 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
     const G = (new ForceGraph3D(elRef.current) as any)
       .backgroundColor("#0a0e18")
       .graphData({ nodes, links })
-      .nodeRelSize(4)
-      .nodeVal((n: GNode) => (n.role === "area" ? 10 : n.role === "course" ? 1.2 : 3))
+      .nodeRelSize(5)
+      .nodeVal((n: GNode) => (n.role === "area" ? 13 : n.role === "course" ? 1.4 : 3.5))
       .nodeColor((n: GNode) => n.color)
       .nodeLabel((n: GNode) => n.role === "prof" ? `<b>${n.name}</b>` : n.role === "area" ? `<b>${n.name}</b> · research area` : `<b>${n.code}</b> · ${n.title}`)
       .nodeThreeObjectExtend(false)
       .nodeThreeObject((n: GNode) => {
         if (n.role === "prof" && n.photo) {
           const mat = new THREE.SpriteMaterial({ color: 0xffffff, depthWrite: false })
-          const sprite = new THREE.Sprite(mat); sprite.scale.set(9, 9, 1)
+          const sprite = new THREE.Sprite(mat); sprite.scale.set(11, 11, 1)
           const im = new Image()
           im.onload = () => { mat.map = circleTexture(im, n.color); mat.needsUpdate = true }
           im.src = n.photo
@@ -197,13 +197,28 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
           <Button size="sm" variant="outline" className="h-8" onClick={fullscreen}><Maximize2 className="size-4" /> Fullscreen</Button>
         </div>
       </div>
-      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1.5 text-[11px] text-muted-foreground">
-        {Object.entries(AREA_COLORS).map(([k, v]) => <span key={k} className="inline-flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full" style={{ background: v }} /> {k}</span>)}
+      {/* Reference / legend — what the nodes, links, and colors mean. */}
+      <div className="mt-3 space-y-1.5 rounded-lg border border-border/40 bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <span className="font-medium text-foreground/70">Nodes</span>
+          <span className="inline-flex items-center gap-1.5"><span className="inline-block size-3.5 rounded-full bg-teal-400 ring-1 ring-white/50" /> Faculty (headshot)</span>
+          <span className="inline-flex items-center gap-1.5"><span className="inline-block size-2 rounded-full bg-slate-500" /> Course</span>
+          <span className="inline-flex items-center gap-1.5"><span className="inline-block size-4 rounded-full bg-amber-400" /> Research area (hub)</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <span className="font-medium text-foreground/70">Links</span>
+          <span className="inline-flex items-center gap-1.5"><span className="inline-block h-0.5 w-6 rounded bg-slate-400" /> teaches a course</span>
+          <span className="inline-flex items-center gap-1.5"><span className="inline-block h-0.5 w-6 rounded bg-violet-400" /> works in a research area</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <span className="font-medium text-foreground/70">Areas</span>
+          {Object.entries(AREA_COLORS).map(([k, v]) => <span key={k} className="inline-flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full" style={{ background: v }} /> {k}</span>)}
+        </div>
       </div>
       <div ref={wrapRef} className="relative mt-3 rounded-xl border border-border/50 bg-[#0a0e18] overflow-hidden">
         {err && <p className="p-4 text-sm text-muted-foreground">{err}</p>}
         {!err && !data && <p className="p-4 text-sm text-muted-foreground">Loading 3D graph…</p>}
-        <div ref={elRef} className="w-full" style={{ height: "72vh", display: data ? "block" : "none" }} />
+        <div ref={elRef} className="w-full" style={{ height: "84vh", minHeight: 560, display: data ? "block" : "none" }} />
         <Panel />
       </div>
       <p className="mt-2 text-xs text-muted-foreground">Teaching links are exact; research areas are derived from each professor's bio.</p>

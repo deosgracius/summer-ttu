@@ -203,7 +203,7 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
   return (
     // Full-bleed: the graph fills the whole area below the header — controls and legend
     // float on top of the canvas instead of stacking above/below it.
-    <div ref={wrapRef} className="relative h-full w-full overflow-hidden bg-[#0a0e18]">
+    <div ref={wrapRef} className="relative w-full overflow-hidden bg-[#0a0e18]" style={{ height: "calc(100svh - 122px)" }}>
       <div ref={elRef} className="absolute inset-0" style={{ display: data ? "block" : "none" }} />
       {err && <p className="absolute inset-0 grid place-items-center p-4 text-sm text-muted-foreground">{err}</p>}
       {!err && !data && <p className="absolute inset-0 grid place-items-center p-4 text-sm text-muted-foreground">Loading 3D graph…</p>}

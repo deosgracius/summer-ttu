@@ -54,7 +54,7 @@ export default function DashboardPage() {
   ]
 
   return (
-    <div className="summer-bg flex min-h-svh flex-col bg-background text-foreground">
+    <div className="summer-bg min-h-svh bg-background text-foreground">
       <SpaceBackground />
       <SplineRobot />
       {onboard && <OnboardingModal onDone={() => setOnboard(false)} />}
@@ -108,7 +108,7 @@ export default function DashboardPage() {
       {tab === "graph" ? (
         // Full-bleed: the graph uses the entire area below the header/nav, edge to edge,
         // with no card chrome — so it fills the screen without the fullscreen toggle.
-        <div className="relative z-10 min-h-0 flex-1">
+        <div className="relative z-10">
           <Suspense fallback={<p className="p-4 text-sm text-muted-foreground">Loading 3D graph…</p>}>
             <KnowledgeGraph onAsk={(q) => { setPendingAsk(q); setTab("assistant") }} />
           </Suspense>

@@ -40,6 +40,29 @@ function circleTexture(img: HTMLImageElement, color: string) {
   return t
 }
 
+// A camera-facing text label drawn on a canvas. worldH sets its on-screen size
+// (research-area labels pass a bigger worldH so they read larger than the rest).
+function textSprite(text: string, fontPx: number, worldH: number) {
+  const font = `600 ${fontPx}px Inter, system-ui, sans-serif`
+  const meas = document.createElement("canvas").getContext("2d")!
+  meas.font = font
+  const pad = 10, w = Math.ceil(meas.measureText(text).width)
+  const c = document.createElement("canvas")
+  c.width = w + pad * 2; c.height = fontPx + pad * 2
+  const x = c.getContext("2d")!
+  x.font = font; x.textAlign = "center"; x.textBaseline = "middle"
+  x.lineWidth = 5; x.strokeStyle = "rgba(7,11,20,0.9)"; x.strokeText(text, c.width / 2, c.height / 2)
+  x.fillStyle = "#e9eefb"; x.fillText(text, c.width / 2, c.height / 2)
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, transparent: true }))
+  sp.scale.set(worldH * (c.width / c.height), worldH, 1)
+  return sp
+}
+
+function sphereMesh(color: string, radius: number) {
+  return new THREE.Mesh(new THREE.SphereGeometry(radius, 16, 16), new THREE.MeshLambertMaterial({ color }))
+}
+
 export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const elRef = useRef<HTMLDivElement>(null)
@@ -50,6 +73,16 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
   const [err, setErr] = useState("")
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [query, setQuery] = useState("")
+  // The reference legend hides while the mouse is moving over the graph and comes back
+  // once the pointer has been still for a moment, so it never blocks the view mid-drag.
+  const [legendOn, setLegendOn] = useState(true)
+  const idleRef = useRef<number | undefined>(undefined)
+  function onMove() {
+    setLegendOn((v) => (v ? false : v))
+    if (idleRef.current) clearTimeout(idleRef.current)
+    idleRef.current = window.setTimeout(() => setLegendOn(true), 2500)
+  }
+  useEffect(() => () => { if (idleRef.current) clearTimeout(idleRef.current) }, [])
   useEffect(() => { onPick.current = setSelectedId }, [])
 
   useEffect(() => {
@@ -114,15 +147,30 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
       .nodeLabel((n: GNode) => n.role === "prof" ? `<b>${n.name}</b>` : n.role === "area" ? `<b>${n.name}</b> · research area` : `<b>${n.code}</b> · ${n.title}`)
       .nodeThreeObjectExtend(false)
       .nodeThreeObject((n: GNode) => {
+        // Build each node fully: its visual (headshot / colored sphere) plus a text
+        // label sitting just below it. Research-area labels are rendered bigger.
+        const g = new THREE.Group()
+        let half: number // node half-height, so the label clears it
         if (n.role === "prof" && n.photo) {
           const mat = new THREE.SpriteMaterial({ color: 0xffffff, depthWrite: false })
           const sprite = new THREE.Sprite(mat); sprite.scale.set(11, 11, 1)
           const im = new Image()
           im.onload = () => { mat.map = circleTexture(im, n.color); mat.needsUpdate = true }
           im.src = n.photo
-          return sprite
+          g.add(sprite); half = 5.5
+        } else if (n.role === "area") {
+          g.add(sphereMesh(n.color, 12)); half = 12
+        } else if (n.role === "prof") {
+          g.add(sphereMesh(n.color, 4)); half = 4
+        } else {
+          g.add(sphereMesh(n.color, 2.6)); half = 2.6
         }
-        return null // default sphere
+        const big = n.role === "area"
+        const text = (n.role === "course" ? n.code : n.name) || ""
+        const label = textSprite(text, big ? 34 : 22, big ? 9 : 4.6)
+        label.position.set(0, -(half + (big ? 6 : 3)), 0)
+        g.add(label)
+        return g
       })
       .linkColor((l: GNode) => l.kind === "research" ? (AREA_COLORS[l.areaName] || "#888") : "#5b6b8c")
       .linkOpacity(0.32)
@@ -203,7 +251,7 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
   return (
     // Full-bleed: the graph fills the whole area below the header — controls and legend
     // float on top of the canvas instead of stacking above/below it.
-    <div ref={wrapRef} className="relative w-full overflow-hidden bg-[#0a0e18]" style={{ height: "calc(100svh - 122px)" }}>
+    <div ref={wrapRef} onMouseMove={onMove} className="relative w-full overflow-hidden bg-[#0a0e18]" style={{ height: "calc(100svh - 122px)" }}>
       <div ref={elRef} className="absolute inset-0" style={{ display: data ? "block" : "none" }} />
       {err && <p className="absolute inset-0 grid place-items-center p-4 text-sm text-muted-foreground">{err}</p>}
       {!err && !data && <p className="absolute inset-0 grid place-items-center p-4 text-sm text-muted-foreground">Loading 3D graph…</p>}
@@ -216,8 +264,9 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
           <Button size="sm" variant="outline" className={btn} onClick={rearrange}><Shuffle className="size-4" /> Re-arrange</Button>
           <Button size="sm" variant="outline" className={btn} onClick={fullscreen}><Maximize2 className="size-4" /> Fullscreen</Button>
         </div>
-        {/* Reference / legend — what the nodes, links, and colors mean. */}
-        <div className="space-y-1.5 rounded-lg border border-border/40 bg-background/70 px-3 py-2 text-[11px] text-muted-foreground backdrop-blur">
+        {/* Reference / legend — what the nodes, links, and colors mean. Fades out while
+            the mouse is moving so it never blocks the graph, and returns when idle. */}
+        <div className={`space-y-1.5 rounded-lg border border-border/40 bg-background/70 px-3 py-2 text-[11px] text-muted-foreground backdrop-blur transition-opacity duration-300 ${legendOn ? "opacity-100" : "pointer-events-none opacity-0"}`}>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
             <span className="font-medium text-foreground/70">Nodes</span>
             <span className="inline-flex items-center gap-1.5"><span className="inline-block size-3.5 rounded-full bg-teal-400 ring-1 ring-white/50" /> Faculty (headshot)</span>

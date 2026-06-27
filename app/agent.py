@@ -386,13 +386,16 @@ async def run_kiosk_traced(goal, db, provider=None, history=None):
         # LLM unreachable (e.g. depleted credits) — degrade to a direct DB lookup.
         return {"reply": _deterministic_fallback(db, goal), "actions": [],
                 "latency_ms": (time.perf_counter() - t0) * 1000}
-    # PROVENANCE GATE: an LLM reply may only state facts it actually retrieved this
-    # turn. Any ungrounded name/email/phone/room/course code → replace the whole reply
-    # with a safe referral rather than ship a confident fabrication.
+    # PROVENANCE GATE: an LLM reply may only state facts it RETRIEVED this turn OR that
+    # were already established (and grounded) earlier in this same conversation — so a
+    # follow-up like "his email?" can repeat a fact Summer just gave, while a brand-new
+    # ungrounded name/email/room is still replaced with a safe referral.
     from . import grounding
+    hist_text = " ".join(f"{t.get('q', '')} {t.get('a', '')}"
+                         for t in (history or []) if isinstance(t, dict))
     result["reply"] = grounding.enforce(
         result.get("reply", ""),
-        grounding.evidence_from_actions(result.get("actions", [])))
+        grounding.evidence_from_actions(result.get("actions", [])) + " " + hist_text)
     result["latency_ms"] = (time.perf_counter() - t0) * 1000
     u = result.get("usage")
     if u and (u.get("input") or u.get("output")):

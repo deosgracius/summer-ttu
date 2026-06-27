@@ -208,32 +208,33 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
       {err && <p className="absolute inset-0 grid place-items-center p-4 text-sm text-muted-foreground">{err}</p>}
       {!err && !data && <p className="absolute inset-0 grid place-items-center p-4 text-sm text-muted-foreground">Loading 3D graph…</p>}
 
-      {/* Floating toolbar (top-left): search + fit/re-arrange + fullscreen. */}
-      <div className="absolute left-3 top-3 z-10 flex flex-wrap items-center gap-2">
-        <Input value={query} onChange={(e) => { setQuery(e.target.value); const q = e.target.value.trim().toLowerCase(); const m = data?.profs.find((p) => p.name.toLowerCase().includes(q)); if (q && m) go(m.id) }} placeholder="find a professor…" className="h-8 w-44 bg-background/80 text-sm backdrop-blur" />
-        <Button size="sm" variant="outline" className={btn} onClick={fitView}><Crosshair className="size-4" /> Fit</Button>
-        <Button size="sm" variant="outline" className={btn} onClick={rearrange}><Shuffle className="size-4" /> Re-arrange</Button>
-        <Button size="sm" variant="outline" className={btn} onClick={fullscreen}><Maximize2 className="size-4" /> Fullscreen</Button>
-      </div>
-
-      {/* Reference / legend (bottom-left): what the nodes, links, and colors mean. */}
-      <div className="absolute bottom-3 left-3 z-10 max-w-[min(94vw,720px)] space-y-1.5 rounded-lg border border-border/40 bg-background/70 px-3 py-2 text-[11px] text-muted-foreground backdrop-blur">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          <span className="font-medium text-foreground/70">Nodes</span>
-          <span className="inline-flex items-center gap-1.5"><span className="inline-block size-3.5 rounded-full bg-teal-400 ring-1 ring-white/50" /> Faculty (headshot)</span>
-          <span className="inline-flex items-center gap-1.5"><span className="inline-block size-2 rounded-full bg-slate-500" /> Course</span>
-          <span className="inline-flex items-center gap-1.5"><span className="inline-block size-4 rounded-full bg-amber-400" /> Research area (hub)</span>
+      {/* Controls + reference legend, both anchored at the top-left. */}
+      <div className="absolute left-3 top-3 z-10 flex max-w-[min(94vw,720px)] flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Input value={query} onChange={(e) => { setQuery(e.target.value); const q = e.target.value.trim().toLowerCase(); const m = data?.profs.find((p) => p.name.toLowerCase().includes(q)); if (q && m) go(m.id) }} placeholder="find a professor…" className="h-8 w-44 bg-background/80 text-sm backdrop-blur" />
+          <Button size="sm" variant="outline" className={btn} onClick={fitView}><Crosshair className="size-4" /> Fit</Button>
+          <Button size="sm" variant="outline" className={btn} onClick={rearrange}><Shuffle className="size-4" /> Re-arrange</Button>
+          <Button size="sm" variant="outline" className={btn} onClick={fullscreen}><Maximize2 className="size-4" /> Fullscreen</Button>
         </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          <span className="font-medium text-foreground/70">Links</span>
-          <span className="inline-flex items-center gap-1.5"><span className="inline-block h-0.5 w-6 rounded bg-slate-400" /> teaches a course</span>
-          <span className="inline-flex items-center gap-1.5"><span className="inline-block h-0.5 w-6 rounded bg-violet-400" /> works in a research area</span>
+        {/* Reference / legend — what the nodes, links, and colors mean. */}
+        <div className="space-y-1.5 rounded-lg border border-border/40 bg-background/70 px-3 py-2 text-[11px] text-muted-foreground backdrop-blur">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+            <span className="font-medium text-foreground/70">Nodes</span>
+            <span className="inline-flex items-center gap-1.5"><span className="inline-block size-3.5 rounded-full bg-teal-400 ring-1 ring-white/50" /> Faculty (headshot)</span>
+            <span className="inline-flex items-center gap-1.5"><span className="inline-block size-2 rounded-full bg-slate-500" /> Course</span>
+            <span className="inline-flex items-center gap-1.5"><span className="inline-block size-4 rounded-full bg-amber-400" /> Research area (hub)</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+            <span className="font-medium text-foreground/70">Links</span>
+            <span className="inline-flex items-center gap-1.5"><span className="inline-block h-0.5 w-6 rounded bg-slate-400" /> teaches a course</span>
+            <span className="inline-flex items-center gap-1.5"><span className="inline-block h-0.5 w-6 rounded bg-violet-400" /> works in a research area</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <span className="font-medium text-foreground/70">Areas</span>
+            {Object.entries(AREA_COLORS).map(([k, v]) => <span key={k} className="inline-flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full" style={{ background: v }} /> {k}</span>)}
+          </div>
+          <div className="pt-0.5 text-[10px] opacity-80">Teaching links are exact; research areas are derived from each professor's bio.</div>
         </div>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <span className="font-medium text-foreground/70">Areas</span>
-          {Object.entries(AREA_COLORS).map(([k, v]) => <span key={k} className="inline-flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full" style={{ background: v }} /> {k}</span>)}
-        </div>
-        <div className="pt-0.5 text-[10px] opacity-80">Teaching links are exact; research areas are derived from each professor's bio.</div>
       </div>
 
       <Panel />

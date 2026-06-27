@@ -53,6 +53,9 @@ def _rate_limit(request: Request, bucket: str, limit: int):
 
 class Ask(BaseModel):
     question: str = ""
+    # The current conversation's recent turns ([{q, a}, ...]) so Summer can follow the
+    # thread (resolve "his", "that one", build on the last answer). Never stored.
+    history: list = []
 
 
 def _person_card(db, question: str):
@@ -64,7 +67,7 @@ def _person_card(db, question: str):
 @router.post("/ask")
 async def ask(data: Ask, request: Request, db: Session = Depends(get_db)):
     _rate_limit(request, "ask", ASK_MAX)
-    result = await run_kiosk_agent(data.question, db)
+    result = await run_kiosk_agent(data.question, db, history=data.history)
     card = _person_card(db, data.question)
     # Don't show a face if the written answer says the person isn't on file — that
     # contradiction (photo of X while text says "no record") is confusing.

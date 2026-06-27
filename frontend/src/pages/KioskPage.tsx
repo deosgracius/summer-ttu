@@ -92,7 +92,10 @@ export default function KioskPage() {
     setLoading(true)
     resetIdle()
     try {
-      const res = await api.post<{ reply: string; person?: Person }>("/kiosk/ask", { question: text })
+      // Send the current conversation's recent turns so Summer can follow the thread
+      // (resolve "his", "that course", build on the last answer). Not stored server-side.
+      const history = turns.slice(-6).map((t) => ({ q: t.q, a: t.a }))
+      const res = await api.post<{ reply: string; person?: Person }>("/kiosk/ask", { question: text, history })
       const reply = res.reply || "(no answer)"
       setTurns((t) => [...t, { q: text, a: reply, person: res.person }])
       if (!muted) speak(reply) // read the answer aloud for the hallway

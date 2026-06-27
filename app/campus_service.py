@@ -574,6 +574,75 @@ def advising_referral(db, query: str):
     return "\n".join(lines) if len(lines) > 2 else None
 
 
+# Canonical ECE research areas + the bio/title keywords that map a professor to each.
+# Areas are DERIVED from each professor's published bio — heuristic, not authoritative.
+_RESEARCH_AREAS = {
+    "Power & Energy": ["pulsed power", "high voltage", "high-voltage", "power system",
+                       "power electron", "energy", "plasma", "breakdown", "grid",
+                       "renewable", "solar"],
+    "RF & Microwave": ["microwave", "antenna", "radio frequency", "electromagnetic",
+                       "radar", "wireless", " rf "],
+    "Comms & DSP": ["communication", "signal processing", "information theory", "coding theory"],
+    "Circuits & Micro": ["analog", "integrated circuit", "vlsi", "mixed-signal", "cmos",
+                         "circuit design"],
+    "Photonics & Nano": ["photonic", "optic", "nano", "laser", "quantum", "terahertz",
+                         "semiconductor", "material"],
+    "Computing & Security": ["network", "cyber", "security", "machine learning",
+                             "artificial intelligence", "deep learning", "software",
+                             "operating system", "database", "computer architecture",
+                             "algorithm", "data mining"],
+    "Bio & Sensors": ["biomed", "bioelectr", "sensor", "mems", "microsystem", "medical", "imaging"],
+}
+
+
+def _areas_for(text: str):
+    t = (text or "").lower()
+    return [a for a, kws in _RESEARCH_AREAS.items() if any(k in t for k in kws)]
+
+
+def _graph_key(name: str):
+    """(surname, first-initial) — reconciles a course's instructor name to a directory
+    professor (e.g. 'Timothy Dallas' == 'Tim Dallas')."""
+    toks = [w for w in re.findall(r"[a-z]+", (name or "").lower()) if len(w) > 1]
+    return (toks[-1], toks[0][0]) if toks else ("", "")
+
+
+def knowledge_graph(db):
+    """Build the campus knowledge graph: faculty (with headshot + research areas derived
+    from their bio) linked to the courses they teach and the research areas they work in.
+    Returns {profs, courses, areas, teaches, researches} for the dashboard visualization.
+    Teaching links are exact (registrar instructor field); research areas are heuristic."""
+    pnodes = {}
+    dirmap = {}
+    for p in db.query(models.Professor).all():
+        areas = _areas_for(f"{getattr(p, 'bio', '') or ''} {getattr(p, 'title', '') or ''}")
+        pnodes[p.name] = {"id": "p:" + p.name, "name": p.name,
+                          "photo": getattr(p, "photo_url", "") or "", "areas": areas}
+        dirmap[_graph_key(p.name)] = p.name
+    courses, teaches = {}, set()
+    for c in db.query(models.CourseSection).all():
+        crs = re.sub(r"\*+$", "", (getattr(c, "course", "") or "").strip())
+        code = f"{(getattr(c, 'subject', '') or '').strip()} {crs}".strip()
+        if not code:
+            continue
+        courses.setdefault(code, getattr(c, "title", "") or code)
+        ins = (getattr(c, "instructor", "") or "").strip()
+        if not ins:
+            continue
+        canon = dirmap.get(_graph_key(ins), ins)
+        if canon not in pnodes:
+            pnodes[canon] = {"id": "p:" + canon, "name": canon, "photo": "", "areas": []}
+        teaches.add(("p:" + canon, "c:" + code))
+    used = sorted({a for p in pnodes.values() for a in p["areas"]})
+    return {
+        "profs": sorted(pnodes.values(), key=lambda x: x["name"]),
+        "courses": [{"id": "c:" + code, "code": code, "title": t} for code, t in sorted(courses.items())],
+        "areas": [{"id": "a:" + a, "name": a} for a in used],
+        "teaches": [{"s": s, "t": t} for s, t in sorted(teaches)],
+        "researches": [{"s": p["id"], "t": "a:" + a} for p in pnodes.values() for a in p["areas"]],
+    }
+
+
 # Prerequisites / "what should I take" are academic-advising decisions — NOT Summer's
 # job, and a hallucination risk. Detect them and redirect to the official catalog +
 # advisor, deterministically, before any model ever sees the question.

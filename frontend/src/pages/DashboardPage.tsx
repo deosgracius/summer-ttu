@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { MessageSquare, GraduationCap, ListChecks, ShieldCheck, Settings as SettingsIcon } from "lucide-react"
+import { MessageSquare, GraduationCap, ListChecks, ShieldCheck, Settings as SettingsIcon, Network } from "lucide-react"
 import { useAuth } from "@/lib/auth"
 import { Button } from "@/components/ui/button"
 import AgentChat from "@/components/AgentChat"
@@ -19,11 +19,12 @@ import QuickLinksPanel from "@/components/panels/QuickLinksPanel"
 import FileImportPanel from "@/components/panels/FileImportPanel"
 import MyAvailabilityPanel from "@/components/panels/MyAvailabilityPanel"
 import WelcomeBriefing from "@/components/WelcomeBriefing"
+import KnowledgeGraph from "@/components/KnowledgeGraph"
 import OnboardingModal from "@/components/OnboardingModal"
 import SplineRobot from "@/components/SplineRobot"
 import SpaceBackground from "@/components/SpaceBackground"
 
-type TabId = "assistant" | "campus" | "items" | "admin" | "settings"
+type TabId = "assistant" | "campus" | "graph" | "items" | "admin" | "settings"
 
 export default function DashboardPage() {
   const { me, logout } = useAuth()
@@ -43,6 +44,7 @@ export default function DashboardPage() {
   const tabs: { id: TabId; label: string; icon: typeof MessageSquare; show: boolean }[] = [
     { id: "assistant", label: "Assistant", icon: MessageSquare, show: true },
     { id: "campus", label: "Campus", icon: GraduationCap, show: true },
+    { id: "graph", label: "Knowledge Graph", icon: Network, show: true },
     { id: "items", label: "My Items", icon: ListChecks, show: true },
     { id: "admin", label: "Admin", icon: ShieldCheck, show: isAdmin },
     { id: "settings", label: "Settings", icon: SettingsIcon, show: true },
@@ -115,6 +117,8 @@ export default function DashboardPage() {
             <QuickLinksPanel />
           </>
         )}
+
+        {tab === "graph" && <KnowledgeGraph />}
 
         {tab === "items" && (
           <>

@@ -29,6 +29,14 @@ def campus_photo(photo_id: int, db: Session = Depends(get_db)):
                     headers={"Cache-Control": "public, max-age=604800"})
 
 
+@router.get("/knowledge-graph")
+def knowledge_graph(db: Session = Depends(get_db)):
+    """Faculty ↔ course ↔ research-area knowledge graph for the dashboard visualization.
+    Public directory data (same as the kiosk), so the kiosk/portfolio can reuse it."""
+    from .. import campus_service
+    return campus_service.knowledge_graph(db)
+
+
 def _crud(name: str, model, schema_in, schema_out, search_fields):
     """Wire up GET (list) / GET id / POST / PATCH / DELETE for one resource."""
     sub = APIRouter(prefix=f"/{name}")

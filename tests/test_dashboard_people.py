@@ -176,3 +176,14 @@ def test_non_english_is_detected():
               "德里克的办公室在哪里",                          # Chinese (non-Latin)
               "Где находится офис?"):                       # Russian (Cyrillic)
         assert cs.looks_non_english(q) is True, q
+
+
+def test_knowledge_graph_structure(db):
+    # Derek (with photo + courses) appears as a prof node; courses + teaches edges build.
+    g = cs.knowledge_graph(db)
+    assert {"profs", "courses", "areas", "teaches", "researches"} <= set(g)
+    derek = [p for p in g["profs"] if p["name"] == "Derek Johnston"]
+    assert derek and derek[0]["photo"] == "/campus/photo/35"
+    codes = {c["code"] for c in g["courses"]}
+    assert "ECE 3333" in codes
+    assert any(t["s"] == "p:Derek Johnston" and t["t"] == "c:ECE 3333" for t in g["teaches"])

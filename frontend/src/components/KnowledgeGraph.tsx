@@ -40,6 +40,22 @@ function circleTexture(img: HTMLImageElement, color: string) {
   return t
 }
 
+// A circular "initials" medallion (same shape as a headshot) for faculty with no photo on
+// file, or as the fallback if a photo fails to load — so no node ever looks broken.
+function initialsTexture(name: string, color: string) {
+  const s = 128, c = document.createElement("canvas")
+  c.width = c.height = s
+  const x = c.getContext("2d")!
+  x.beginPath(); x.arc(s / 2, s / 2, s / 2 - 6, 0, 7); x.closePath(); x.fillStyle = "#1b2336"; x.fill()
+  const parts = (name || "").trim().split(/\s+/)
+  const init = ((parts[0]?.[0] || "") + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase() || "?"
+  x.fillStyle = "#dbe4f5"; x.font = "600 52px Inter, system-ui, sans-serif"
+  x.textAlign = "center"; x.textBaseline = "middle"; x.fillText(init, s / 2, s / 2 + 2)
+  x.lineWidth = 9; x.strokeStyle = color; x.beginPath(); x.arc(s / 2, s / 2, s / 2 - 5, 0, 7); x.stroke()
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace
+  return t
+}
+
 // A camera-facing text label drawn on a canvas. worldH sets its on-screen size
 // (research-area labels pass a bigger worldH so they read larger than the rest).
 function textSprite(text: string, fontPx: number, worldH: number) {
@@ -182,13 +198,19 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
           const mat = new THREE.SpriteMaterial({ color: 0xffffff, depthWrite: false })
           const sprite = new THREE.Sprite(mat); sprite.scale.set(11, 11, 1)
           const im = new Image()
+          im.crossOrigin = "anonymous"
           im.onload = () => { mat.map = circleTexture(im, n.color); mat.needsUpdate = true }
+          im.onerror = () => { mat.map = initialsTexture(n.name, n.color); mat.needsUpdate = true } // broken URL -> medallion
           im.src = n.photo
           g.add(sprite); half = 5.5
         } else if (n.role === "area") {
           g.add(sphereMesh(n.color, 12)); half = 12
         } else if (n.role === "prof") {
-          g.add(sphereMesh(n.color, 4)); half = 4
+          // No photo on file (e.g. a course instructor not in the faculty directory): show
+          // an initials medallion shaped like a headshot, not a bare sphere.
+          const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: initialsTexture(n.name, n.color), depthWrite: false }))
+          sprite.scale.set(11, 11, 1)
+          g.add(sprite); half = 5.5
         } else {
           g.add(sphereMesh(n.color, 2.6)); half = 2.6
         }

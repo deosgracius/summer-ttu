@@ -616,8 +616,15 @@ def knowledge_graph(db):
     dirmap = {}
     for p in db.query(models.Professor).all():
         areas = _areas_for(f"{getattr(p, 'bio', '') or ''} {getattr(p, 'title', '') or ''}")
-        pnodes[p.name] = {"id": "p:" + p.name, "name": p.name,
-                          "photo": getattr(p, "photo_url", "") or "", "areas": areas}
+        office = f"{(getattr(p, 'office_building', '') or '').strip()} {(getattr(p, 'office_number', '') or '').strip()}".strip()
+        pnodes[p.name] = {
+            "id": "p:" + p.name, "name": p.name,
+            "photo": getattr(p, "photo_url", "") or "", "areas": areas,
+            "title": getattr(p, "title", "") or "", "office": office,
+            "email": getattr(p, "email", "") or "",
+            "hours": getattr(p, "office_hours", "") or getattr(p, "schedule", "") or "",
+            "bio": (getattr(p, "bio", "") or "")[:340],
+        }
         dirmap[_graph_key(p.name)] = p.name
     courses, teaches = {}, set()
     for c in db.query(models.CourseSection).all():
@@ -625,18 +632,22 @@ def knowledge_graph(db):
         code = f"{(getattr(c, 'subject', '') or '').strip()} {crs}".strip()
         if not code:
             continue
-        courses.setdefault(code, getattr(c, "title", "") or code)
+        if code not in courses:
+            room = f"{(getattr(c, 'building', '') or '').strip()} {(getattr(c, 'room_number', '') or '').strip()}".strip()
+            courses[code] = {"title": getattr(c, "title", "") or code, "room": room,
+                             "days": getattr(c, "days", "") or "", "times": getattr(c, "times", "") or ""}
         ins = (getattr(c, "instructor", "") or "").strip()
         if not ins:
             continue
         canon = dirmap.get(_graph_key(ins), ins)
         if canon not in pnodes:
-            pnodes[canon] = {"id": "p:" + canon, "name": canon, "photo": "", "areas": []}
+            pnodes[canon] = {"id": "p:" + canon, "name": canon, "photo": "", "areas": [],
+                             "title": "", "office": "", "email": "", "hours": "", "bio": ""}
         teaches.add(("p:" + canon, "c:" + code))
     used = sorted({a for p in pnodes.values() for a in p["areas"]})
     return {
         "profs": sorted(pnodes.values(), key=lambda x: x["name"]),
-        "courses": [{"id": "c:" + code, "code": code, "title": t} for code, t in sorted(courses.items())],
+        "courses": [{"id": "c:" + code, "code": code, **info} for code, info in sorted(courses.items())],
         "areas": [{"id": "a:" + a, "name": a} for a in used],
         "teaches": [{"s": s, "t": t} for s, t in sorted(teaches)],
         "researches": [{"s": p["id"], "t": "a:" + a} for p in pnodes.values() for a in p["areas"]],

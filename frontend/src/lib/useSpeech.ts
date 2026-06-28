@@ -40,6 +40,23 @@ const FILLER = /^(uh+|um+|umm+|hmm+|mhm+|mm+|ah+|oh+|eh+|er+|huh|huhh?|yeah|yep|
 // hook and the chat's wake-word hook (separate instances) share it.
 const YES_RE = /\b(yes|yeah|yep|yup|sure|ok|okay|of course|absolutely|please do|go ahead|do it|brief me|briefing|read them|read it)\b/i
 const NO_RE = /\b(no|nope|nah|not now|no thanks|no thank you|maybe later|later|skip|don'?t)\b/i
+// Warm, varied replies to a bare "Summer" / "Hey Summer" — rotated without repeating, so
+// being called feels spontaneous and direct instead of the same scripted line every time.
+const ACKS = [
+  "Yes? How can I help?",
+  "I'm here — go ahead.",
+  "Sure, what do you need?",
+  "Go ahead, I'm listening.",
+  "Yes? What can I do for you?",
+]
+let lastAck = -1
+function pickAck(): string {
+  let i = Math.floor(Math.random() * ACKS.length)
+  if (i === lastAck && ACKS.length > 1) i = (i + 1) % ACKS.length
+  lastAck = i
+  return ACKS[i]
+}
+
 let PENDING_YESNO: { onYes: () => void; onNo: () => void } | null = null
 export function awaitYesNo(onYes: () => void, onNo: () => void) {
   PENDING_YESNO = { onYes, onNo }
@@ -122,10 +139,11 @@ export function useSpeech() {
   const speakSeq = useRef(0) // bumped to cancel an in-progress streamed reply
   const buffer = useRef("") // accumulates your speech until you pause
   const flushTimer = useRef<number | undefined>(undefined)
-  // Wait this long after you stop talking before replying. Generous on purpose so
-  // Summer lets you FINISH your question (and any "uh…" mid-thought pauses) instead
-  // of cutting in early or asking for clarification before you're done.
-  const SILENCE_MS = 1500
+  // Wait this long after you stop talking before replying — long enough to let you
+  // FINISH your question (and any "uh…" mid-thought pause), short enough that the reply
+  // feels prompt rather than laggy. A bare wake word acknowledges much faster (see
+  // scheduleFlush) so being called feels instant.
+  const SILENCE_MS = 1100
   // Conversation lifecycle: once engaged, Summer listens continuously (no wake word
   // per turn) until an end phrase OR this many ms of silence, then drops back to
   // dormant. Generous so a started conversation isn't cut off while you think — Summer
@@ -434,8 +452,9 @@ export function useSpeech() {
         // "Hey Summer" / "Summer" on its own: ACKNOWLEDGE warmly and professionally so
         // the person knows they were heard, then wait for their actual question.
         if (after.length < 2 || (ENDRE.test(after) && after.split(/\s+/).length <= 4)) {
-          setHeard("How can I help you?")
-          speak("How can I help you?")
+          const a = pickAck()
+          setHeard(a)
+          speak(a)
           resetConvoTimer()
           return
         }
@@ -460,7 +479,11 @@ export function useSpeech() {
     }
     const scheduleFlush = () => {
       if (flushTimer.current) clearTimeout(flushTimer.current)
-      flushTimer.current = window.setTimeout(flush, SILENCE_MS)
+      // Snappy when you only said the wake word ("Summer") so being called feels direct
+      // and immediate; generous for a real question so you can finish it.
+      const buf = buffer.current.trim()
+      const bareWake = !engaged.current && WAKE.test(buf) && buf.replace(WAKE_LEAD, "").trim().length < 2
+      flushTimer.current = window.setTimeout(flush, bareWake ? 650 : SILENCE_MS)
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

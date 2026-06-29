@@ -157,6 +157,23 @@ class UsageLog(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class QueryLog(Base):
+    """Anonymized record of WHICH path answered each question — a deterministic DB lookup,
+    the LLM, or the offline fallback — used only to find questions the LLM handled that a
+    deterministic rule could cover, so the free/instant layer can grow over time. Pure
+    observability: it never affects how an answer is produced. No user id or IP is stored;
+    obvious PII in the question is redacted; old rows are pruned. Disable with
+    QUERY_INSIGHTS=0."""
+    __tablename__ = "query_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    surface = Column(String, nullable=False, default="")      # kiosk | dashboard
+    answered_by = Column(String, nullable=False, default="")  # deterministic | llm | fallback
+    route = Column(String, nullable=False, default="")        # which rule fired, or llm/fallback
+    provider = Column(String, nullable=False, default="")     # LLM provider when answered_by=llm
+    query = Column(String, nullable=False, default="")        # redacted, truncated question text
+    created_at = Column(DateTime, server_default=func.now())
+
+
 class ContentDraft(Base):
     __tablename__ = "content_drafts"
     id = Column(Integer, primary_key=True, index=True)

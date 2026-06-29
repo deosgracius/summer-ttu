@@ -215,6 +215,8 @@ async def run_agent(goal, db, user, provider=None, voice=False):
                 out["person"] = card
             _HISTORY[user.id].append({"role": "user", "content": goal})
             _HISTORY[user.id].append({"role": "assistant", "content": det})
+            from . import insights
+            insights.log(db, "dashboard", "deterministic", goal, route="campus")
             tracing.record("agent", goal, out, 0.0)
             return out
     env_provider = os.getenv("LLM_PROVIDER", "anthropic").lower()
@@ -244,9 +246,13 @@ async def run_agent(goal, db, user, provider=None, voice=False):
             result = await _run_openai(goal, db, user, avail, system, hist, model)
         else:
             result = {"reply": f"Unknown provider '{provider}'. Use 'anthropic' or 'openai'.", "actions": []}
+        from . import insights
+        insights.log(db, "dashboard", "llm", goal, route="llm", provider=provider)
     except Exception:
         # LLM unreachable (e.g. depleted credits) — degrade to a direct campus lookup
         # rather than erroring out on the user.
+        from . import insights
+        insights.log(db, "dashboard", "fallback", goal, route="fallback")
         result = {"reply": _deterministic_fallback(db, goal), "actions": []}
     tracing.record("agent", goal, result, (time.perf_counter() - t0) * 1000)
     _HISTORY[user.id].append({"role": "user", "content": goal})
@@ -342,36 +348,24 @@ async def run_kiosk_traced(goal, db, provider=None, history=None):
     # in the user's language and is still held to the provenance gate. (A bare name or
     # course code stays English, so those keep the free fast path.)
     if not campus_service.looks_non_english(goal):
-        # PREREQUISITES / course-planning are academic-advising decisions, not Summer's
-        # job (and a hallucination risk) — redirect deterministically before anything else.
-        pr = campus_service.prereq_redirect(goal)
-        if pr:
-            return {"reply": pr, "actions": [], "latency_ms": 0.0}
-        quick = campus_service.fast_answer(db, goal)
-        if quick:
-            return {"reply": quick, "actions": [], "latency_ms": 0.0}
-        # SPEECH-ROBUST PEOPLE: resolve a mispronounced/partial name (first OR last)
-        # deterministically — full public detail, or a disambiguation if several match.
-        person = campus_service.person_answer(db, goal)
-        if person:
-            return {"reply": person, "actions": [], "latency_ms": 0.0}
-        # ADVISING / STOCKROOM ROUTING: send students to the right advisor or coordinator
-        # (undergrad CompE/EE, graduate, stockroom) before any generic lookup.
-        referral = campus_service.advising_referral(db, goal)
-        if referral:
-            return {"reply": referral, "actions": [], "latency_ms": 0.0}
-        # PROJECT LABS: resolve a lab referenced by category number (Lab 1-4), full name,
-        # or shorthand ("robo lab", "RF lab", "micro lab") to the canonical lab.
-        lab = campus_service.lab_answer(db, goal)
-        if lab:
-            return {"reply": lab, "actions": [], "latency_ms": 0.0}
-        # CONFIDENT FACTUAL LOOKUP: natural-language questions that clearly resolve to one
-        # campus record (an office, instructor, building/service hours) are answered
-        # straight from the DB — instant and free — instead of paying the LLM. Anything
-        # needing reasoning, topic search, abbreviation expansion, or a refusal falls through.
-        sure = campus_service.confident_lookup(db, goal)
-        if sure:
-            return {"reply": sure, "actions": [], "latency_ms": 0.0}
+        # DETERMINISTIC CHAIN (same order as before): prerequisites/course-planning redirect
+        # (an advising decision, not Summer's job), exact course-code lookup, speech-robust
+        # people, advising/stockroom routing, project labs, then a confident factual lookup —
+        # each answered straight from the DB, instant and free, before paying the LLM.
+        from . import insights
+        chain = (
+            ("prereq", lambda: campus_service.prereq_redirect(goal)),
+            ("fast", lambda: campus_service.fast_answer(db, goal)),
+            ("person", lambda: campus_service.person_answer(db, goal)),
+            ("advising", lambda: campus_service.advising_referral(db, goal)),
+            ("lab", lambda: campus_service.lab_answer(db, goal)),
+            ("confident", lambda: campus_service.confident_lookup(db, goal)),
+        )
+        for route, fn in chain:
+            ans = fn()
+            if ans:
+                insights.log(db, "kiosk", "deterministic", goal, route=route)
+                return {"reply": ans, "actions": [], "latency_ms": 0.0}
     provider = (provider or os.getenv("LLM_PROVIDER", "anthropic")).lower()
     # Kiosk answers are quick lookups — use the FAST model for snappy replies,
     # regardless of the (possibly slower) dashboard model in LLM_MODEL.
@@ -390,6 +384,8 @@ async def run_kiosk_traced(goal, db, provider=None, history=None):
             return {"reply": "The kiosk assistant isn't configured.", "actions": [], "latency_ms": 0.0}
     except Exception:
         # LLM unreachable (e.g. depleted credits) — degrade to a direct DB lookup.
+        from . import insights
+        insights.log(db, "kiosk", "fallback", goal, route="fallback")
         return {"reply": _deterministic_fallback(db, goal), "actions": [],
                 "latency_ms": (time.perf_counter() - t0) * 1000}
     # PROVENANCE GATE: an LLM reply may only state facts it RETRIEVED this turn OR that
@@ -411,6 +407,8 @@ async def run_kiosk_traced(goal, db, provider=None, history=None):
             db.commit()
         except Exception:
             db.rollback()
+    from . import insights
+    insights.log(db, "kiosk", "llm", goal, route="llm", provider=provider)
     tracing.record("kiosk", goal, result, result["latency_ms"])
     return result
 

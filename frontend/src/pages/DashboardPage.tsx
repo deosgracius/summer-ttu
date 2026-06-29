@@ -17,6 +17,7 @@ import VoiceSettingsPanel from "@/components/panels/VoiceSettingsPanel"
 import ConnectionsPanel from "@/components/panels/ConnectionsPanel"
 import QuickLinksPanel from "@/components/panels/QuickLinksPanel"
 import FileImportPanel from "@/components/panels/FileImportPanel"
+import QueryInsightsPanel from "@/components/panels/QueryInsightsPanel"
 import MyAvailabilityPanel from "@/components/panels/MyAvailabilityPanel"
 import WelcomeBriefing from "@/components/WelcomeBriefing"
 import OnboardingModal from "@/components/OnboardingModal"
@@ -148,6 +149,7 @@ export default function DashboardPage() {
               <UserAccessPanel reloadKey={reloadKey} />
               <DelegationPanel />
               <FileImportPanel />
+              <QueryInsightsPanel />
             </>
           )}
 

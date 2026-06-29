@@ -52,6 +52,26 @@ def usage(db: Session = Depends(get_db), user: models.User = Depends(require_rol
     return {"by_provider": out, "total_est_cost": round(total, 4), "calls": len(rows)}
 
 
+@router.get("/query-insights")
+def query_insights(db: Session = Depends(get_db), user: models.User = Depends(require_roles("admin"))):
+    """Deterministic-vs-LLM coverage: how often Summer answers instantly from the database
+    vs. paying the LLM, plus the LLM-answered questions a deterministic rule could cover
+    (the gap candidates). Anonymized — no identity or IP is stored."""
+    from .. import insights
+    return insights.report(db)
+
+
+@router.delete("/query-insights")
+def clear_query_insights(db: Session = Depends(get_db),
+                         actor: models.User = Depends(require_roles("admin"))):
+    """Purge the anonymized question log."""
+    from .. import insights, audit
+    n = insights.clear(db)
+    audit.log(db, actor, "clear_query_insights", f"Cleared {n} query-insight rows", {"count": n})
+    db.commit()
+    return {"cleared": n}
+
+
 @router.get("/observability")
 def observability(user: models.User = Depends(require_roles("admin"))):
     """Aggregate tracing stats — run counts, latency p50/p95, tokens, and which tools

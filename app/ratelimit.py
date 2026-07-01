@@ -17,7 +17,13 @@ def reset():
 
 
 def client_ip(request: Request) -> str:
-    """Best-effort client IP, honoring the proxy's X-Forwarded-For (Fly sets it)."""
+    """Best-effort client IP for the per-IP guard. Prefer Fly-Client-IP: Fly's edge sets
+    (and overwrites) it, so a caller CANNOT spoof it to rotate past the limit. Only fall
+    back to the caller-supplied X-Forwarded-For (then the socket peer) for local/non-Fly
+    runs — otherwise an attacker could rotate XFF to bypass the login/reset limits."""
+    fly = request.headers.get("fly-client-ip")
+    if fly:
+        return fly.strip()
     fwd = request.headers.get("x-forwarded-for")
     if fwd:
         return fwd.split(",")[0].strip()

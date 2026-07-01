@@ -17,6 +17,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Secret-exposure guard (no API key in the client bundle or repo)
+        run: bash scripts/check_secrets.sh
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

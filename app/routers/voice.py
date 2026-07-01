@@ -1,8 +1,9 @@
 import logging
+import os
 from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from .. import models, voice, usage, appsettings, campus_service
+from .. import models, voice, usage, appsettings, campus_service, ratelimit
 from ..database import get_db
 from ..auth import get_current_user, require_roles
 
@@ -10,12 +11,17 @@ router = APIRouter(prefix="/voice", tags=["voice"])
 
 VOICE_KEY = "voice_id"
 MAX_AUDIO = 25 * 1024 * 1024  # 25 MB (Whisper's limit)
+# Per-user cost/abuse guards on the paid speech endpoints (Whisper STT, ElevenLabs TTS).
+# TTS is higher because one spoken answer is synthesized as several sentence chunks.
+STT_MAX = int(os.getenv("VOICE_STT_PER_MIN", "40"))
+TTS_MAX = int(os.getenv("VOICE_TTS_PER_MIN", "120"))
 
 
 @router.post("/stt")
 def stt(file: UploadFile = File(...), db: Session = Depends(get_db),
         user: models.User = Depends(get_current_user)):
     """Transcribe recorded mic audio (Whisper). Sync so it runs in a threadpool."""
+    ratelimit.check(f"voice-stt:{user.id}", STT_MAX)
     if not voice.stt_enabled():
         raise HTTPException(400, "Transcription not configured")
     data = file.file.read()
@@ -79,6 +85,7 @@ class TTSReq(BaseModel):
 
 @router.post("/tts")
 async def tts(data: TTSReq, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    ratelimit.check(f"voice-tts:{user.id}", TTS_MAX)
     if not voice.enabled():
         raise HTTPException(400, "ElevenLabs not configured")
     if not (data.text or "").strip():

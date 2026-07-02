@@ -153,9 +153,27 @@ WEB_DIST = os.getenv("WEB_DIST", "")
 _HAS_WEB = bool(WEB_DIST) and os.path.isdir(WEB_DIST)
 
 
+# Baseline security headers on every response — cheap defense-in-depth.
+#  - nosniff: browsers must not MIME-sniff a response into an executable type.
+#  - X-Frame-Options DENY: the app can't be framed → clickjacking-proof (it's never embedded).
+#  - Referrer-Policy: don't leak full URLs to third parties.
+#  - Permissions-Policy: hard-disable geolocation/camera/payment/usb at the browser level,
+#    enforcing the project's no-surveillance / no-location rule even against future code;
+#    microphone stays same-origin only, for the voice assistant.
+#  - HSTS: pin HTTPS (Fly terminates TLS and force_https is on).
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "geolocation=(), camera=(), payment=(), usb=(), microphone=(self)",
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+}
+
+
 @app.middleware("http")
-async def _no_cache_ui(request, call_next):
-    """Serve the app's HTML shell uncached so every deploy reaches the browser.
+async def _security_and_cache_headers(request, call_next):
+    """Add baseline security headers to every response, and serve the HTML shell uncached
+    so every deploy reaches the browser.
 
     The React index.html is served from "/" and the SPA fallback (/kiosk, /login, …),
     NOT just /ui — and without this it went out with no Cache-Control, so browsers
@@ -163,6 +181,8 @@ async def _no_cache_ui(request, call_next):
     We no-cache any text/html response; the hashed /assets (JS/CSS) stay immutable and
     cacheable because their filename changes every build."""
     resp = await call_next(request)
+    for _k, _v in _SECURITY_HEADERS.items():
+        resp.headers.setdefault(_k, _v)
     ctype = resp.headers.get("content-type", "")
     if request.url.path.startswith("/ui") or ctype.startswith("text/html"):
         resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"

@@ -4,6 +4,11 @@
 app = "summer-ttu"
 primary_region = "iad"  # Ashburn, VA — closest to Neon us-east-1
 
+[env]
+  # No public Swagger UI / OpenAPI schema on the production API (endpoint + schema
+  # disclosure). Docs stay available in local dev, where this isn't set.
+  DISABLE_DOCS = "1"
+
 [build]
   dockerfile = "Dockerfile"
 

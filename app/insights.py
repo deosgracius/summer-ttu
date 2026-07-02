@@ -15,15 +15,25 @@ exactly as accurate as before. Privacy, per the project's hard rules:
 import os
 import re
 import random
+import queue
+import threading
 from collections import Counter
 
 from . import models
+from .database import SessionLocal
 
 ENABLED = os.getenv("QUERY_INSIGHTS", "1") != "0"
 KEEP_ROWS = int(os.getenv("QUERY_INSIGHTS_KEEP", "5000") or "5000")
 
 _EMAIL = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
 _LONGNUM = re.compile(r"\b\d[\d\s().+-]{6,}\d\b")  # phone / id-like sequences
+
+# Fire-and-forget write path: log() enqueues and returns instantly; one daemon thread
+# drains the queue using its OWN short-lived session — so recording a turn adds ZERO DB
+# latency to the request path (the instant deterministic kiosk answers stay instant).
+_Q: "queue.Queue[dict]" = queue.Queue(maxsize=2000)
+_worker_started = False
+_worker_lock = threading.Lock()
 
 
 def _redact(text: str) -> str:
@@ -32,24 +42,50 @@ def _redact(text: str) -> str:
     return re.sub(r"\s+", " ", t).strip()[:300]
 
 
+def _worker() -> None:
+    while True:
+        row = _Q.get()
+        try:
+            db = SessionLocal()
+            try:
+                db.add(models.QueryLog(**row))
+                db.commit()
+                _maybe_prune(db)
+            finally:
+                db.close()
+        except Exception:
+            pass
+        finally:
+            _Q.task_done()
+
+
+def _ensure_worker() -> None:
+    global _worker_started
+    if _worker_started:
+        return
+    with _worker_lock:
+        if not _worker_started:
+            threading.Thread(target=_worker, name="insights-writer", daemon=True).start()
+            _worker_started = True
+
+
 def log(db, surface: str, answered_by: str, query: str, route: str = "", provider: str = "") -> None:
-    """Best-effort: record one anonymized turn. Wrapped so it can never raise into — or
-    otherwise disturb — the answer path."""
+    """Record one anonymized turn — FIRE-AND-FORGET. Enqueues and returns immediately; a
+    background thread performs the DB write with its own session, so the answer path (and
+    the instant deterministic kiosk lookups especially) pays no DB latency. The `db` arg is
+    unused now, kept for call-site compatibility. Best-effort: it drops the row rather than
+    ever blocking or raising into the request."""
     if not ENABLED:
         return
     q = _redact(query)
     if not q:
         return
+    _ensure_worker()
     try:
-        db.add(models.QueryLog(surface=surface[:16], answered_by=answered_by[:16],
-                               route=(route or "")[:32], provider=(provider or "")[:16], query=q))
-        db.commit()
-        _maybe_prune(db)
-    except Exception:
-        try:
-            db.rollback()
-        except Exception:
-            pass
+        _Q.put_nowait({"surface": surface[:16], "answered_by": answered_by[:16],
+                       "route": (route or "")[:32], "provider": (provider or "")[:16], "query": q})
+    except queue.Full:
+        pass  # under extreme load, drop the analytics row rather than slow the request
 
 
 def _maybe_prune(db) -> None:

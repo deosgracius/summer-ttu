@@ -339,6 +339,13 @@ async def run_kiosk_traced(goal, db, provider=None, history=None):
     if not goal:
         return {"reply": "Ask me about a class, professor, office hours, a room, or the stockroom!",
                 "actions": [], "latency_ms": 0.0}
+    # SAFETY GUARD: a prompt-injection / jailbreak / prompt-leak attempt is refused
+    # deterministically — before the LLM, so nothing leaks and no tokens are spent. Defense
+    # in depth on top of the kiosk tool allow-list and the grounding gate.
+    from . import safety, insights
+    if safety.is_injection(goal):
+        insights.log(db, "kiosk", "deterministic", goal, route="blocked")
+        return {"reply": safety.REFUSAL, "actions": [], "latency_ms": 0.0}
     # HYBRID FAST PATH: an exact course-code lookup is answered straight from the
     # database — no LLM call, instant, and free. Anything fuzzier falls through to
     # the model below.

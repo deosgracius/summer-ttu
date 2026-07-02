@@ -30,6 +30,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Python dependency audit (pip-audit, advisory)
+        # Surfaces known CVEs in the installed backend deps. Non-blocking so a deploy is
+        # never held hostage to an unfixable transitive advisory; a red step = review it.
+        continue-on-error: true
+        run: |
+          pip install pip-audit
+          pip-audit --desc
+
       - name: Structural eval gate (no API key needed)
         run: python -m app.eval_harness
 
@@ -39,7 +47,7 @@ jobs:
         # multi-agent orchestrator, the eval + red-team scorers, and the LLM-vs-
         # search-box benchmark's deterministic checks (routing, baseline accuracy,
         # scorer, aggregation) — all no-key. The live benchmark stays opt-in.
-        run: python -m pytest tests/test_graph.py tests/test_vector.py tests/test_evals.py tests/test_docs_rag.py tests/test_orchestrator.py tests/test_benchmark.py -q
+        run: python -m pytest tests/test_graph.py tests/test_vector.py tests/test_evals.py tests/test_docs_rag.py tests/test_orchestrator.py tests/test_benchmark.py tests/test_safety.py -q
 
       - name: Upload eval report
         if: always()

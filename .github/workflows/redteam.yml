@@ -1,0 +1,42 @@
+name: redteam
+
+# Opt-in, LLM-driven red team of the kiosk (promptfoo). NOT part of the per-commit gate —
+# it needs an API key (attack generation + grading) and sends real requests to the kiosk,
+# so it's manual: run it from the Actions tab (Run workflow) whenever you want a deeper
+# adversarial sweep. Set the OPENAI_API_KEY (or ANTHROPIC_API_KEY) repo secret first; the
+# free deterministic guard (tests/test_safety.py) already runs on every commit.
+
+on:
+  workflow_dispatch:
+    inputs:
+      kiosk_url:
+        description: "Kiosk endpoint to attack"
+        required: false
+        default: "https://summer-ttu.fly.dev/kiosk/ask"
+
+jobs:
+  redteam:
+    runs-on: ubuntu-latest
+    env:
+      KIOSK_URL: ${{ github.event.inputs.kiosk_url }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      PROMPTFOO_DISABLE_TELEMETRY: "1"
+      PROMPTFOO_DISABLE_UPDATE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Run promptfoo red team
+        run: npx --yes promptfoo@latest redteam run -c redteam/promptfooconfig.yaml --no-progress-bar
+      - name: Export report
+        if: always()
+        run: npx --yes promptfoo@latest redteam report -o redteam-report.json || true
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: redteam-report
+          path: redteam-report.json
+          if-no-files-found: ignore

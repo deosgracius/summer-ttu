@@ -7,16 +7,26 @@ import os
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test_summer.db")
 from fastapi.testclient import TestClient  # noqa: E402
 from app.main import app  # noqa: E402
-from app import auth, ratelimit  # noqa: E402
+from app import auth, ratelimit, models  # noqa: E402
+from app.database import SessionLocal  # noqa: E402
 
 EMAIL = "cookieuser@example.com"
 PW = "pw123456"
 
 
 def _register():
+    """Register the test user and make sure it's approved, so login isn't gated on the
+    approval flow — this test is about the cookie behavior, not sign-up approval."""
     ratelimit.reset()
-    app_client = TestClient(app)
-    app_client.post("/auth/register", json={"email": EMAIL, "password": PW})  # ok if exists
+    TestClient(app).post("/auth/register", json={"email": EMAIL, "password": PW})  # ok if exists
+    db = SessionLocal()
+    try:
+        u = db.query(models.User).filter(models.User.email == EMAIL).first()
+        if u and not getattr(u, "approved", True):
+            u.approved = True
+            db.commit()
+    finally:
+        db.close()
 
 
 def test_login_sets_httponly_session_cookie():

@@ -2,18 +2,27 @@
 // In dev, Vite proxies these paths to http://localhost:8000 (see vite.config.ts).
 
 const TOKEN_KEY = "summer_token"
+// The real JWT now lives ONLY in an httpOnly cookie (set by the login endpoints, sent
+// automatically on same-origin requests) — JavaScript can't read it, so an XSS can't steal
+// the session. We keep just this non-sensitive "logged-in" marker in localStorage so the
+// app's presence checks and endpoint routing (kiosk vs. authed) keep working unchanged.
+const AUTHED_MARKER = "1"
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
 }
 export function setToken(token: string | null) {
-  if (token) localStorage.setItem(TOKEN_KEY, token)
+  // Never persist the real JWT in JS-readable storage — store only the marker.
+  if (token) localStorage.setItem(TOKEN_KEY, AUTHED_MARKER)
   else localStorage.removeItem(TOKEN_KEY)
 }
 
 function authHeaders(): Record<string, string> {
   const t = getToken()
-  return t ? { Authorization: `Bearer ${t}` } : {}
+  // Sessions created BEFORE the cookie change still hold a real JWT (has dots) here — keep
+  // sending it as a bearer for backward compat until they re-login. The new marker is not a
+  // token, so it's never sent; those requests authenticate via the httpOnly cookie.
+  return t && t.includes(".") ? { Authorization: `Bearer ${t}` } : {}
 }
 
 export class ApiError extends Error {

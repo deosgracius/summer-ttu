@@ -1,7 +1,7 @@
 import os
 import hmac
 from pydantic import BaseModel
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 import json
@@ -80,7 +80,7 @@ PENDING_MSG = "Your account is awaiting administrator approval. You'll be able t
 
 
 @router.post("/login")
-def login(request: Request, form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login(request: Request, response: Response, form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     ratelimit.check(f"login:{ratelimit.client_ip(request)}", LOGIN_MAX)
     user = db.query(models.User).filter(models.User.email == form.username).first()
     if not user or not auth.verify_password(form.password, user.password_hash):
@@ -95,7 +95,9 @@ def login(request: Request, form: OAuth2PasswordRequestForm = Depends(), db: Ses
     if security.mfa_enabled(db, user):
         return {"mfa_required": True, "email": user.email}  # not a completed login yet
     _log_login(db, request, True, user=user)
-    return {"access_token": auth.create_token(user.id), "token_type": "bearer"}
+    tok = auth.create_token(user.id)
+    auth.set_session_cookie(response, tok)
+    return {"access_token": tok, "token_type": "bearer"}
 
 
 class MfaLogin(BaseModel):
@@ -105,7 +107,7 @@ class MfaLogin(BaseModel):
 
 
 @router.post("/login/mfa")
-def login_mfa(data: MfaLogin, request: Request, db: Session = Depends(get_db)):
+def login_mfa(data: MfaLogin, request: Request, response: Response, db: Session = Depends(get_db)):
     ratelimit.check(f"login:{ratelimit.client_ip(request)}", LOGIN_MAX)
     """Second login step: password + authenticator/recovery code. If the user
     also has a passkey, returns a passkey challenge (the 3rd factor) instead of a
@@ -127,7 +129,9 @@ def login_mfa(data: MfaLogin, request: Request, db: Session = Depends(get_db)):
                 "options": webauthn_svc.auth_begin(db, user)}  # not completed yet
     security.mark_stepup(db, user)  # a fresh login is also a fresh step-up
     _log_login(db, request, True, user=user)
-    return {"access_token": auth.create_token(user.id), "token_type": "bearer"}
+    tok = auth.create_token(user.id)
+    auth.set_session_cookie(response, tok)
+    return {"access_token": tok, "token_type": "bearer"}
 
 
 class PasskeyLogin(BaseModel):
@@ -137,7 +141,7 @@ class PasskeyLogin(BaseModel):
 
 
 @router.post("/login/passkey", response_model=schemas.Token)
-def login_passkey(data: PasskeyLogin, request: Request, db: Session = Depends(get_db)):
+def login_passkey(data: PasskeyLogin, request: Request, response: Response, db: Session = Depends(get_db)):
     """Final login step: verify the passkey assertion, then issue the token."""
     ratelimit.check(f"login:{ratelimit.client_ip(request)}", LOGIN_MAX)
     from .. import security, webauthn_svc
@@ -150,7 +154,17 @@ def login_passkey(data: PasskeyLogin, request: Request, db: Session = Depends(ge
         raise HTTPException(403, PENDING_MSG)
     webauthn_svc.auth_verify(db, user, data.credential)  # raises on failure; marks step-up
     _log_login(db, request, True, user=user)
-    return schemas.Token(access_token=auth.create_token(user.id))
+    tok = auth.create_token(user.id)
+    auth.set_session_cookie(response, tok)
+    return schemas.Token(access_token=tok)
+
+
+@router.post("/logout")
+def logout(response: Response):
+    """Clear the httpOnly session cookie. (The client also drops its local 'logged-in'
+    marker.) Safe to call unauthenticated — it just deletes the cookie."""
+    auth.clear_session_cookie(response)
+    return {"ok": True}
 
 
 @router.get("/me", response_model=schemas.UserOut)
@@ -248,7 +262,7 @@ class CentralRegister(BaseModel):
 
 
 @router.post("/central/register")
-def central_register(data: CentralRegister, request: Request, db: Session = Depends(get_db)):
+def central_register(data: CentralRegister, request: Request, response: Response, db: Session = Depends(get_db)):
     """First-time central-admin registration, gated by the passcode. Creates the
     central_admin (or upgrades an existing account of that email), auto-approved, and
     logs them in. Refuses to create a SECOND central admin under a different email — the
@@ -279,7 +293,9 @@ def central_register(data: CentralRegister, request: Request, db: Session = Depe
                            timezone=data.timezone or "UTC", location=data.location or "")
         db.add(user)
     db.commit(); db.refresh(user)
-    return {"ok": True, "access_token": auth.create_token(user.id), "token_type": "bearer"}
+    tok = auth.create_token(user.id)
+    auth.set_session_cookie(response, tok)
+    return {"ok": True, "access_token": tok, "token_type": "bearer"}
 
 
 class CentralResetLink(BaseModel):

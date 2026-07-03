@@ -3,7 +3,7 @@ import hashlib
 import datetime
 import jwt
 import bcrypt
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request, Response
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from .database import get_db
@@ -20,7 +20,29 @@ if SECRET_KEY == _DEV_SECRET and (os.getenv("FLY_APP_NAME") or os.getenv("WEB_DI
         "strong secret, e.g. `fly secrets set SECRET_KEY=$(openssl rand -hex 32)`.")
 ALGORITHM = "HS256"
 EXPIRE_MIN = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+# auto_error=False: a request may authenticate by the httpOnly cookie instead of the
+# Authorization header, so a missing header must NOT auto-401 before we check the cookie.
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
+
+# The login JWT now lives in an httpOnly cookie so JavaScript can't read it (an XSS can't
+# exfiltrate the session). Sent automatically on same-origin requests; SameSite=Lax keeps
+# OAuth redirect flows working while still blocking cross-site request forgery.
+SESSION_COOKIE = "summer_session"
+
+
+def _cookie_secure() -> bool:
+    # Secure (HTTPS-only) in production; Fly sets FLY_APP_NAME, WEB_DIST marks the prod build.
+    return bool(os.getenv("FLY_APP_NAME") or os.getenv("WEB_DIST"))
+
+
+def set_session_cookie(response: Response, token: str) -> None:
+    """Store the login JWT in an httpOnly, SameSite=Lax cookie (see note above)."""
+    response.set_cookie(SESSION_COOKIE, token, max_age=EXPIRE_MIN * 60, httponly=True,
+                        samesite="lax", secure=_cookie_secure(), path="/")
+
+
+def clear_session_cookie(response: Response) -> None:
+    response.delete_cookie(SESSION_COOKIE, path="/")
 
 
 def hash_password(p: str) -> str:
@@ -36,11 +58,17 @@ def create_token(sub: int) -> str:
     return jwt.encode({"sub": str(sub), "exp": exp}, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> models.User:
+def get_current_user(request: Request, token: str | None = Depends(oauth2_scheme),
+                     db: Session = Depends(get_db)) -> models.User:
     cred_exc = HTTPException(status_code=401, detail="Invalid credentials",
                             headers={"WWW-Authenticate": "Bearer"})
+    # Cookie first (the new httpOnly session), then the Authorization header — so sessions
+    # created before this change (token still in localStorage → Bearer header) keep working.
+    raw = request.cookies.get(SESSION_COOKIE) or token
+    if not raw:
+        raise cred_exc
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(raw, SECRET_KEY, algorithms=[ALGORITHM])
         # A scoped token (e.g. purpose="reset") is not a login token — reject it so a
         # password-reset link can't be replayed as a bearer credential.
         if payload.get("purpose"):

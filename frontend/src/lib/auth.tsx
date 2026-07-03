@@ -61,6 +61,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await loadMe()
     },
     logout() {
+      // Clear the httpOnly session cookie server-side, then drop the local marker + profile.
+      api.post("/auth/logout").catch(() => {})
       setToken(null)
       setMe(null)
     },

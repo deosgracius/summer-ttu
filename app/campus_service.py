@@ -520,6 +520,9 @@ _ADVISING = [
     ("grad", "jenny.erdmann@ttu.edu", "graduate (MS/PhD) advising"),
 ]
 _STOCKROOM_CONTACT = "richard.woodcock@ttu.edu"
+# The ECE Stockroom management system — browse/check-out/rent/return equipment online.
+# Login-gated (student sign-in), so Summer POINTS students to it rather than reading it.
+_STOCKROOM_URL = "https://stockroom.ece.ttu.edu"
 
 
 def _referral_line(db, email: str, need: str) -> str:
@@ -540,13 +543,20 @@ def advising_referral(db, query: str):
     the question isn't a routing/referral question."""
     q = (query or "").lower()
     stock = "stockroom" in q or "stock room" in q
-    # Route who/where/hours/open questions about the stockroom to Richard Woodcock, who
-    # runs it (ECE 224). Leave policy/checkout/how questions to the docs (search_documents).
+    # Stockroom questions — checking out / renting / browsing / returning equipment, or
+    # who runs it / hours / where — point to the ECE Stockroom system (where students
+    # actually do it) plus Richard Woodcock, who runs it (ECE 224). Pure policy/rules
+    # questions with none of these intents fall through to the docs (search_documents).
     if stock and re.search(
             r"\b(who|whom|contact|talk|speak|help|person|charge|reach|email|ask|where|"
-            r"hours?|open|close[ds]?|located|location|when|find|run[s]?|in\s+charge)\b", q):
-        line = _referral_line(db, _STOCKROOM_CONTACT, "the stockroom and lab support")
-        return (line + " " + WALK_IN) if line else None
+            r"hours?|open|close[ds]?|located|location|when|find|run[s]?|in\s+charge|rent|"
+            r"rental|renting|reserve|reservation|borrow|browse|check\s?out|checkout|return|"
+            r"pick\s?up|equipment|inventory|available|part|parts|component|tool|tools|kit|"
+            r"order|request|get\b)\b", q):
+        line = (f"For the ECE stockroom, you can browse, check out, rent, and return "
+                f"equipment online at {_STOCKROOM_URL}.")
+        contact = _referral_line(db, _STOCKROOM_CONTACT, "hours, access, or help")
+        return " ".join(x for x in [line, contact, WALK_IN] if x)
 
     advising = bool(re.search(
         r"\b(advisor|advising|advise|adviser|degree plan|register|registration|enroll|"
@@ -877,8 +887,8 @@ _LAB_TIERS = {
 _LAB_TIERS["3"] = _LAB_TIERS["2"]
 _LAB_NUM_WORDS = {"one": "1", "two": "2", "three": "3", "four": "4"}
 _LAB_SOURCE = (f"For its room, section, and times, check the course schedule or the "
-               f"project-lab structure page ({_LAB_INFO_URL}); for equipment and lab "
-               f"support, contact the ECE stockroom.")
+               f"project-lab structure page ({_LAB_INFO_URL}); for equipment, use the ECE "
+               f"stockroom at {_STOCKROOM_URL}.")
 
 
 def _lab_tier_of(name: str):

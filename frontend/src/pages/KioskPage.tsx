@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Mic, Radio, Volume2, VolumeX } from "lucide-react"
 import { api } from "@/lib/api"
+import { linkify } from "@/lib/linkify"
 import { useSpeech } from "@/lib/useSpeech"
 import SummerOrb from "@/components/SummerOrb"
 import SplineRobot from "@/components/SplineRobot"
@@ -170,7 +171,7 @@ export default function KioskPage() {
                     </div>
                   </div>
                 )}
-                <div className="whitespace-pre-wrap">{t.a}</div>
+                <div className="whitespace-pre-wrap">{linkify(t.a)}</div>
               </div>
             </div>
           ))}

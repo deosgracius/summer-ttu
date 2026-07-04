@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react"
 import { Mic, Radio, Volume2, VolumeX, ExternalLink } from "lucide-react"
 import { api, type AgentReply, type PersonCard } from "@/lib/api"
+import { linkify } from "@/lib/linkify"
 import { useSpeech } from "@/lib/useSpeech"
 import SummerOrb from "@/components/SummerOrb"
 import { Button } from "@/components/ui/button"
@@ -160,7 +161,7 @@ export default function AgentChat({ onChanged, pendingAsk, onAsked }: Props) {
                 </div>
               </div>
             )}
-            {reply}
+            {linkify(reply)}
             {links.length > 0 && (
               <div className="mt-3 flex flex-col gap-1">
                 {links.map((l, i) => (

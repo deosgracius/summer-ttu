@@ -59,6 +59,11 @@ function pickAck(): string {
   lastAck = i
   return ACKS[i]
 }
+// Pre-synthesized acknowledgment audio (populated by prewarmAcks) so a wake-word reply
+// plays INSTANTLY instead of waiting on a TTS round-trip. Module-level so it's shared and
+// survives re-renders; bounded to the few short ack phrases.
+const _ACK_TEXTS = new Set(ACKS)
+const _ACK_CACHE = new Map<string, Blob>()
 
 let PENDING_YESNO: { onYes: () => void; onNo: () => void } | null = null
 export function awaitYesNo(onYes: () => void, onNo: () => void) {
@@ -172,6 +177,8 @@ export function useSpeech() {
   }
 
   async function synthChunk(text: string): Promise<string> {
+    const cached = _ACK_CACHE.get(text)
+    if (cached) return URL.createObjectURL(cached) // instant — no round-trip
     const token = getToken()
     const url = token ? "/voice/tts" : "/kiosk/tts"
     const r = await fetch(url, {
@@ -182,7 +189,17 @@ export function useSpeech() {
     if (!r.ok) throw new Error("tts " + r.status)
     const blob = await r.blob()
     if (!blob.size) throw new Error("empty audio")
+    if (_ACK_TEXTS.has(text)) _ACK_CACHE.set(text, blob) // cache the short acks for instant replay
     return URL.createObjectURL(blob)
+  }
+
+  // Synthesize the acknowledgment phrases once and cache the audio, so being called back
+  // ("Yes?") is instant. Idempotent + best-effort (falls back to a live synth if it fails).
+  function prewarmAcks() {
+    for (const a of ACKS) {
+      if (_ACK_CACHE.has(a)) continue
+      synthChunk(a).then((u) => URL.revokeObjectURL(u)).catch(() => {})
+    }
   }
 
   // One reused audio element. Created lazily; unlocked by primeAudio() inside a
@@ -347,6 +364,7 @@ export function useSpeech() {
     } catch {
       /* ignore */
     }
+    prewarmAcks() // warm the ack audio on the first gesture, so being called back is instant
   }
 
   function stopSpeaking() {

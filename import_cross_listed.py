@@ -35,6 +35,17 @@ from import_ttu_ece import UA, BASE, _all_bios, _cache_photo
 CS_FACULTY_URL = "https://www.depts.ttu.edu/cs/faculty/"
 MATH_FACULTY_URL = "https://www.depts.ttu.edu/math/facultystaff/"
 
+# Instructors of record who teach ECE sections but aren't in ANY department faculty
+# directory (student / lab / project instructors, developers). Curated by hand from public
+# TTU ECE sources, kept here so a rebuild restores them. photo="" => no headshot (the graph
+# shows a clean initials medallion). Upserted by (surname, first-initial), same as the rest.
+EXTRA = [
+    # Built and maintains the ECE Stockroom system (stockroom.ece.ttu.edu); email + name
+    # from that site's public footer.
+    {"name": "Dylan Tarter", "title": "Instructor", "email": "dylan.tarter@ttu.edu",
+     "department": "Electrical & Computer Engineering", "photo": ""},
+]
+
 
 def _bio_name(b):
     return " ".join(x for x in [b.get("firstname"), b.get("middlename"), b.get("lastname")]
@@ -145,6 +156,14 @@ def main(dry=False):
         created += action in ("created", "would-create")
         updated += action == "updated"
         time.sleep(0 if dry else 1.0)
+    # Hand-curated instructors that no department directory lists.
+    for info in EXTRA:
+        action, name = upsert(db, client, info, dry)
+        if not dry:
+            db.commit()
+        print("%-12s %-24s -> %-22s (%s)" % (action, "[curated]", name, info["department"]))
+        created += action in ("created", "would-create")
+        updated += action == "updated"
     print("\n%s: created=%d updated=%d unresolved=%d"
           % ("DRY" if dry else "DONE", created, updated, len(unresolved)))
     if unresolved:

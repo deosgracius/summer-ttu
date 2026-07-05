@@ -218,6 +218,9 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
         const text = (n.role === "course" ? n.code : n.name) || ""
         const label = textSprite(text, big ? 34 : 22, big ? 9 : 4.6)
         label.position.set(0, -(half + (big ? 6 : 3)), 0)
+        // Declutter: course labels are hidden until the course (or its instructor) is
+        // focused; faculty and research-area labels stay on.
+        if (n.role === "course") { label.visible = false; label.userData.courseLabel = true }
         g.add(label)
         return g
       })
@@ -252,7 +255,11 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
         if (!obj) return
         const op = !bright || bright.has(n.id) ? 1 : 0.12
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        obj.traverse((o: any) => { if (o.material) { o.material.transparent = true; o.material.opacity = op } })
+        obj.traverse((o: any) => {
+          if (o.material) { o.material.transparent = true; o.material.opacity = op }
+          // Reveal a course's label only while it (or its instructor) is focused.
+          if (o.userData && o.userData.courseLabel) o.visible = !!bright && bright.has(n.id)
+        })
       })
     }
     function updateHighlight() {
@@ -362,7 +369,7 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
             <span className="font-medium text-foreground/70">Areas</span>
-            {Object.entries(AREA_COLORS).map(([k, v]) => <span key={k} className="inline-flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full" style={{ background: v }} /> {k}</span>)}
+            {Object.entries(AREA_COLORS).map(([k, v]) => <button key={k} onClick={() => go("a:" + k)} title={`Focus ${k} faculty`} className="inline-flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-muted/60"><span className="inline-block size-2.5 rounded-full" style={{ background: v }} /> {k}</button>)}
           </div>
           <div className="pt-0.5 text-[10px] opacity-80">Teaching links are exact; research areas are derived from each professor's bio.</div>
         </div>

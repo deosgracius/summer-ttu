@@ -811,6 +811,64 @@ def fast_answer(db, question: str):
     return None
 
 
+# "Which university are you", "are you local", "who are you" — a fixed identity/scope fact,
+# not something to pay the LLM for. Tight patterns so it never captures a real campus
+# question ("what are you doing", "which building is ECE in").
+_IDENTITY_RE = re.compile(
+    r"\bwhich (school|university|univ|college|campus|institution)\b"
+    r"|\b(school|university|univ|college|campus|institution)\b[^?]{0,40}\b(are you|you (are|serve|work|belong|represent)|linked|affiliat|refer(?:r|ring)?|connect|part of)\b"
+    r"|\bare you (from|part of|affiliated|linked|based)\b"
+    r"|\bare you local\b"
+    r"|\bwho (are|r) (you|u)\b"
+    r"|\bwhat (are|r) (you|u)\b(?!\s+(doing|up|working|talking|saying))",
+    re.I)
+_IDENTITY_ANSWER = (
+    "I'm Summer, the campus assistant for the Texas Tech University Electrical and Computer "
+    "Engineering (ECE) department. I can help with ECE classes, professors, offices, office "
+    "hours, labs, and the stockroom.")
+
+
+def identity_answer(query):
+    """Fixed answer for 'which school/university are you', 'are you local', 'who are you' —
+    deterministic, free, and always correct. None for anything else."""
+    q = (query or "").strip()
+    return _IDENTITY_ANSWER if q and _IDENTITY_RE.search(q) else None
+
+
+# Role lookups — "who is the (department/associate) chair", "undergraduate coordinator",
+# etc. — resolve to the professor whose directory TITLE holds that role. Deterministic and
+# grounded in the imported data instead of the LLM.
+_TITLE_ROLES = [
+    (re.compile(r"\bassociate chair\b|\bassoc\.? chair\b|\bvice chair\b", re.I),
+     lambda t: "associate chair" in t or "vice chair" in t),
+    (re.compile(r"\b(department|dept\.?) chair\b|\bchairman\b|\bchairperson\b|\bhead of (the )?department\b|\bthe chair\b|\bchair of\b|\bdepartment head\b", re.I),
+     lambda t: "chair" in t and "associate" not in t and "vice" not in t),
+    (re.compile(r"\b(undergrad\w*|\bug\b) .{0,14}coordinator\b|\bcoordinator .{0,14}undergrad", re.I),
+     lambda t: "coordinator" in t and "undergrad" in t),
+    (re.compile(r"\b(grad\w*|master'?s|phd) .{0,14}coordinator\b|\bcoordinator .{0,14}grad", re.I),
+     lambda t: "coordinator" in t and "grad" in t and "undergrad" not in t),
+    (re.compile(r"\babet\b", re.I),
+     lambda t: "abet" in t),
+]
+
+
+def title_answer(db, query):
+    """If the question asks who holds a department role (chair, associate chair, a program
+    coordinator, ABET coordinator), return that professor's card from the directory titles.
+    None when it isn't a role question or nobody in the data holds the role."""
+    q = (query or "")
+    ql = q.lower()
+    if not any(k in ql for k in ("chair", "coordinator", "abet", "department head")):
+        return None
+    for rx, test in _TITLE_ROLES:
+        if rx.search(q):
+            for p in db.query(models.Professor).all():
+                if test((getattr(p, "title", "") or "").lower()):
+                    return person_answer(db, p.name) or f"{p.name}, {p.title}."
+            return None  # role asked, but no one in the data holds it → let the model try
+    return None
+
+
 # ---- Speech-recognition vocabulary hint -------------------------------------
 # A short phrase fed to Whisper as a transcription bias so campus-specific names
 # (e.g. "Changzhi", "Erdmann") and course codes are heard correctly instead of being

@@ -207,8 +207,10 @@ async def run_agent(goal, db, user, provider=None, voice=False):
     # data has them. Skip when the user wants an ACTION (email/call/remind) or writes in
     # another language; the LLM and its tools handle those.
     if not _PERSON_ACTION.search(goal or "") and not campus_service.looks_non_english(goal):
-        det = (campus_service.prereq_redirect(goal)
+        det = (campus_service.identity_answer(goal)
+               or campus_service.prereq_redirect(goal)
                or campus_service.fast_answer(db, goal)
+               or campus_service.title_answer(db, goal)
                or campus_service.person_answer(db, goal)
                or campus_service.advising_referral(db, goal)
                or campus_service.lab_answer(db, goal))
@@ -368,8 +370,10 @@ async def run_kiosk_traced(goal, db, provider=None, history=None):
         # each answered straight from the DB, instant and free, before paying the LLM.
         from . import insights
         chain = (
+            ("identity", lambda: campus_service.identity_answer(goal)),
             ("prereq", lambda: campus_service.prereq_redirect(goal)),
             ("fast", lambda: campus_service.fast_answer(db, goal)),
+            ("title", lambda: campus_service.title_answer(db, goal)),
             ("person", lambda: campus_service.person_answer(db, goal)),
             ("advising", lambda: campus_service.advising_referral(db, goal)),
             ("lab", lambda: campus_service.lab_answer(db, goal)),

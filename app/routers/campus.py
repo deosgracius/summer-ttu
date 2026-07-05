@@ -21,12 +21,19 @@ router = APIRouter(prefix="/campus", tags=["campus"])
 @router.get("/photo/{photo_id}", include_in_schema=False)
 def campus_photo(photo_id: int, db: Session = Depends(get_db)):
     """Serve a locally-cached headshot (public — the anonymous kiosk loads these via
-    <img>, so no auth). Cached hard since the bytes are immutable per id."""
+    <img>, so no auth). Cached hard since the bytes are immutable per id. Sends CORS +
+    CORP headers so the 3D knowledge graph — which loads the image with crossOrigin so it
+    can draw it into a WebGL texture — always succeeds, even from the browser's cache
+    (otherwise a cache entry from a non-CORS <img> load makes the crossOrigin request fail
+    and the node falls back to an initials medallion)."""
     p = db.get(models.CampusPhoto, photo_id)
     if not p or not p.data:
         raise HTTPException(404, "Photo not found.")
     return Response(content=p.data, media_type=p.content_type or "image/jpeg",
-                    headers={"Cache-Control": "public, max-age=604800"})
+                    headers={"Cache-Control": "public, max-age=604800",
+                             "Access-Control-Allow-Origin": "*",
+                             "Cross-Origin-Resource-Policy": "cross-origin",
+                             "Vary": "Origin"})
 
 
 @router.get("/knowledge-graph")

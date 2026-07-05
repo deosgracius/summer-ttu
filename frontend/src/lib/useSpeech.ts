@@ -522,15 +522,15 @@ export function useSpeech() {
       if (recording.current) return // tap-to-talk (Whisper) is capturing — don't double-handle
       if (isEcho(live)) return // ignore Summer's own voice (echo)
 
-      // BARGE-IN: the moment the user starts talking, Summer stops — even mid-sentence —
-      // and listens to the whole request. Summer's own audio is already filtered out above
-      // (isEcho), so this only fires on real speech; we still require a wake/interrupt word
-      // or 2+ words so a single stray/echoed word can't make Summer cut itself off. After
-      // stopping, the utterance is buffered and (once you pause) sent WITH the conversation
-      // history — so a follow-up builds on the thread and a new question just replaces it.
+      // BARGE-IN — but Summer must never cut off its OWN voice. The mic hears Summer's
+      // audio through the speakers, so "any speech interrupts" made Summer fight itself.
+      // While speaking we only stop for the wake word, or a clear interrupt word ("stop",
+      // "wait"…) that ISN'T part of what Summer is currently saying — so an echo of
+      // Summer's own sentence can never trigger a barge-in. To interrupt, say "Summer" or
+      // "stop"; the answer text is already in history, so context is kept either way.
       if (speaking.current || VOICE.speaking) {
-        const wordCount = live.split(/\s+/).filter(Boolean).length
-        if (!(WAKE.test(live) || INTERRUPT.test(live) || wordCount >= 2)) return
+        const mine = (VOICE.text || currentSpeech.current || "")
+        if (!(WAKE.test(live) || (INTERRUPT.test(live) && !INTERRUPT.test(mine)))) return
         stopSpeaking()
       }
 

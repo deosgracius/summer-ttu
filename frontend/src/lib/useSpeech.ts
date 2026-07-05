@@ -33,6 +33,9 @@ const ENDRE = /\b(thank you|thanks summer|thank you summer|we'?re done|that'?s a
 // these are treated as thinking/background, NOT a question: ignored but they keep the
 // conversation alive rather than ending it or being sent to Summer as a command.
 const FILLER = /^(uh+|um+|umm+|hmm+|mhm+|mm+|ah+|oh+|eh+|er+|huh|huhh?|yeah|yep|nah|ok|okay|right|so|like|well|and|the|a|i)$/i
+// Short words that, on their own, cut Summer off mid-sentence (barge-in). Any longer
+// utterance interrupts too; this just lets a quick "stop"/"wait"/"actually" break in.
+const INTERRUPT = /\b(stop|wait|hold on|hold up|hang on|no|nope|actually|pause|cancel|never ?mind|one sec|excuse me)\b/i
 
 // A one-shot spoken yes/no prompt (e.g. "would you like your daily briefing?"). While
 // one is pending, the wake-word listener answers it with a spoken yes/no BEFORE treating
@@ -501,11 +504,15 @@ export function useSpeech() {
       if (recording.current) return // tap-to-talk (Whisper) is capturing — don't double-handle
       if (isEcho(live)) return // ignore Summer's own voice (echo)
 
-      // While Summer is talking, ONLY a deliberate "Summer"/"Hey Summer" barges
-      // in. Everything else is ignored — this stops Summer hearing its own audio
-      // through the speakers and replying to itself (the feedback loop).
+      // BARGE-IN: the moment the user starts talking, Summer stops — even mid-sentence —
+      // and listens to the whole request. Summer's own audio is already filtered out above
+      // (isEcho), so this only fires on real speech; we still require a wake/interrupt word
+      // or 2+ words so a single stray/echoed word can't make Summer cut itself off. After
+      // stopping, the utterance is buffered and (once you pause) sent WITH the conversation
+      // history — so a follow-up builds on the thread and a new question just replaces it.
       if (speaking.current || VOICE.speaking) {
-        if (!WAKE.test(live)) return
+        const wordCount = live.split(/\s+/).filter(Boolean).length
+        if (!(WAKE.test(live) || INTERRUPT.test(live) || wordCount >= 2)) return
         stopSpeaking()
       }
 

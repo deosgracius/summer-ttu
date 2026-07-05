@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react"
+import { lazy, Suspense, useState, type ReactNode } from "react"
 import { MessageSquare, GraduationCap, ListChecks, ShieldCheck, Settings as SettingsIcon, Network } from "lucide-react"
 import { useAuth } from "@/lib/auth"
 import { Button } from "@/components/ui/button"
@@ -27,6 +27,20 @@ import SplineRobot from "@/components/SplineRobot"
 import SpaceBackground from "@/components/SpaceBackground"
 
 type TabId = "assistant" | "campus" | "graph" | "items" | "admin" | "settings"
+
+// A labeled group of admin panels — a heading + one-line description over its cards, so the
+// Admin tab reads as clear sections instead of one long undifferentiated stack.
+function AdminSection({ title, desc, children }: { title: string; desc: string; children: ReactNode }) {
+  return (
+    <section className="space-y-4">
+      <div className="border-b border-border/40 pb-2">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-primary/80">{title}</h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">{desc}</p>
+      </div>
+      {children}
+    </section>
+  )
+}
 
 export default function DashboardPage() {
   const { me, logout } = useAuth()
@@ -144,13 +158,19 @@ export default function DashboardPage() {
           )}
 
           {tab === "admin" && isAdmin && (
-            <>
-              <ApprovalsPanel reloadKey={reloadKey} onApplied={refreshAll} />
-              <UserAccessPanel reloadKey={reloadKey} />
-              <DelegationPanel />
-              <FileImportPanel />
-              <QueryInsightsPanel />
-            </>
+            <div className="space-y-8">
+              <AdminSection title="People & access" desc="Approve sign-ups, set roles and access, and designate deputy admins.">
+                <ApprovalsPanel reloadKey={reloadKey} onApplied={refreshAll} />
+                <UserAccessPanel reloadKey={reloadKey} />
+                <DelegationPanel />
+              </AdminSection>
+              <AdminSection title="Campus data" desc="Import and refresh the people, courses, and documents Summer answers from.">
+                <FileImportPanel />
+              </AdminSection>
+              <AdminSection title="Insights" desc="See what Summer answers instantly from the database vs. with the LLM.">
+                <QueryInsightsPanel />
+              </AdminSection>
+            </div>
           )}
 
           {tab === "settings" && (

@@ -154,17 +154,25 @@ _IMG_HEADERS = {
 def _cache_photo(db, client, url):
     """Download a headshot once and store it locally; return the served path
     (/campus/photo/{id}). The TTU image server rate-limits bursts, so hotlinking it
-    from the kiosk blanks the photos — self-hosting fixes that. Falls back to the raw
-    URL if the download fails, so a photo link is never lost."""
+    from the kiosk blanks the photos — self-hosting fixes that. If a download fails,
+    fall back to the ALREADY-CACHED copy if we have one (so a re-run that gets
+    rate-limited never reverts a good self-hosted photo to a raw cross-origin URL);
+    only if there's no cache at all do we return the raw URL."""
     if not url:
         return ""
+
+    def _fallback():
+        # Keep the self-hosted copy on failure; only surrender to the raw URL if uncached.
+        ex = db.query(models.CampusPhoto).filter(models.CampusPhoto.source_url == url).first()
+        return f"/campus/photo/{ex.id}" if ex and ex.data else url
+
     try:
         r = client.get(url, headers=_IMG_HEADERS, timeout=25)
         if r.status_code >= 400 or "image" not in r.headers.get("content-type", ""):
             time.sleep(1.0)  # one retry for a transient 503/rate-limit
             r = client.get(url, headers=_IMG_HEADERS, timeout=25)
         if r.status_code >= 400 or "image" not in r.headers.get("content-type", ""):
-            return url
+            return _fallback()
         ct = r.headers.get("content-type", "image/jpeg").split(";")[0].strip()
         existing = db.query(models.CampusPhoto).filter(models.CampusPhoto.source_url == url).first()
         if existing:
@@ -177,7 +185,7 @@ def _cache_photo(db, client, url):
         db.flush()
         return f"/campus/photo/{ph.id}"
     except Exception:
-        return url
+        return _fallback()
 
 
 def import_faculty(db, client):

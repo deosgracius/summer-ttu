@@ -138,6 +138,11 @@ export function useSpeech() {
   const audioCtx = useRef<AudioContext | null>(null)
   const silenceTimer = useRef<number | undefined>(undefined)
   const vadRaf = useRef<number | undefined>(undefined)
+  // Barge-in VAD: an echo-cancelled mic listener that runs WHILE Summer talks, so it can
+  // hear the USER (the browser's AEC removes Summer's own audio) and stop her mid-sentence.
+  const bargeStream = useRef<MediaStream | null>(null)
+  const bargeCtx = useRef<AudioContext | null>(null)
+  const bargeRaf = useRef<number | undefined>(undefined)
   const vstate = useRef<"off" | "ambient" | "active">("off")
   const speaking = useRef(false)
   const currentSpeech = useRef("")
@@ -286,6 +291,7 @@ export function useSpeech() {
     clearConvoTimer() // don't let the 8s idle fire while Summer is talking
     currentSpeech.current = clean.toLowerCase()
     voiceStart(clean.toLowerCase())
+    startBargeInVAD() // listen (echo-cancelled) so the user talking stops Summer mid-sentence
     const cancelled = () => myTurn !== speakSeq.current
 
     const chunks = splitSentences(clean)
@@ -320,6 +326,7 @@ export function useSpeech() {
     if (cancelled()) return // a newer speak/stop took over
     speaking.current = false
     voiceEnd()
+    stopBargeInVAD()
     // Keep the echo reference briefly so the trailing tail of Summer's audio
     // (still being transcribed) is filtered out instead of becoming a "command".
     window.setTimeout(() => {
@@ -380,6 +387,76 @@ export function useSpeech() {
     speaking.current = false
     currentSpeech.current = ""
     voiceStop()
+    stopBargeInVAD()
+  }
+
+  // ---- Barge-in: while Summer is talking, listen on an ECHO-CANCELLED mic stream. The
+  // browser's AEC removes Summer's own audio, so sustained energy here means the USER is
+  // speaking — and we stop Summer so she listens. Best-effort: if the mic can't be opened
+  // it simply doesn't run (the wake word / "stop" still interrupts). Tunable via env-free
+  // constants below; if a given kiosk mic lacks good echo cancellation and Summer cuts
+  // herself off, raise BARGE_HOLD / the threshold margin.
+  const BARGE_HOLD = 6 // consecutive loud frames (~100ms) of user speech before stopping
+  async function startBargeInVAD() {
+    if (bargeStream.current || typeof navigator === "undefined" || !navigator.mediaDevices) return
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } as MediaTrackConstraints,
+      })
+      if (!speaking.current) { stream.getTracks().forEach((t) => t.stop()); return } // Summer already done
+      bargeStream.current = stream
+      const ctx = new AudioContext()
+      bargeCtx.current = ctx
+      const analyser = ctx.createAnalyser()
+      analyser.fftSize = 512
+      ctx.createMediaStreamSource(stream).connect(analyser)
+      const data = new Uint8Array(analyser.frequencyBinCount)
+      let frames = 0, floorSum = 0, thresh = 14, loud = 0
+      const tick = () => {
+        if (!bargeStream.current) return
+        analyser.getByteTimeDomainData(data)
+        let max = 0
+        for (let i = 0; i < data.length; i++) {
+          const v = Math.abs(data[i] - 128)
+          if (v > max) max = v
+        }
+        frames++
+        if (frames <= 12) {
+          // Calibrate to the room + any residual echo, then set the bar comfortably above it.
+          floorSum += max
+          if (frames === 12) thresh = Math.max(14, Math.round(floorSum / 12) + 12)
+          bargeRaf.current = requestAnimationFrame(tick)
+          return
+        }
+        if (max > thresh) {
+          loud++
+          if (loud >= BARGE_HOLD) { stopSpeaking(); return } // user is talking → stop Summer
+        } else {
+          loud = Math.max(0, loud - 1)
+        }
+        bargeRaf.current = requestAnimationFrame(tick)
+      }
+      bargeRaf.current = requestAnimationFrame(tick)
+    } catch {
+      /* no mic / denied — barge-in VAD simply doesn't run */
+    }
+  }
+
+  function stopBargeInVAD() {
+    if (bargeRaf.current) cancelAnimationFrame(bargeRaf.current)
+    bargeRaf.current = undefined
+    try {
+      bargeStream.current?.getTracks().forEach((t) => t.stop())
+    } catch {
+      /* ignore */
+    }
+    bargeStream.current = null
+    try {
+      bargeCtx.current?.close()
+    } catch {
+      /* ignore */
+    }
+    bargeCtx.current = null
   }
 
   // ---- conversational state ----

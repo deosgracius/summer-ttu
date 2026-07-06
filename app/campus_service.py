@@ -73,7 +73,11 @@ _PERSON_QUERY_NOISE = {
     # Pronouns — so a follow-up like "what does HE teach" isn't matched to a professor
     # whose surname is "He" (Miao He, Rui He). Full-name searches still work via the
     # first name. Lets pronoun follow-ups fall through to the LLM, which has the context.
-    "he", "she", "him", "her", "his", "hers", "they", "them", "their", "theirs"}
+    "he", "she", "him", "her", "his", "hers", "they", "them", "their", "theirs",
+    # Conversational fillers / greetings — strip so "yo, who's derek" still matches "derek".
+    "yo", "hey", "hi", "hello", "hiya", "yeah", "yep", "yup", "nope", "um", "uh",
+    "hmm", "please", "thanks", "thank", "well", "ok", "okay", "like", "just",
+    "actually", "sorry", "excuse", "quick", "question", "wondering", "wanted"}
 
 _LIMIT = 15
 
@@ -413,7 +417,8 @@ def find_people_fuzzy(db, query: str, threshold: float = 0.82, limit: int = 5):
         elocal = _phon("".join(re.findall(r"[a-z]+", (email or "").lower())))
         if len(qjoin) >= 4 and elocal and qjoin in elocal:
             whole = max(whole, 0.95)
-        return max(tok_score, whole)
+        best_single = max(per) if per else 0.0
+        return max(tok_score, whole), best_single
 
     out = []
     for cls, kind in (("Professor", "professor"), ("Staff", "staff"), ("Advisor", "advisor")):
@@ -421,8 +426,11 @@ def find_people_fuzzy(db, query: str, threshold: float = 0.82, limit: int = 5):
         if m is None:
             continue
         for r in db.query(m).all():
-            sc = score(r.name, getattr(r, "email", ""))
-            if sc >= threshold:
+            sc, best = score(r.name, getattr(r, "email", ""))
+            # Qualify on a strong single first/last-name hit even when filler words dilute
+            # the average (so "yo, who's derek" still finds Derek), but RANK by coverage so a
+            # full-name query ("jennifer maddox") still resolves to the right person.
+            if sc >= threshold or best >= 0.90:
                 out.append((kind, r, sc))
     out.sort(key=lambda x: -x[2])
     return out[:limit]

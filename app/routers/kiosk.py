@@ -108,6 +108,8 @@ def kiosk_stt(request: Request, file: UploadFile = File(...), db: Session = Depe
     except Exception as e:  # noqa
         import logging
         logging.getLogger("summer").warning("kiosk stt failed: %s", e)
+        from .. import failures
+        failures.record("kiosk_stt", "Kiosk speech-to-text (Whisper) failed", detail=str(e))
         raise HTTPException(502, "transcription failed")
 
 
@@ -130,5 +132,7 @@ async def kiosk_tts(data: KioskTTS, request: Request, db: Session = Depends(get_
     except Exception as e:  # noqa
         import logging
         logging.getLogger("summer").warning("kiosk TTS failed: %s", e)
+        from .. import failures
+        failures.record("kiosk_tts", "Kiosk text-to-speech (ElevenLabs) failed", detail=str(e))
         raise HTTPException(502, "TTS failed")
     return Response(content=audio, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})

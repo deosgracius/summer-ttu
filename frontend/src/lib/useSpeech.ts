@@ -139,13 +139,16 @@ export function useSpeech() {
   const silenceTimer = useRef<number | undefined>(undefined)
   const vadRaf = useRef<number | undefined>(undefined)
   // Barge-in VAD: an echo-cancelled mic listener that runs WHILE Summer talks, so it can
-  // hear the USER (the browser's AEC removes Summer's own audio) and stop her mid-sentence.
-  const bargeStream = useRef<MediaStream | null>(null)
-  const bargeCtx = useRef<AudioContext | null>(null)
-  const bargeRaf = useRef<number | undefined>(undefined)
+  // hear the USER — but on a kiosk mic the echo cancellation leaks Summer's own audio, so
+  // this is disabled in favor of robust self-echo suppression (Summer never processes what
+  // it just said). Interrupt with the wake word ("Summer") or "stop".
   const vstate = useRef<"off" | "ambient" | "active">("off")
   const speaking = useRef(false)
   const currentSpeech = useRef("")
+  // Until this timestamp Summer is treated as "just spoke", so the mic-lagged tail of its
+  // OWN audio (which the recognizer keeps transcribing for a beat after playback ends) is
+  // dropped instead of being answered — the fix for Summer replying to itself.
+  const spokeUntil = useRef(0)
   const followTimer = useRef<number | undefined>(undefined)
   const onCmd = useRef<(s: string) => void>(() => {})
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -162,6 +165,10 @@ export function useSpeech() {
   // dormant. Generous so a started conversation isn't cut off while you think — Summer
   // waits ~10s of silence before ending it.
   const CONVO_IDLE_MS = 12000
+  // How long after Summer's audio ends to keep ignoring the mic — the recognizer keeps
+  // transcribing Summer's own tail for a beat, and those transcripts must be dropped so
+  // Summer never answers itself. During this window only the wake word breaks through.
+  const ECHO_TAIL_MS = 2500
   const engaged = useRef(false)
   const convoTimer = useRef<number | undefined>(undefined)
 
@@ -291,7 +298,7 @@ export function useSpeech() {
     clearConvoTimer() // don't let the 8s idle fire while Summer is talking
     currentSpeech.current = clean.toLowerCase()
     voiceStart(clean.toLowerCase())
-    startBargeInVAD() // listen (echo-cancelled) so the user talking stops Summer mid-sentence
+    spokeUntil.current = Date.now() + 60000 // held far out while speaking; tightened at the end
     const cancelled = () => myTurn !== speakSeq.current
 
     const chunks = splitSentences(clean)
@@ -326,13 +333,13 @@ export function useSpeech() {
     if (cancelled()) return // a newer speak/stop took over
     speaking.current = false
     voiceEnd()
-    stopBargeInVAD()
-    // Keep the echo reference briefly so the trailing tail of Summer's audio
-    // (still being transcribed) is filtered out instead of becoming a "command".
+    // Keep the echo reference for a few seconds after the audio ends — the recognizer keeps
+    // emitting transcripts of Summer's own tail for a beat, and those must be dropped, not
+    // answered. This window is why Summer no longer replies to itself.
+    spokeUntil.current = Date.now() + ECHO_TAIL_MS
     window.setTimeout(() => {
-      currentSpeech.current = ""
-      voiceClearText()
-    }, 1500)
+      if (Date.now() >= spokeUntil.current) { currentSpeech.current = ""; voiceClearText() }
+    }, ECHO_TAIL_MS)
     afterSpeak()
   }
 
@@ -385,78 +392,13 @@ export function useSpeech() {
       }
     }
     speaking.current = false
-    currentSpeech.current = ""
     voiceStop()
-    stopBargeInVAD()
-  }
-
-  // ---- Barge-in: while Summer is talking, listen on an ECHO-CANCELLED mic stream. The
-  // browser's AEC removes Summer's own audio, so sustained energy here means the USER is
-  // speaking — and we stop Summer so she listens. Best-effort: if the mic can't be opened
-  // it simply doesn't run (the wake word / "stop" still interrupts). Tunable via env-free
-  // constants below; if a given kiosk mic lacks good echo cancellation and Summer cuts
-  // herself off, raise BARGE_HOLD / the threshold margin.
-  const BARGE_HOLD = 6 // consecutive loud frames (~100ms) of user speech before stopping
-  async function startBargeInVAD() {
-    if (bargeStream.current || typeof navigator === "undefined" || !navigator.mediaDevices) return
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } as MediaTrackConstraints,
-      })
-      if (!speaking.current) { stream.getTracks().forEach((t) => t.stop()); return } // Summer already done
-      bargeStream.current = stream
-      const ctx = new AudioContext()
-      bargeCtx.current = ctx
-      const analyser = ctx.createAnalyser()
-      analyser.fftSize = 512
-      ctx.createMediaStreamSource(stream).connect(analyser)
-      const data = new Uint8Array(analyser.frequencyBinCount)
-      let frames = 0, floorSum = 0, thresh = 14, loud = 0
-      const tick = () => {
-        if (!bargeStream.current) return
-        analyser.getByteTimeDomainData(data)
-        let max = 0
-        for (let i = 0; i < data.length; i++) {
-          const v = Math.abs(data[i] - 128)
-          if (v > max) max = v
-        }
-        frames++
-        if (frames <= 12) {
-          // Calibrate to the room + any residual echo, then set the bar comfortably above it.
-          floorSum += max
-          if (frames === 12) thresh = Math.max(14, Math.round(floorSum / 12) + 12)
-          bargeRaf.current = requestAnimationFrame(tick)
-          return
-        }
-        if (max > thresh) {
-          loud++
-          if (loud >= BARGE_HOLD) { stopSpeaking(); return } // user is talking → stop Summer
-        } else {
-          loud = Math.max(0, loud - 1)
-        }
-        bargeRaf.current = requestAnimationFrame(tick)
-      }
-      bargeRaf.current = requestAnimationFrame(tick)
-    } catch {
-      /* no mic / denied — barge-in VAD simply doesn't run */
-    }
-  }
-
-  function stopBargeInVAD() {
-    if (bargeRaf.current) cancelAnimationFrame(bargeRaf.current)
-    bargeRaf.current = undefined
-    try {
-      bargeStream.current?.getTracks().forEach((t) => t.stop())
-    } catch {
-      /* ignore */
-    }
-    bargeStream.current = null
-    try {
-      bargeCtx.current?.close()
-    } catch {
-      /* ignore */
-    }
-    bargeCtx.current = null
+    // Even after a manual stop, keep suppressing for the echo tail so the just-played audio
+    // isn't transcribed back into a command. currentSpeech is cleared when the window ends.
+    spokeUntil.current = Date.now() + ECHO_TAIL_MS
+    window.setTimeout(() => {
+      if (Date.now() >= spokeUntil.current) { currentSpeech.current = ""; voiceClearText() }
+    }, ECHO_TAIL_MS)
   }
 
   // ---- conversational state ----
@@ -466,7 +408,11 @@ export function useSpeech() {
     const w = txt.toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter((x) => x.length > 2)
     if (!w.length) return false
     const hit = w.filter((x) => cs.includes(x)).length
-    return hit / w.length > 0.55
+    // Echo when enough of the words are in what Summer just said. The bar is LOW while
+    // Summer is actively speaking (that audio is definitely hers), so even a garbled
+    // transcript of her own voice is dropped rather than answered.
+    const bar = speaking.current || VOICE.speaking || Date.now() < spokeUntil.current ? 0.34 : 0.5
+    return hit / w.length >= bar
   }
   function clearFollow() {
     if (followTimer.current) {
@@ -599,15 +545,17 @@ export function useSpeech() {
       if (recording.current) return // tap-to-talk (Whisper) is capturing — don't double-handle
       if (isEcho(live)) return // ignore Summer's own voice (echo)
 
-      // BARGE-IN — but Summer must never cut off its OWN voice. The mic hears Summer's
-      // audio through the speakers, so "any speech interrupts" made Summer fight itself.
-      // While speaking we only stop for the wake word, or a clear interrupt word ("stop",
-      // "wait"…) that ISN'T part of what Summer is currently saying — so an echo of
-      // Summer's own sentence can never trigger a barge-in. To interrupt, say "Summer" or
-      // "stop"; the answer text is already in history, so context is kept either way.
+      // WHILE SUMMER IS ACTIVELY SPEAKING: the mic hears her through the speakers, so honor
+      // ONLY a deliberate wake/stop that ISN'T an echo of her own words (her answers contain
+      // her own name "Summer"). Everything else is dropped, so she never answers herself.
+      // The lagged tail AFTER she stops is caught by isEcho above (spokeUntil lowers its
+      // bar), which drops her own transcribed audio without blocking a real follow-up.
       if (speaking.current || VOICE.speaking) {
         const mine = (VOICE.text || currentSpeech.current || "")
-        if (!(WAKE.test(live) || (INTERRUPT.test(live) && !INTERRUPT.test(mine)))) return
+        const deliberateWake = WAKE.test(live) && !mine.includes("summer")
+        const deliberateStop = INTERRUPT.test(live) && !INTERRUPT.test(mine)
+        if (!(deliberateWake || deliberateStop)) return
+        spokeUntil.current = 0 // real interruption — leave the echo-guard window
         stopSpeaking()
       }
 

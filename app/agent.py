@@ -254,11 +254,12 @@ async def run_agent(goal, db, user, provider=None, voice=False):
             result = {"reply": f"Unknown provider '{provider}'. Use 'anthropic' or 'openai'.", "actions": []}
         from . import insights
         insights.log(db, "dashboard", "llm", goal, route="llm", provider=provider)
-    except Exception:
+    except Exception as e:
         # LLM unreachable (e.g. depleted credits) — degrade to a direct campus lookup
         # rather than erroring out on the user.
-        from . import insights
+        from . import insights, failures
         insights.log(db, "dashboard", "fallback", goal, route="fallback")
+        failures.record("llm", f"AI brain unavailable ({provider}) — dashboard used the DB fallback", detail=str(e))
         result = {"reply": _deterministic_fallback(db, goal), "actions": []}
     tracing.record("agent", goal, result, (time.perf_counter() - t0) * 1000)
     _HISTORY[user.id].append({"role": "user", "content": goal})
@@ -400,10 +401,11 @@ async def run_kiosk_traced(goal, db, provider=None, history=None):
             result = await _run_openai(goal, db, None, avail, system, hist, model)
         else:
             return {"reply": "The kiosk assistant isn't configured.", "actions": [], "latency_ms": 0.0}
-    except Exception:
+    except Exception as e:
         # LLM unreachable (e.g. depleted credits) — degrade to a direct DB lookup.
-        from . import insights
+        from . import insights, failures
         insights.log(db, "kiosk", "fallback", goal, route="fallback")
+        failures.record("llm", f"AI brain unavailable ({provider}) — kiosk used the DB fallback", detail=str(e))
         return {"reply": _deterministic_fallback(db, goal), "actions": [],
                 "latency_ms": (time.perf_counter() - t0) * 1000}
     # PROVENANCE GATE: an LLM reply may only state facts it RETRIEVED this turn OR that

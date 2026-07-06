@@ -174,6 +174,23 @@ class QueryLog(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class FailureLog(Base):
+    """Operational failures — anything that broke (LLM/voice/email unreachable, an unhandled
+    error, a failed lookup). DEDUPED: repeats of the same (source, summary) bump `count` and
+    `last_seen` instead of piling up rows, so the central admin sees 'kiosk TTS failed x47,
+    2m ago' not 47 lines. Central-admin only. Redacted + pruned. Disable with FAILURE_LOG=0."""
+    __tablename__ = "failure_log"
+    id = Column(Integer, primary_key=True, index=True)
+    source = Column(String, nullable=False, default="")       # where it broke: kiosk_tts, agent, llm, …
+    severity = Column(String, nullable=False, default="error")  # error | warning
+    summary = Column(String, nullable=False, default="")      # one-line human description
+    detail = Column(String, nullable=True)                    # message / snippet (redacted, truncated)
+    count = Column(Integer, nullable=False, default=1)         # how many times this exact failure hit
+    resolved = Column(Boolean, nullable=False, default=False)  # central admin marked it fixed
+    first_seen = Column(DateTime, server_default=func.now())
+    last_seen = Column(DateTime, server_default=func.now())
+
+
 class ContentDraft(Base):
     __tablename__ = "content_drafts"
     id = Column(Integer, primary_key=True, index=True)

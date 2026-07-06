@@ -72,6 +72,35 @@ def clear_query_insights(db: Session = Depends(get_db),
     return {"cleared": n}
 
 
+@router.get("/failures")
+def list_failures(resolved: int = 0, db: Session = Depends(get_db),
+                  user: models.User = Depends(require_roles("central_admin"))):
+    """CENTRAL ADMIN ONLY: the operational failure log — what has broken (LLM/voice down,
+    unhandled errors), how many times, and when, so the central admin can fix it."""
+    from .. import failures
+    return failures.report(db, include_resolved=bool(resolved))
+
+
+@router.post("/failures/{failure_id}/resolve")
+def resolve_failure(failure_id: int, db: Session = Depends(get_db),
+                    actor: models.User = Depends(require_roles("central_admin"))):
+    """Mark a failure fixed (central admin dealt with it)."""
+    from .. import failures, audit
+    if not failures.resolve(db, failure_id):
+        raise HTTPException(404, "Failure not found")
+    audit.log(db, actor, "resolve_failure", f"Marked failure #{failure_id} fixed", {"id": failure_id})
+    db.commit()
+    return {"resolved": True}
+
+
+@router.delete("/failures")
+def clear_failures(db: Session = Depends(get_db),
+                   actor: models.User = Depends(require_roles("central_admin"))):
+    """Delete the failures already marked fixed (housekeeping)."""
+    from .. import failures
+    return {"cleared": failures.clear_resolved(db)}
+
+
 @router.get("/observability")
 def observability(user: models.User = Depends(require_roles("admin"))):
     """Aggregate tracing stats — run counts, latency p50/p95, tokens, and which tools

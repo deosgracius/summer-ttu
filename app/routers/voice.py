@@ -34,6 +34,8 @@ def stt(file: UploadFile = File(...), db: Session = Depends(get_db),
         return {"text": voice.transcribe(data, file.filename or "audio.webm", prompt=hint)}
     except Exception as e:  # noqa
         logging.getLogger("summer").warning("stt failed: %s", e)
+        from .. import failures
+        failures.record("voice_stt", "Speech-to-text (Whisper) failed", detail=str(e))
         raise HTTPException(502, "transcription failed")
 
 
@@ -93,6 +95,8 @@ async def tts(data: TTSReq, db: Session = Depends(get_db), user: models.User = D
     try:
         audio = await voice.tts(data.text, data.voice_id or active_voice(db))
     except Exception as e:  # noqa
+        from .. import failures
+        failures.record("voice_tts", "Text-to-speech (ElevenLabs) failed", detail=str(e))
         raise HTTPException(502, f"TTS failed: {e}")
     usage.record(db, user.id, "elevenlabs", "tts")
     return Response(content=audio, media_type="audio/mpeg",

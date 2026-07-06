@@ -1,8 +1,9 @@
 import os
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import logging
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse, FileResponse
+from fastapi.responses import RedirectResponse, FileResponse, JSONResponse
 from sqlalchemy import inspect, text
 from .database import Base, engine, SessionLocal
 from .routers import auth, tasks, events, reminders, emails, memories, admin, oauth, spotify, outlook, vision, agent, voice, campus, security, kiosk, docs
@@ -189,6 +190,22 @@ async def _security_and_cache_headers(request, call_next):
         resp.headers["Pragma"] = "no-cache"
         resp.headers["Expires"] = "0"
     return resp
+
+
+@app.exception_handler(Exception)
+async def _record_unhandled(request: Request, exc: Exception):
+    """Any unhandled error is recorded to the central-admin failure log (so 'something
+    broke' is visible in-app) and logged server-side, then a generic 500 is returned — the
+    user never sees internal detail."""
+    logging.getLogger("summer").exception("unhandled error at %s", request.url.path)
+    try:
+        from . import failures
+        failures.record("http:" + request.url.path[:50], f"Unhandled {type(exc).__name__}", detail=str(exc))
+    except Exception:
+        pass
+    return JSONResponse(status_code=500, content={"detail": "Something went wrong on our end. Please try again."})
+
+
 for r in (auth.router, tasks.router, events.router, reminders.router, emails.router,
           memories.router, admin.router, oauth.router, spotify.router, outlook.router, vision.router, agent.router, voice.router, campus.router, security.router, kiosk.router, docs.router):
     app.include_router(r)

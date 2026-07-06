@@ -18,6 +18,7 @@ import ConnectionsPanel from "@/components/panels/ConnectionsPanel"
 import QuickLinksPanel from "@/components/panels/QuickLinksPanel"
 import FileImportPanel from "@/components/panels/FileImportPanel"
 import QueryInsightsPanel from "@/components/panels/QueryInsightsPanel"
+import FailureLogPanel from "@/components/panels/FailureLogPanel"
 import MyAvailabilityPanel from "@/components/panels/MyAvailabilityPanel"
 import WelcomeBriefing from "@/components/WelcomeBriefing"
 import OnboardingModal from "@/components/OnboardingModal"
@@ -54,6 +55,7 @@ export default function DashboardPage() {
   const [pendingAsk, setPendingAsk] = useState<string | null>(null)
 
   const isAdmin = me?.role === "admin" || me?.role === "central_admin"
+  const isCentral = me?.role === "central_admin"
   const name =
     me?.profile?.preferred_name || me?.profile?.full_name || me?.email?.split("@")[0]
 
@@ -170,6 +172,11 @@ export default function DashboardPage() {
               <AdminSection title="Insights" desc="See what Summer answers instantly from the database vs. with the LLM.">
                 <QueryInsightsPanel />
               </AdminSection>
+              {isCentral && (
+                <AdminSection title="System health" desc="Central-admin only: failures Summer has hit, so you can fix what's broken.">
+                  <FailureLogPanel />
+                </AdminSection>
+              )}
             </div>
           )}
 

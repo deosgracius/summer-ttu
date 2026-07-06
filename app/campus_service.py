@@ -360,29 +360,39 @@ def best_answer(db, question: str, min_score: int = 1):
     return best[1] if best[0] >= min_score else None
 
 
+def _phon(t: str) -> str:
+    """Light phonetic fold so homophone spellings/mishearings collapse to the same form
+    (Carp<->Karp, Photo<->Foto). Applied to BOTH the query and the name, so consistency
+    matters more than linguistic correctness."""
+    t = (t or "").lower()
+    t = t.replace("ph", "f").replace("ck", "k").replace("qu", "kw")
+    t = t.replace("c", "k").replace("z", "s").replace("x", "ks")
+    return re.sub(r"(.)\1+", r"\1", t)  # collapse doubled letters
+
+
 def find_people_fuzzy(db, query: str, threshold: float = 0.82, limit: int = 5):
     """Speech-robust people lookup. Tolerant of imperfect spelling/pronunciation
-    (e.g. 'vander pool' -> Vanderpool, 'changi lee' -> Changzhi Li) and a single
-    first OR last name. Returns [(kind, row, score)] best-first. Pure stdlib."""
+    (e.g. 'vander pool' -> Vanderpool, 'changi lee' -> Changzhi Li, 'carp' -> Karp) and a
+    single first OR last name, and robust to extra/echoed words around the name. Returns
+    [(kind, row, score)] best-first. Pure stdlib."""
     qtoks = [t for t in re.findall(r"[a-z]+", (query or "").lower())
              if len(t) >= 2 and t not in _STOP_TOKENS and t not in _NAME_NOISE
              and t not in _PERSON_QUERY_NOISE]
     if not qtoks:
         return []
-    qjoin = "".join(qtoks)
+    qphon = [_phon(t) for t in qtoks]
+    qjoin = "".join(qphon)
 
     def score(name: str, email: str) -> float:
         # Drop title prefixes/suffixes and lone initials ("Dr.", "P.") so they don't
         # cause spurious substring hits ("dr" is inside "andrew", "p" inside "pool").
-        ntoks = [t for t in re.findall(r"[a-z]+", (name or "").lower())
+        ntoks = [_phon(t) for t in re.findall(r"[a-z]+", (name or "").lower())
                  if len(t) >= 2 and t not in _NAME_NOISE]
         if not ntoks:
             return 0.0
         njoin = "".join(ntoks)
-        # Average each query token's best match — so matching the WHOLE name
-        # ("jennifer maddox") beats matching just a shared first name ("jennifer").
         per = []
-        for qt in qtoks:
+        for qt in qphon:
             b = 0.0
             for nt in ntoks:
                 if qt == nt:
@@ -392,11 +402,15 @@ def find_people_fuzzy(db, query: str, threshold: float = 0.82, limit: int = 5):
                 else:
                     b = max(b, difflib.SequenceMatcher(None, qt, nt).ratio())
             per.append(b)
-        tok_score = sum(per) / len(per)
+        # Average only the BEST few query tokens — as many as the name has words — so extra
+        # or echoed words around the name ("...search the directory for you, derek johnson")
+        # don't drag a clear name match below threshold.
+        k = min(len(ntoks), len(per)) or len(per)
+        tok_score = sum(sorted(per, reverse=True)[:k]) / k
         whole = difflib.SequenceMatcher(None, qjoin, njoin).ratio()
         if len(qjoin) >= 3 and qjoin in njoin:
             whole = max(whole, 0.95)
-        elocal = "".join(re.findall(r"[a-z]+", (email or "").lower()))
+        elocal = _phon("".join(re.findall(r"[a-z]+", (email or "").lower())))
         if len(qjoin) >= 4 and elocal and qjoin in elocal:
             whole = max(whole, 0.95)
         return max(tok_score, whole)
@@ -703,24 +717,31 @@ def person_answer(db, query: str):
     """Deterministic, speech-robust answer for a 'who/where/office/schedule is X'
     question. Disambiguates when a name matches more than one person. Returns None
     when the query isn't clearly about a person (so courses/buildings fall through)."""
-    matches = find_people_fuzzy(db, query)
+    # Lower floor so a CLOSE name (a mishearing like "Carp" -> Karp, "Derry" -> Derek) is
+    # surfaced with an honest hedge instead of a flat "not found".
+    matches = find_people_fuzzy(db, query, threshold=0.68)
     if not matches:
         return None
     top = matches[0][2]
-    # distinct people whose score is within a hair of the best
-    seen = {}
-    for kind, r, sc in matches:
-        if sc >= top - 0.04:
-            seen.setdefault(r.name, (kind, r))
-    if len(seen) > 1:
-        lines = ["A few people match that name — which one did you mean?"]
-        for kind, r in list(seen.values())[:4]:
-            t = getattr(r, "title", "") or kind
-            office = f"{r.office_building} {r.office_number}".strip()
-            lines.append(f"{r.name} ({t})" + (f", office {office}" if office else ""))
-        return "\n".join(lines)
+    CONFIDENT = 0.80
+    # Only offer a "which one did you mean?" disambiguation among confident near-ties.
+    if top >= CONFIDENT:
+        seen = {}
+        for kind, r, sc in matches:
+            if sc >= top - 0.04:
+                seen.setdefault(r.name, (kind, r))
+        if len(seen) > 1:
+            lines = ["A few people match that name — which one did you mean?"]
+            for kind, r in list(seen.values())[:4]:
+                t = getattr(r, "title", "") or kind
+                office = f"{r.office_building} {r.office_number}".strip()
+                lines.append(f"{r.name} ({t})" + (f", office {office}" if office else ""))
+            return "\n".join(lines)
     kind, r, _ = matches[0]
-    return _person_detail(db, kind, r, full=bool(_WANTS_MORE.search(query or "")))
+    detail = _person_detail(db, kind, r, full=bool(_WANTS_MORE.search(query or "")))
+    # Heard the name imperfectly but found a close match — say what we found, per the
+    # "if a similar name is in the directory, give it and tell me" behavior.
+    return ("The closest match I found is " + detail) if top < CONFIDENT else detail
 
 
 def person_card(db, query: str):
@@ -839,33 +860,57 @@ def identity_answer(query):
 # etc. — resolve to the professor whose directory TITLE holds that role. Deterministic and
 # grounded in the imported data instead of the LLM.
 _TITLE_ROLES = [
+    # Query pattern -> predicate on the lowercased directory TITLE. Order matters: associate
+    # chair is checked BEFORE the plain department chair.
     (re.compile(r"\bassociate chair\b|\bassoc\.? chair\b|\bvice chair\b", re.I),
      lambda t: "associate chair" in t or "vice chair" in t),
-    (re.compile(r"\b(department|dept\.?) chair\b|\bchairman\b|\bchairperson\b|\bhead of (the )?department\b|\bthe chair\b|\bchair of\b|\bdepartment head\b", re.I),
-     lambda t: "chair" in t and "associate" not in t and "vice" not in t),
-    (re.compile(r"\b(undergrad\w*|\bug\b) .{0,14}coordinator\b|\bcoordinator .{0,14}undergrad", re.I),
+    # ONLY the actual department chairperson — never an endowed 'Regents/Whitacre/Endowed
+    # Chair' professorship (those also contain the word 'chair').
+    (re.compile(r"\b(department|dept\.?) chair\b|\bchairman\b|\bchairperson\b|\bchair of (the )?(department|ece)\b|\b(department|dept) head\b|\bhead of (the )?department\b|\bthe chair\b", re.I),
+     lambda t: "department chair" in t or "chairman" in t or "chairperson" in t or "department head" in t),
+    (re.compile(r"\b(undergrad\w*|\bug\b) .{0,16}coordinator\b|\bcoordinator .{0,16}undergrad", re.I),
      lambda t: "coordinator" in t and "undergrad" in t),
-    (re.compile(r"\b(grad\w*|master'?s|phd) .{0,14}coordinator\b|\bcoordinator .{0,14}grad", re.I),
-     lambda t: "coordinator" in t and "grad" in t and "undergrad" not in t),
+    (re.compile(r"\b(grad\w*|research) .{0,16}coordinator\b|\bcoordinator .{0,16}(grad|research)", re.I),
+     lambda t: "coordinator" in t and ("grad" in t or "research" in t) and "undergrad" not in t),
     (re.compile(r"\babet\b", re.I),
      lambda t: "abet" in t),
 ]
 
 
 def title_answer(db, query):
-    """If the question asks who holds a department role (chair, associate chair, a program
-    coordinator, ABET coordinator), return that professor's card from the directory titles.
-    None when it isn't a role question or nobody in the data holds the role."""
+    """Who holds a department ROLE — department chair, associate chair (undergrad vs graduate),
+    a program coordinator, or ABET coordinator — resolved from the imported directory titles,
+    not the LLM. Distinguishes undergrad/graduate associate chair, lists candidates when
+    several hold a role, and matches ONLY the real department chair (not endowed 'Regents
+    Chair' professorships). None when it isn't a role question."""
     q = (query or "")
     ql = q.lower()
     if not any(k in ql for k in ("chair", "coordinator", "abet", "department head")):
         return None
+    ug = bool(re.search(r"\b(undergrad\w*|\bug\b|bachelor)\b", ql))
+    grad = (not ug) and bool(re.search(r"\b(grad\w*|master'?s|phd|doctoral)\b", ql))
     for rx, test in _TITLE_ROLES:
-        if rx.search(q):
-            for p in db.query(models.Professor).all():
-                if test((getattr(p, "title", "") or "").lower()):
-                    return person_answer(db, p.name) or f"{p.name}, {p.title}."
-            return None  # role asked, but no one in the data holds it → let the model try
+        if not rx.search(q):
+            continue
+        is_assoc = "associate chair" in rx.pattern
+        hits = []
+        for p in db.query(models.Professor).all():
+            t = (getattr(p, "title", "") or "").lower()
+            if not test(t):
+                continue
+            if is_assoc and ug and "undergrad" not in t:
+                continue
+            if is_assoc and grad and ("grad" not in t or "undergrad" in t):
+                continue
+            hits.append(p)
+        if len(hits) == 1:
+            return person_answer(db, hits[0].name) or f"{hits[0].name} — {hits[0].title}."
+        if len(hits) > 1:
+            lines = ["A few people hold that role — which did you mean?"]
+            for p in hits[:5]:
+                lines.append(f"{p.name} — {p.title}")
+            return "\n".join(lines)
+        return None  # role asked but nobody in the data holds it → let the model try
     return None
 
 

@@ -16,3 +16,11 @@ def test_identity_ignores_real_questions():
     for q in ["what are you doing", "which building is ECE in", "who teaches ECE 3331",
               "what are the office hours", "who is the chair", "what you up to right now?"]:
         assert cs.identity_answer(q) is None, f"false positive: {q!r}"
+
+
+def test_phonetic_fold_collapses_homophones():
+    # 'Carp' spoken for 'Karp', 'Foto' for 'Photo' — the fold makes them equal so the name
+    # matcher treats the mishearing as the real name instead of "not found".
+    assert cs._phon("carp") == cs._phon("karp")
+    assert cs._phon("photo") == cs._phon("foto")
+    assert cs._phon("changzhi") == cs._phon("changzhi")

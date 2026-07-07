@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Maximize2, X, Mail, MessageSquare, Crosshair, Shuffle } from "lucide-react"
+import { Maximize2, X, Mail, MessageSquare, Crosshair, Shuffle, Info } from "lucide-react"
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore — 3d-force-graph ships loose types
 import ForceGraph3D from "3d-force-graph"
@@ -67,8 +67,9 @@ function textSprite(text: string, fontPx: number, worldH: number) {
   c.width = w + pad * 2; c.height = fontPx + pad * 2
   const x = c.getContext("2d")!
   x.font = font; x.textAlign = "center"; x.textBaseline = "middle"
-  x.lineWidth = 5; x.strokeStyle = "rgba(7,11,20,0.9)"; x.strokeText(text, c.width / 2, c.height / 2)
-  x.fillStyle = "#e9eefb"; x.fillText(text, c.width / 2, c.height / 2)
+  // Dark text with a soft white halo, so labels stay crisp on the light "picture 2" canvas.
+  x.lineWidth = 4; x.strokeStyle = "rgba(255,255,255,0.92)"; x.strokeText(text, c.width / 2, c.height / 2)
+  x.fillStyle = "#1e293b"; x.fillText(text, c.width / 2, c.height / 2)
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, transparent: true }))
   sp.scale.set(worldH * (c.width / c.height), worldH, 1)
@@ -100,16 +101,9 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
   const [err, setErr] = useState("")
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [query, setQuery] = useState("")
-  // The reference legend hides while the mouse is moving over the graph and comes back
-  // once the pointer has been still for a moment, so it never blocks the view mid-drag.
-  const [legendOn, setLegendOn] = useState(true)
-  const idleRef = useRef<number | undefined>(undefined)
-  function onMove() {
-    setLegendOn((v) => (v ? false : v))
-    if (idleRef.current) clearTimeout(idleRef.current)
-    idleRef.current = window.setTimeout(() => setLegendOn(true), 2500)
-  }
-  useEffect(() => () => { if (idleRef.current) clearTimeout(idleRef.current) }, [])
+  // The legend is a small toggle that stays out of the way — collapsed by default so it
+  // never hogs the view, opened on demand from a compact "Legend" chip.
+  const [legendOpen, setLegendOpen] = useState(false)
   useEffect(() => { onPick.current = setSelectedId }, [])
   // When the selected node changes (click or a panel chip), refocus the highlight on it.
   useEffect(() => {
@@ -149,9 +143,11 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
     if (!document.fullscreenElement) el?.requestFullscreen?.()
     else document.exitFullscreen?.()
   }
-  // Recenter so every node is back in view (after spinning/zooming away).
+  // Recenter face-on so the disc reads as a clean circle again (after spinning/zooming away).
   function fitView() {
-    gRef.current?.zoomToFit?.(700, 60)
+    const G = gRef.current; if (!G) return
+    G.cameraPosition({ x: 0, y: 0, z: 900 }, { x: 0, y: 0, z: 0 }, 400)
+    window.setTimeout(() => G.zoomToFit?.(500, 55), 420)
   }
   // The layout is fixed (concentric rings), so "reset" just flies the camera back to a
   // clean, face-on framing of the whole brain.
@@ -196,8 +192,12 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
     const areaByName = new Map<string, GNode>()
     hubs.forEach((a) => areaByName.set(a.name, a))
     const sectors = [...canon, "Other"].map((a) => ({ a, list: bucket.get(a)! })).filter((s) => s.list.length)
-    const totalP = sectors.reduce((n, s) => n + s.list.length, 0) || 1
-    const GAP = 0.1                                 // angular padding between slices
+    // Each slice's width = (faculty count + BASE). The +BASE floor keeps small areas from
+    // collapsing to a sliver and one huge "Unlisted" slice from hogging the circle, so the
+    // hubs spread out into an even ring around the centre (the picture-2 look).
+    const BASE = 8
+    const totalW = sectors.reduce((n, s) => n + s.list.length + BASE, 0) || 1
+    const GAP = 0.08                                // angular padding between slices
     const usable = Math.PI * 2 - GAP * sectors.length
     const pin = (n: GNode, x: number, y: number) => { n.x = n.fx = x; n.y = n.fy = y; n.z = n.fz = 0 }
     const at = (ang: number, r: number) => [Math.cos(ang) * r, Math.sin(ang) * r] as const
@@ -206,7 +206,7 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
     pin(root, 0, 0)
     let cur = -Math.PI / 2
     for (const s of sectors) {
-      const span = usable * (s.list.length / totalP)
+      const span = usable * ((s.list.length + BASE) / totalW)
       const start = cur + GAP / 2
       const mid = start + span / 2
       const hub = areaByName.get(s.a === "Other" ? "Unlisted area" : s.a)
@@ -245,10 +245,11 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
     neighRef.current = neigh
     const endId = (e: GNode) => (typeof e === "object" ? e.id : e)
     const hot = (l: GNode) => { const f = focusRef.current; return !!f && (endId(l.source) === f || endId(l.target) === f) }
-    const baseLink = (l: GNode) => l.kind === "research" ? (AREA_COLORS[l.areaName] || "#8aa0c8") : "#5b6b8c"
+    const baseLink = (l: GNode) => l.kind === "research" ? (AREA_COLORS[l.areaName] || "#94a3b8") : "#94a3b8"
+    const REST_LINK = "rgba(148,163,184,0.5)"   // uniform thin grey spokes at rest (picture-2 look)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const G = (new ForceGraph3D(elRef.current) as any)
-      .backgroundColor("#0a0e18")
+      .backgroundColor("#f7f8fb")
       .graphData({ nodes, links })
       .cooldownTicks(0)                     // positions are pre-computed & pinned → no jiggle, opens organised
       .nodeRelSize(5)
@@ -296,7 +297,7 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
         g.add(label)
         return g
       })
-      .linkColor((l: GNode) => { const c = baseLink(l); return !focusRef.current ? hexA(c, l.kind === "research" ? 0.34 : 0.26) : hot(l) ? hexA(c, 0.96) : hexA(c, 0.05) })
+      .linkColor((l: GNode) => !focusRef.current ? REST_LINK : hot(l) ? hexA(baseLink(l), 0.95) : "rgba(148,163,184,0.07)")
       .linkOpacity(1)
       .linkWidth((l: GNode) => hot(l) ? 1.6 : 0.5)
       .linkDirectionalParticles((l: GNode) => hot(l) ? 4 : 0)
@@ -339,9 +340,15 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
     }
     refreshHi.current = updateHighlight
 
-    // The layout is pre-pinned (no simulation), so frame the whole disc as soon as it mounts.
+    // The layout is a pre-pinned flat disc, so view it straight-on (down the z-axis) for a
+    // clean concentric circle, then zoom to fit — not the default angled perspective.
     let framed = false
-    const frame = () => { if (!framed) { framed = true; G.zoomToFit(600, 80) } }
+    const frame = () => {
+      if (framed) return
+      framed = true
+      G.cameraPosition({ x: 0, y: 0, z: 900 }, { x: 0, y: 0, z: 0 }, 0)
+      G.zoomToFit(600, 55)
+    }
     G.onEngineStop(frame)
 
     const fit = () => { const r = elRef.current!.getBoundingClientRect(); G.width(r.width).height(r.height) }
@@ -409,43 +416,41 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
     )
   }
 
-  const btn = "h-8 bg-background/80 backdrop-blur border-border/60"
+    // Light "picture 2" chips that read cleanly on the near-white canvas.
+  const btn = "h-8 bg-white/85 text-slate-700 border-slate-300 backdrop-blur hover:bg-white hover:text-slate-900"
   return (
-    // Full-bleed: the graph fills the whole area below the header — controls and legend
-    // float on top of the canvas instead of stacking above/below it.
-    <div ref={wrapRef} onMouseMove={onMove} className="relative w-full overflow-hidden bg-[#0a0e18]" style={{ height: "calc(100svh - 122px)" }}>
+    // Full-bleed: the graph fills the whole area below the header — a small control row
+    // and an on-demand legend float on top of the canvas.
+    <div ref={wrapRef} className="relative w-full overflow-hidden bg-[#f7f8fb]" style={{ height: "calc(100svh - 122px)" }}>
       <div ref={elRef} className="absolute inset-0" style={{ display: data ? "block" : "none" }} />
-      {err && <p className="absolute inset-0 grid place-items-center p-4 text-sm text-muted-foreground">{err}</p>}
-      {!err && !data && <p className="absolute inset-0 grid place-items-center p-4 text-sm text-muted-foreground">Loading 3D graph…</p>}
+      {err && <p className="absolute inset-0 grid place-items-center p-4 text-sm text-slate-500">{err}</p>}
+      {!err && !data && <p className="absolute inset-0 grid place-items-center p-4 text-sm text-slate-500">Loading graph…</p>}
 
-      {/* Controls + reference legend, both anchored at the top-left. */}
+      {/* Compact control row, top-left. The legend is a small toggle, collapsed by default. */}
       <div className="absolute left-3 top-3 z-10 flex max-w-[min(94vw,720px)] flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <Input value={query} onChange={(e) => { setQuery(e.target.value); const q = e.target.value.trim().toLowerCase(); const m = data?.profs.find((p) => p.name.toLowerCase().includes(q)); if (q && m) go(m.id) }} placeholder="find a professor…" className="h-8 w-44 bg-background/80 text-sm backdrop-blur" />
+          <Input value={query} onChange={(e) => { setQuery(e.target.value); const q = e.target.value.trim().toLowerCase(); const m = data?.profs.find((p) => p.name.toLowerCase().includes(q)); if (q && m) go(m.id) }} placeholder="find a professor…" className="h-8 w-44 bg-white/85 text-slate-700 placeholder:text-slate-400 border-slate-300 text-sm backdrop-blur" />
           <Button size="sm" variant="outline" className={btn} onClick={fitView}><Crosshair className="size-4" /> Fit</Button>
           <Button size="sm" variant="outline" className={btn} onClick={resetView}><Shuffle className="size-4" /> Reset view</Button>
           <Button size="sm" variant="outline" className={btn} onClick={fullscreen}><Maximize2 className="size-4" /> Fullscreen</Button>
+          <Button size="sm" variant="outline" className={`${btn} ${legendOpen ? "!bg-slate-800 !text-white !border-slate-800" : ""}`} onClick={() => setLegendOpen((v) => !v)} aria-pressed={legendOpen}><Info className="size-4" /> Legend</Button>
         </div>
-        {/* Reference / legend — what the nodes, links, and colors mean. Fades out while
-            the mouse is moving so it never blocks the graph, and returns when idle. */}
-        <div className={`space-y-1.5 rounded-lg border border-border/40 bg-background/70 px-3 py-2 text-[11px] text-muted-foreground backdrop-blur transition-opacity duration-300 ${legendOn ? "opacity-100" : "pointer-events-none opacity-0"}`}>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-            <span className="font-medium text-foreground/70">Nodes</span>
-            <span className="inline-flex items-center gap-1.5"><span className="inline-block size-3.5 rounded-full bg-teal-400 ring-1 ring-white/50" /> Faculty (headshot)</span>
-            <span className="inline-flex items-center gap-1.5"><span className="inline-block size-2 rounded-full bg-slate-500" /> Course</span>
-            <span className="inline-flex items-center gap-1.5"><span className="inline-block size-4 rounded-full bg-amber-400" /> Research area (hub)</span>
+        {/* On-demand legend popover — only rendered when opened, so it never hogs the view. */}
+        {legendOpen && (
+          <div className="w-fit max-w-[min(92vw,560px)] space-y-1.5 rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-[11px] text-slate-500 shadow-lg backdrop-blur">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+              <span className="font-medium text-slate-700">Nodes</span>
+              <span className="inline-flex items-center gap-1.5"><span className="inline-block size-3.5 rounded-full bg-teal-400 ring-1 ring-slate-300" /> Faculty (headshot)</span>
+              <span className="inline-flex items-center gap-1.5"><span className="inline-block size-2 rounded-full bg-slate-500" /> Course</span>
+              <span className="inline-flex items-center gap-1.5"><span className="inline-block size-4 rounded-full bg-amber-400" /> Research area (hub)</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <span className="font-medium text-slate-700">Areas</span>
+              {Object.entries(AREA_COLORS).map(([k, v]) => <button key={k} onClick={() => go("a:" + k)} title={`Focus ${k} faculty`} className="inline-flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-slate-100"><span className="inline-block size-2.5 rounded-full" style={{ background: v }} /> {k}</button>)}
+            </div>
+            <div className="pt-0.5 text-[10px] text-slate-400">Rings: department at the centre, research areas around it, faculty grouped by area, courses on the outer edge. Click any node for details. Teaching links are exact; research areas are derived from each professor's bio.</div>
           </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-            <span className="font-medium text-foreground/70">Links</span>
-            <span className="inline-flex items-center gap-1.5"><span className="inline-block h-0.5 w-6 rounded bg-slate-400" /> teaches a course</span>
-            <span className="inline-flex items-center gap-1.5"><span className="inline-block h-0.5 w-6 rounded bg-violet-400" /> works in a research area</span>
-          </div>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <span className="font-medium text-foreground/70">Areas</span>
-            {Object.entries(AREA_COLORS).map(([k, v]) => <button key={k} onClick={() => go("a:" + k)} title={`Focus ${k} faculty`} className="inline-flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-muted/60"><span className="inline-block size-2.5 rounded-full" style={{ background: v }} /> {k}</button>)}
-          </div>
-          <div className="pt-0.5 text-[10px] opacity-80">Rings: department at the centre, research areas around it, faculty grouped by area, courses on the outer edge. Teaching links are exact; research areas are derived from each professor's bio.</div>
-        </div>
+        )}
       </div>
 
       <Panel />

@@ -85,6 +85,14 @@ function hexA(hex: string, a: number) {
   return `rgba(${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)},${a})`
 }
 
+// Escape DB-sourced strings before they go into the hover tooltip's innerHTML (3d-force-graph
+// renders nodeLabel as raw HTML). Defence-in-depth: campus data is admin/import-controlled, but a
+// scraped faculty name should never be able to inject markup into the tooltip.
+const ESC: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }
+function esc(s: string) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ESC[c])
+}
+
 export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const elRef = useRef<HTMLDivElement>(null)
@@ -253,7 +261,7 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
       .nodeRelSize(5)
       .nodeVal((n: GNode) => (n.role === "root" ? 26 : n.role === "area" ? 13 : n.role === "course" ? 1.4 : 3.5))
       .nodeColor((n: GNode) => n.color)
-      .nodeLabel((n: GNode) => n.role === "prof" ? `<b>${n.name}</b>` : n.role === "root" ? `<b>TTU ECE</b> · department` : n.role === "area" ? `<b>${n.name}</b> · research area` : `<b>${n.code}</b> · ${n.title}`)
+      .nodeLabel((n: GNode) => n.role === "prof" ? `<b>${esc(n.name)}</b>` : n.role === "root" ? `<b>TTU ECE</b> · department` : n.role === "area" ? `<b>${esc(n.name)}</b> · research area` : `<b>${esc(n.code)}</b> · ${esc(n.title)}`)
       .nodeThreeObjectExtend(false)
       .nodeThreeObject((n: GNode) => {
         // Build each node fully: its visual (headshot / colored sphere) plus a text

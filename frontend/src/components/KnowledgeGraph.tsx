@@ -133,14 +133,16 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
   const roleOf = (id: string) => (id[0] === "p" ? "prof" : id[0] === "c" ? "course" : "area")
   const colorOf = (n: GNode) => n.role === "area" ? AREA_COLORS[n.name] || "#94a3b8" : n.role === "course" ? "#64748b" : (n.areas?.[0] ? AREA_COLORS[n.areas[0]] : "#2dd4bf")
 
+  // The brain is a flat disc (z=0), so "fly to" a node = centre it and view it head-on
+  // from a fixed distance in front, rather than scaling its position (which would go edge-on).
+  function flyTo(G: GNode, n: GNode, ms = 900) {
+    if (!n || n.x == null) return
+    G.cameraPosition({ x: n.x, y: n.y, z: (n.z || 0) + 230 }, { x: n.x, y: n.y, z: n.z || 0 }, ms)
+  }
   function go(id: string) {
     setSelectedId(id)
     const G = gRef.current; if (!G) return
-    const n = G.graphData().nodes.find((x: GNode) => x.id === id)
-    if (n && n.x != null) {
-      const d = 90, ratio = 1 + d / Math.hypot(n.x, n.y, n.z || 0)
-      G.cameraPosition({ x: n.x * ratio, y: n.y * ratio, z: (n.z || 0) * ratio }, n, 900)
-    }
+    flyTo(G, G.graphData().nodes.find((x: GNode) => x.id === id))
   }
   function fullscreen() {
     const el = wrapRef.current
@@ -151,23 +153,85 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
   function fitView() {
     gRef.current?.zoomToFit?.(700, 60)
   }
-  // Re-run the force layout so the cluster untangles, then fit it back on screen.
-  function rearrange() {
+  // The layout is fixed (concentric rings), so "reset" just flies the camera back to a
+  // clean, face-on framing of the whole brain.
+  function resetView() {
     const G = gRef.current
     if (!G) return
-    G.d3ReheatSimulation?.()
-    window.setTimeout(() => G.zoomToFit?.(700, 60), 1400)
+    G.cameraPosition({ x: 0, y: 0, z: 900 }, { x: 0, y: 0, z: 0 }, 700)
+    window.setTimeout(() => G.zoomToFit?.(600, 80), 720)
   }
 
   useEffect(() => {
     if (!data || !elRef.current) return
-    const nodes: GNode[] = [
-      ...data.areas.map((a) => ({ ...a, role: "area" })),
-      ...data.profs.map((p) => ({ ...p, role: "prof" })),
-      ...data.courses.map((c) => ({ ...c, role: "course" })),
-    ]
-    nodes.forEach((n) => (n.color = colorOf(n)))
+    // A synthetic department node anchors the centre of the "second brain".
+    const root: GNode = { id: "root", role: "root", name: "TTU ECE" }
+    const areas = data.areas.map((a) => ({ ...a, role: "area" }))
+    const profs = data.profs.map((p) => ({ ...p, role: "prof" }))
+    const courses = data.courses.map((c) => ({ ...c, role: "course" }))
+
+    // ---- Deterministic concentric "second brain" layout (like an Obsidian brain) ----
+    // Every node is PINNED into tidy rings: centre = department, ring 1 = research-area
+    // hubs, ring 2 = faculty (grouped so each area owns a contiguous colour-coded slice),
+    // ring 3 = courses parked just outside the professor who teaches them. Opens organised,
+    // every time — no force-directed hairball.
+    const R_AREA = 130, R_PROF = 300, R_COURSE = 470
+    const canon = data.areas.map((a) => a.name)
+    const known = new Set<string>(canon)
+    const bucket = new Map<string, GNode[]>()
+    canon.forEach((n) => bucket.set(n, []))
+    bucket.set("Other", [])
+    profs.forEach((p) => {
+      const a = (p.areas || []).find((x: string) => known.has(x)) || "Other"
+      bucket.get(a)!.push(p)
+    })
+    // Faculty with no listed research area (emeritus, cross-listed, etc.) get ONE tidy grey
+    // slice with its own hub, so the centre stays clean instead of sprouting dozens of spokes.
+    const otherHub: GNode | null = bucket.get("Other")!.length
+      ? { id: "a:__other", role: "area", name: "Unlisted area", color: "#64748b" } : null
+    const hubs = otherHub ? [...areas, otherHub] : areas
+    const nodes: GNode[] = [root, ...hubs, ...profs, ...courses]
+    nodes.forEach((n) => (n.color = n.role === "root" ? "#e5e7eb" : n.id === "a:__other" ? "#64748b" : colorOf(n)))
+
+    const areaByName = new Map<string, GNode>()
+    hubs.forEach((a) => areaByName.set(a.name, a))
+    const sectors = [...canon, "Other"].map((a) => ({ a, list: bucket.get(a)! })).filter((s) => s.list.length)
+    const totalP = sectors.reduce((n, s) => n + s.list.length, 0) || 1
+    const GAP = 0.1                                 // angular padding between slices
+    const usable = Math.PI * 2 - GAP * sectors.length
+    const pin = (n: GNode, x: number, y: number) => { n.x = n.fx = x; n.y = n.fy = y; n.z = n.fz = 0 }
+    const at = (ang: number, r: number) => [Math.cos(ang) * r, Math.sin(ang) * r] as const
+    const profAngle = new Map<string, number>()
+    const hubLinks: GNode[] = []                    // faculty → their (grey "Unlisted") hub
+    pin(root, 0, 0)
+    let cur = -Math.PI / 2
+    for (const s of sectors) {
+      const span = usable * (s.list.length / totalP)
+      const start = cur + GAP / 2
+      const mid = start + span / 2
+      const hub = areaByName.get(s.a === "Other" ? "Unlisted area" : s.a)
+      if (hub) { const [hx, hy] = at(mid, R_AREA); pin(hub, hx, hy) }
+      s.list.forEach((p, i) => {
+        const t = s.list.length === 1 ? mid : start + span * (i / (s.list.length - 1))
+        const [px, py] = at(t, R_PROF + (i % 2 ? 46 : 0))   // alternate 2 sub-rings so they don't touch
+        pin(p, px, py); profAngle.set(p.id, t)
+        if (s.a === "Other" && hub) hubLinks.push({ source: p.id, target: hub.id, kind: "structure" })
+      })
+      cur += GAP + span
+    }
+    // Courses ring: sit each course next to the (first) professor who teaches it.
+    const firstProf = new Map<string, string>()
+    data.teaches.forEach(({ s, t }) => { if (!firstProf.has(t)) firstProf.set(t, s) })
+    let orphan = 0
+    courses.forEach((c) => {
+      const pid = firstProf.get(c.id)
+      const ang = pid != null && profAngle.has(pid) ? profAngle.get(pid)! : (orphan++ * 0.2 - Math.PI / 2)
+      const [cx, cy] = at(ang, R_COURSE); pin(c, cx, cy)
+    })
+
     const links = [
+      ...hubs.map((a) => ({ source: "root", target: a.id, kind: "structure" })),
+      ...hubLinks,
       ...data.teaches.map((l) => ({ source: l.s, target: l.t, kind: "teach" })),
       ...data.researches.map((l) => ({ source: l.s, target: l.t, kind: "research", areaName: idx[l.t]?.name })),
     ]
@@ -176,6 +240,8 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
     const edge = (a: string, b: string) => { if (!neigh.has(a)) neigh.set(a, new Set()); neigh.get(a)!.add(b) }
     data.teaches.forEach(({ s, t }) => { edge(s, t); edge(t, s) })
     data.researches.forEach(({ s, t }) => { edge(s, t); edge(t, s) })
+    hubs.forEach((a) => { edge("root", a.id); edge(a.id, "root") })
+    hubLinks.forEach((l) => { edge(l.source, l.target); edge(l.target, l.source) })
     neighRef.current = neigh
     const endId = (e: GNode) => (typeof e === "object" ? e.id : e)
     const hot = (l: GNode) => { const f = focusRef.current; return !!f && (endId(l.source) === f || endId(l.target) === f) }
@@ -184,10 +250,11 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
     const G = (new ForceGraph3D(elRef.current) as any)
       .backgroundColor("#0a0e18")
       .graphData({ nodes, links })
+      .cooldownTicks(0)                     // positions are pre-computed & pinned → no jiggle, opens organised
       .nodeRelSize(5)
-      .nodeVal((n: GNode) => (n.role === "area" ? 13 : n.role === "course" ? 1.4 : 3.5))
+      .nodeVal((n: GNode) => (n.role === "root" ? 26 : n.role === "area" ? 13 : n.role === "course" ? 1.4 : 3.5))
       .nodeColor((n: GNode) => n.color)
-      .nodeLabel((n: GNode) => n.role === "prof" ? `<b>${n.name}</b>` : n.role === "area" ? `<b>${n.name}</b> · research area` : `<b>${n.code}</b> · ${n.title}`)
+      .nodeLabel((n: GNode) => n.role === "prof" ? `<b>${n.name}</b>` : n.role === "root" ? `<b>TTU ECE</b> · department` : n.role === "area" ? `<b>${n.name}</b> · research area` : `<b>${n.code}</b> · ${n.title}`)
       .nodeThreeObjectExtend(false)
       .nodeThreeObject((n: GNode) => {
         // Build each node fully: its visual (headshot / colored sphere) plus a text
@@ -203,6 +270,11 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
           im.onerror = () => { mat.map = initialsTexture(n.name, n.color); mat.needsUpdate = true } // broken URL -> medallion
           im.src = n.photo
           g.add(sprite); half = 5.5
+        } else if (n.role === "root") {
+          // The department core at the centre of the brain — a dark, ringed hub.
+          g.add(sphereMesh("#1f2937", 17))
+          const ring = new THREE.Mesh(new THREE.TorusGeometry(20, 1.1, 10, 40), new THREE.MeshBasicMaterial({ color: "#38bdf8" }))
+          g.add(ring); half = 20
         } else if (n.role === "area") {
           g.add(sphereMesh(n.color, 12)); half = 12
         } else if (n.role === "prof") {
@@ -214,7 +286,7 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
         } else {
           g.add(sphereMesh(n.color, 2.6)); half = 2.6
         }
-        const big = n.role === "area"
+        const big = n.role === "area" || n.role === "root"
         const text = (n.role === "course" ? n.code : n.name) || ""
         const label = textSprite(text, big ? 34 : 22, big ? 9 : 4.6)
         label.position.set(0, -(half + (big ? 6 : 3)), 0)
@@ -239,8 +311,7 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
         onPick.current(n.id)
         focusRef.current = n.id
         updateHighlight()
-        const d = 90, ratio = 1 + d / Math.hypot(n.x, n.y, n.z || 0)
-        G.cameraPosition({ x: n.x * ratio, y: n.y * ratio, z: (n.z || 0) * ratio }, n, 900)
+        flyTo(G, n)
       })
       .onBackgroundClick(() => { onPick.current(null); focusRef.current = null; updateHighlight() })
     gRef.current = G
@@ -268,13 +339,15 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
     }
     refreshHi.current = updateHighlight
 
-    // Frame the whole graph once the force layout settles, so it always opens nicely.
+    // The layout is pre-pinned (no simulation), so frame the whole disc as soon as it mounts.
     let framed = false
-    G.onEngineStop(() => { if (!framed) { framed = true; G.zoomToFit(700, 70) } })
+    const frame = () => { if (!framed) { framed = true; G.zoomToFit(600, 80) } }
+    G.onEngineStop(frame)
 
     const fit = () => { const r = elRef.current!.getBoundingClientRect(); G.width(r.width).height(r.height) }
     fit()
     requestAnimationFrame(fit) // re-measure once the flex layout has settled
+    setTimeout(frame, 80)      // cooldownTicks(0) may skip onEngineStop — fit explicitly
     window.addEventListener("resize", fit)
     document.addEventListener("fullscreenchange", fit)
     return () => {
@@ -350,7 +423,7 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
         <div className="flex flex-wrap items-center gap-2">
           <Input value={query} onChange={(e) => { setQuery(e.target.value); const q = e.target.value.trim().toLowerCase(); const m = data?.profs.find((p) => p.name.toLowerCase().includes(q)); if (q && m) go(m.id) }} placeholder="find a professor…" className="h-8 w-44 bg-background/80 text-sm backdrop-blur" />
           <Button size="sm" variant="outline" className={btn} onClick={fitView}><Crosshair className="size-4" /> Fit</Button>
-          <Button size="sm" variant="outline" className={btn} onClick={rearrange}><Shuffle className="size-4" /> Re-arrange</Button>
+          <Button size="sm" variant="outline" className={btn} onClick={resetView}><Shuffle className="size-4" /> Reset view</Button>
           <Button size="sm" variant="outline" className={btn} onClick={fullscreen}><Maximize2 className="size-4" /> Fullscreen</Button>
         </div>
         {/* Reference / legend — what the nodes, links, and colors mean. Fades out while
@@ -371,7 +444,7 @@ export default function KnowledgeGraph({ onAsk }: { onAsk?: (q: string) => void 
             <span className="font-medium text-foreground/70">Areas</span>
             {Object.entries(AREA_COLORS).map(([k, v]) => <button key={k} onClick={() => go("a:" + k)} title={`Focus ${k} faculty`} className="inline-flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-muted/60"><span className="inline-block size-2.5 rounded-full" style={{ background: v }} /> {k}</button>)}
           </div>
-          <div className="pt-0.5 text-[10px] opacity-80">Teaching links are exact; research areas are derived from each professor's bio.</div>
+          <div className="pt-0.5 text-[10px] opacity-80">Rings: department at the centre, research areas around it, faculty grouped by area, courses on the outer edge. Teaching links are exact; research areas are derived from each professor's bio.</div>
         </div>
       </div>
 

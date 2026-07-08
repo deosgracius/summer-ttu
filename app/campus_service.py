@@ -301,6 +301,21 @@ def _content_tokens(q: str):
     return out
 
 
+# Generic words that appear across many course titles (and in everyday questions), so a
+# match on one of these ALONE must never pull up a course card. A course is only considered
+# when the query shares something DISTINCTIVE with it — its subject code, number, instructor,
+# or a specific title word ("microwave", "robotics", "electromagnetics"). Fixes stray matches
+# like "...encouraging message for engineering students..." -> a random "...Engineering" course.
+_COMMON_COURSE_WORDS = {
+    "engineering", "electrical", "computer", "computing", "system", "systems",
+    "design", "project", "projects", "lab", "labs", "laboratory", "introduction",
+    "advanced", "principles", "fundamentals", "analysis", "application", "applications",
+    "topics", "special", "methods", "method", "theory", "science", "sciences",
+    "technology", "student", "students", "general", "credit", "hours", "course",
+    "courses", "class", "classes", "i", "ii", "iii",
+}
+
+
 def best_answer(db, question: str, min_score: int = 1):
     """A fair, deterministic 'search box': rank every campus record by how many
     content tokens of the question it contains, and return the single best match
@@ -350,7 +365,12 @@ def best_answer(db, question: str, min_score: int = 1):
                  f"{a.name} (advisor) — office {office}, email {a.email or 'not listed'}.")
     for c in db.query(models.CourseSection).all():
         where = f"{c.building} {c.room_number}".strip() or "not listed"
-        consider(f"{c.subject} {c.course} {c.subject}{c.course} {c.title} {c.instructor}",
+        hay = f"{c.subject} {c.course} {c.subject}{c.course} {c.title} {c.instructor}".lower()
+        # Only consider this course when the query shares a DISTINCTIVE token with it — its
+        # code/number/instructor or a specific title word — never a generic word alone.
+        if not any(t in hay and t not in _COMMON_COURSE_WORDS for t in toks):
+            continue
+        consider(hay,
                  f"{c.subject} {c.course} {c.title} — meets {c.days or 'n/a'} "
                  f"{c.times or ''} in {where}, instructor {c.instructor or 'not listed'}.")
     for b in db.query(models.Building).all():

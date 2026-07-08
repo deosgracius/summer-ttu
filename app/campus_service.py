@@ -366,9 +366,13 @@ def best_answer(db, question: str, min_score: int = 1):
     for c in db.query(models.CourseSection).all():
         where = f"{c.building} {c.room_number}".strip() or "not listed"
         hay = f"{c.subject} {c.course} {c.subject}{c.course} {c.title} {c.instructor}".lower()
-        # Only consider this course when the query shares a DISTINCTIVE token with it — its
-        # code/number/instructor or a specific title word — never a generic word alone.
-        if not any(t in hay and t not in _COMMON_COURSE_WORDS for t in toks):
+        # Only consider this course when the query shares a DISTINCTIVE WHOLE WORD with it —
+        # its code/number/instructor or a specific title word — never a generic word alone,
+        # and never an incidental SUBSTRING (e.g. "one" inside "components", which used to
+        # sneak the score up to 2 and return a random course for an unrelated question).
+        hay_words = set(re.findall(r"[a-z0-9]+", hay))
+        qwords = {re.sub(r"[^a-z0-9]+", "", t) for t in toks}
+        if not ((qwords & hay_words) - _COMMON_COURSE_WORDS):
             continue
         consider(hay,
                  f"{c.subject} {c.course} {c.title} — meets {c.days or 'n/a'} "

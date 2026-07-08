@@ -11,10 +11,33 @@ const AUTHED_MARKER = "1"
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
 }
+// Set exactly once per real login so the UI can greet on login but not on reloads/tab
+// switches. Needed because getToken() is now a constant marker and can no longer tell one
+// login from the next (it used to be a unique per-login JWT).
+const FRESH_LOGIN_KEY = "summer_fresh_login"
+
 export function setToken(token: string | null) {
   // Never persist the real JWT in JS-readable storage — store only the marker.
-  if (token) localStorage.setItem(TOKEN_KEY, AUTHED_MARKER)
-  else localStorage.removeItem(TOKEN_KEY)
+  if (token) {
+    localStorage.setItem(TOKEN_KEY, AUTHED_MARKER)
+    // setToken is only called with a token on an actual login/adopt (not on session
+    // restore), so this flags a genuine login for the welcome greeting.
+    try { sessionStorage.setItem(FRESH_LOGIN_KEY, "1") } catch { /* storage unavailable */ }
+  } else {
+    localStorage.removeItem(TOKEN_KEY)
+  }
+}
+
+/** True exactly once after a real login, then self-clears — so the welcome greeting fires
+ *  on login but stays quiet on reloads and tab switches. */
+export function consumeFreshLogin(): boolean {
+  try {
+    const fresh = sessionStorage.getItem(FRESH_LOGIN_KEY) === "1"
+    if (fresh) sessionStorage.removeItem(FRESH_LOGIN_KEY)
+    return fresh
+  } catch {
+    return false
+  }
 }
 
 function authHeaders(): Record<string, string> {

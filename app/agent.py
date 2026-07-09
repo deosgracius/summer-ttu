@@ -379,6 +379,9 @@ async def run_kiosk_traced(goal, db, provider=None, history=None):
             ("advising", lambda: campus_service.advising_referral(db, goal)),
             ("lab", lambda: campus_service.lab_answer(db, goal)),
             ("confident", lambda: campus_service.confident_lookup(db, goal)),
+            # LAST, so real lookups always win first: greetings, thanks, bare wake words, and
+            # recognizer noise/echo get a fixed one-liner instead of being sent to the LLM.
+            ("smalltalk", lambda: campus_service.smalltalk_answer(goal)),
         )
         for route, fn in chain:
             ans = fn()

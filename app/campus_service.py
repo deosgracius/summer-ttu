@@ -925,6 +925,62 @@ _TITLE_ROLES = [
 ]
 
 
+# ---- Small talk / speech-recognizer noise (answered without the LLM) --------
+# Greetings, thanks, bare wake words, device-control asks, and the junk a recognizer emits
+# on silence or by re-hearing Summer's own voice (Whisper famously hallucinates "Thank you
+# for watching!" on near-silent audio; the hallway mic also re-transcribes Summer's replies).
+# These are NOT questions — a fixed one-liner is cheaper AND safer than paying the LLM to
+# improvise, which is exactly where it drifts into made-up chit-chat. Returns None for
+# anything that looks like a real question, so it never swallows a lookup.
+_HELP_PROMPT = ("I can help with ECE classes, professors, offices, office hours, labs, and the "
+                "stockroom. What would you like to know?")
+_WAKE_WORDS = {"summer", "sumer", "summa", "somer", "sammer", "sam", "hey", "hay", "hi",
+               "hello", "yo", "a", "ok", "okay", "uh", "um", "hmm", "so"}
+_WAKE_STRIP = re.compile(r"^\s*(?:ok(?:ay)?|hey|hi|hello|yo)?[\s,]*"
+                         r"(?:summer|sumer|summa|somer|sammer|sam)[\s,.:!?-]*", re.I)
+_GREETING_RE = re.compile(r"^(?:hi|hello|hey|yo|good (?:morning|afternoon|evening|day)|"
+                          r"how are you|how'?s it going|what'?s up|how do you do)[\s,.!?]*$", re.I)
+_NOISE_RE = re.compile(
+    r"^(?:thank(?:s| you)? for watching|please subscribe|(?:like and )?subscribe|"
+    r"see you (?:next time|later|soon)|bye(?: bye)?|goodbye|the end|you|"
+    r"yes|yeah|yep|yup|no|nope|nah|ok(?:ay)?|sure|nothing|never ?mind|nvm|"
+    r"cool|nice|great|got it|i'?m listening|go ahead|how can i help|"
+    r"i'?m here to help|how you doing)[\s,.!?]*$", re.I)
+_THANKS_RE = re.compile(r"^(?:thanks?|thank you|thank u|ty|thx|much appreciated|appreciate it)\b", re.I)
+# Device-control asks ("turn off the computer", "put my computer to sleep") — a control VERB
+# plus a device NOUN, in any order. The kiosk controls nothing; both keep it off the LLM.
+_DEVICE_NOUN = re.compile(r"\b(?:computer|pc|laptop|screen|monitor|windows|the (?:machine|device|kiosk|system))\b", re.I)
+_DEVICE_VERB = re.compile(r"\b(?:turn off|turn on|shut ?down|restart|reboot|sleep|hibernate|log ?off|"
+                          r"sign out|volume|brightness|mute|unmute|control)\b", re.I)
+
+
+def smalltalk_answer(query):
+    """Deterministic reply for greetings, thanks, bare wake words, recognizer noise/echo, and
+    device-control asks — so the LLM is never invoked to improvise on 'a summer' or a Whisper
+    'Thank you for watching!'. None => a real question; keep going down the chain."""
+    q = (query or "").strip()
+    if not q:
+        return _HELP_PROMPT
+    words = re.findall(r"[a-z']+", q.lower())
+    # Whole utterance is nothing but wake words / filler ("summer", "hey summer", "a summer a summer").
+    if not words or all(w.strip("'") in _WAKE_WORDS for w in words):
+        return _HELP_PROMPT
+    core = _WAKE_STRIP.sub("", q).strip() or q
+    # Device-control (can be a longer sentence) — checked before the short-utterance gate.
+    if _DEVICE_NOUN.search(core) and _DEVICE_VERB.search(core):
+        return ("I'm a campus information kiosk — I can't control this computer or its settings. "
+                + _HELP_PROMPT)
+    if len(core.split()) > 6:                         # only short utterances can be small talk
+        return None
+    if _GREETING_RE.match(core):
+        return "Hi! " + _HELP_PROMPT
+    if _NOISE_RE.match(core):
+        return _HELP_PROMPT
+    if _THANKS_RE.match(core):
+        return "You're welcome. Anything else I can help with?"
+    return None
+
+
 def title_answer(db, query):
     """Who holds a department ROLE — department chair, associate chair (undergrad vs graduate),
     a program coordinator, or ABET coordinator — resolved from the imported directory titles,

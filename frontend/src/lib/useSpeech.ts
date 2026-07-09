@@ -122,6 +122,10 @@ export function useSpeech() {
   const [wakeActive, setWakeActive] = useState(false)
   // awake = currently in an active conversation (vs dormant, waiting for "Hey Summer")
   const [awake, setAwake] = useState(false)
+  // wakeBlocked = the browser's Google-backed wake word failed here (network blocked);
+  // serverWake = we're using the no-Google server-side wake fallback instead.
+  const [wakeBlocked, setWakeBlocked] = useState(false)
+  const [serverWake, setServerWake] = useState(false)
   const [heard, setHeard] = useState("") // live transcript for on-screen feedback
 
   const recRef = useRef<AnyRec | null>(null)
@@ -549,7 +553,12 @@ export function useSpeech() {
       // the mic button (server-side Whisper) still works.
       if (err === "network") {
         netFails++
-        if (netFails >= 3) setHeard("Voice wake word isn't available in this browser. Use the microphone button to talk.")
+        // Google's speech backend is blocked on this network. Flag it so the UI can offer
+        // the no-Google server-side wake fallback (and the mic button always works).
+        if (netFails >= 3 && !serverWakeOn.current) {
+          setWakeBlocked(true)
+          setHeard('Voice wake word is blocked on this network. Turn on hands-free (server) — or tap the mic.')
+        }
         return
       }
       const msg: Record<string, string> = {
@@ -613,8 +622,105 @@ export function useSpeech() {
     } catch {
       /* ignore */
     }
+    stopServerWake()
     stopSpeaking()
     setWakeActive(false)
+  }
+
+  // ---- Server-side wake word (no Google, no signup) ----
+  // The browser wake word streams audio to Google's speech servers, which some networks
+  // block (repeated 'network' errors -> "not available in this browser"). This fallback
+  // listens through OUR OWN server instead: it VAD-segments each utterance, sends it to
+  // Whisper (/kiosk/stt), and runs the SAME wake/command logic on the transcript. Works in
+  // any browser and on any network, and never touches Google. Opt-in so it never surprises
+  // the public kiosk.
+  const serverWakeOn = useRef(false)
+  const serverStream = useRef<MediaStream | null>(null)
+
+  function handleTranscript(raw: string) {
+    if (!raw) return
+    if (PENDING_YESNO) {
+      if (YES_RE.test(raw)) { const h = PENDING_YESNO; PENDING_YESNO = null; h.onYes(); return }
+      if (NO_RE.test(raw)) { const h = PENDING_YESNO; PENDING_YESNO = null; h.onNo(); return }
+    }
+    if (!engaged.current) {
+      if (!WAKE.test(raw)) { setHeard('Listening — say "Summer"'); return } // dormant until "Summer"
+      engage()
+      const after = raw.replace(WAKE_LEAD, "").trim()
+      if (after.length < 2 || (ENDRE.test(after) && after.split(/\s+/).length <= 4)) {
+        const a = pickAck(); setHeard(a); speak(a); resetConvoTimer(); return
+      }
+      resetConvoTimer(); onCmd.current(after); return
+    }
+    const cmd = raw.replace(WAKE_LEAD, "").trim()
+    if (cmd.length < 2) return
+    if (FILLER.test(cmd)) { resetConvoTimer(); return }
+    if (ENDRE.test(cmd) && cmd.split(/\s+/).length <= 4) { disengage(); return }
+    resetConvoTimer(); onCmd.current(cmd)
+  }
+
+  async function serverWakeCycle() {
+    if (!serverWakeOn.current) return
+    // Never record over Summer's own voice (or a tap-to-talk capture) — wait it out. Her
+    // lagged tail after speaking is caught by isEcho() on the transcript below.
+    if (speaking.current || VOICE.speaking || recording.current) {
+      window.setTimeout(serverWakeCycle, 350); return
+    }
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch {
+      setHeard("Microphone blocked. Click the address-bar lock, allow the mic, then reload.")
+      serverWakeOn.current = false; setWakeActive(false); return
+    }
+    serverStream.current = stream
+    let mime = ""
+    for (const m of ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"]) {
+      if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(m)) { mime = m; break }
+    }
+    const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
+    const chunks: BlobPart[] = []
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data) }
+    const finish = () => { try { if (rec.state !== "inactive") rec.stop() } catch { /* ignore */ } }
+    rec.onstop = async () => {
+      stopVad()
+      try { stream.getTracks().forEach((t) => t.stop()) } catch { /* ignore */ }
+      const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" })
+      if (blob.size >= 1600 && !(speaking.current || VOICE.speaking)) {
+        try {
+          const text = (await transcribeBlob(blob)).trim()
+          if (text && !isEcho(text)) handleTranscript(text)
+        } catch { /* transient — just loop */ }
+      }
+      if (serverWakeOn.current) window.setTimeout(serverWakeCycle, 150) // next utterance
+    }
+    rec.start()
+    if (!engaged.current) setHeard('Listening — say "Summer"')
+    watchSilence(stream, finish)                                   // stop ~1.4s after you pause
+    window.setTimeout(finish, 12000)                               // hard cap per utterance
+  }
+
+  function startServerWake(onCommand: (cmd: string) => void) {
+    onCmd.current = onCommand
+    if (serverWakeOn.current) return
+    micOn.current = false                        // release the (failed) browser recognizer
+    try { recRef.current?.abort() } catch { /* ignore */ }
+    serverWakeOn.current = true
+    engaged.current = false                      // start dormant: needs "Summer"
+    vstate.current = "active"
+    setWakeActive(true)
+    setServerWake(true)
+    window.setTimeout(serverWakeCycle, 200)
+  }
+
+  function stopServerWake() {
+    serverWakeOn.current = false
+    engaged.current = false
+    setServerWake(false)
+    setWakeActive(false)
+    setHeard("")
+    try { serverStream.current?.getTracks().forEach((t) => t.stop()) } catch { /* ignore */ }
+    stopVad()
   }
 
   // Send recorded audio to the backend for Whisper transcription. Works on any
@@ -804,11 +910,15 @@ export function useSpeech() {
     listening,
     wakeActive,
     awake,
+    wakeBlocked,
+    serverWake,
     heard,
     listen,
     stopListening,
     startWakeWord,
     stopWakeWord,
+    startServerWake,
+    stopServerWake,
     speak,
     stopSpeaking,
     primeAudio,

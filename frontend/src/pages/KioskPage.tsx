@@ -38,7 +38,7 @@ export default function KioskPage() {
   const [turns, setTurns] = useState<Turn[]>([])
   const [loading, setLoading] = useState(false)
   const [muted, setMuted] = useState(false)
-  const { supported: voiceIn, canSpeak, listening, wakeActive, awake, heard, listen, speak, stopSpeaking, startWakeWord, stopWakeWord, primeAudio } =
+  const { supported: voiceIn, canSpeak, listening, wakeActive, awake, wakeBlocked, serverWake, heard, listen, speak, stopSpeaking, startWakeWord, stopWakeWord, startServerWake, stopServerWake, primeAudio } =
     useSpeech()
   const idleTimer = useRef<number | undefined>(undefined)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -237,6 +237,20 @@ export default function KioskPage() {
                 }}
               >
                 <Radio className="size-3.5" /> {wakeActive ? "Wake word on" : "Wake word off"}
+              </button>
+            )}
+            {/* When the browser's Google-backed wake word is blocked on this network, offer a
+                no-Google fallback that listens via our own Whisper server. Opt-in (a tap also
+                primes the mic), so the public kiosk is never continuously recording by default. */}
+            {voiceIn && (wakeBlocked || serverWake) && (
+              <button
+                className={`inline-flex items-center gap-1.5 underline-offset-4 hover:underline ${serverWake ? "text-emerald-400" : "text-primary"}`}
+                onClick={() => {
+                  if (serverWake) stopServerWake()
+                  else { primeAudio(); stopWakeWord(); startServerWake((cmd) => askRef.current(cmd)) }
+                }}
+              >
+                <Radio className="size-3.5" /> {serverWake ? "Hands-free on (server)" : "Enable hands-free (no Google)"}
               </button>
             )}
             {canSpeak && (

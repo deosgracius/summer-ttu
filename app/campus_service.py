@@ -745,10 +745,24 @@ _WANTS_MORE = re.compile(
     r"publications?|cv|resume|phone)\b", re.I)
 
 
+def _person_scope(query: str) -> bool:
+    """The person fast-path may only claim a query that is either a near-bare name
+    ("Derek Johnston", "yo, who's derek") or free of reasoning cues. Long sentences
+    with _NEEDS_LLM words must reach the model: a phonetic hit inside a common word
+    (phon("zhou") = "shou" ⊂ "should") would otherwise turn "what should I study
+    here?" into a random professor's contact card before the LLM ever runs."""
+    toks = [t for t in re.findall(r"[a-z]+", (query or "").lower())
+            if len(t) >= 2 and t not in _STOP_TOKENS and t not in _NAME_NOISE
+            and t not in _PERSON_QUERY_NOISE]
+    return len(toks) <= 3 or not _NEEDS_LLM.search(query or "")
+
+
 def person_answer(db, query: str):
     """Deterministic, speech-robust answer for a 'who/where/office/schedule is X'
     question. Disambiguates when a name matches more than one person. Returns None
     when the query isn't clearly about a person (so courses/buildings fall through)."""
+    if not _person_scope(query):
+        return None
     # Lower floor so a CLOSE name (a mishearing like "Carp" -> Karp, "Derry" -> Derek) is
     # surfaced with an honest hedge instead of a flat "not found".
     matches = find_people_fuzzy(db, query, threshold=0.68)
@@ -781,6 +795,8 @@ def person_card(db, query: str):
     fuzzy match) who has a headshot on file, return a small card the UI can show their
     picture from. No card when the name is ambiguous (several match) or has no photo —
     so a face never contradicts or guesses. Shared by the kiosk and the dashboard."""
+    if not _person_scope(query):
+        return None  # conversational question, not a name lookup — never attach a face
     try:
         matches = find_people_fuzzy(db, query)
     except Exception:

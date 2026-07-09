@@ -202,3 +202,27 @@ def test_pronoun_not_matched_to_surname_he():
     assert cs.person_answer(d, "and what does he do") is None
     assert "Miao He" in (cs.person_answer(d, "Miao He") or "")  # full name still works
     d.close()
+
+
+def test_advisory_sentence_not_hijacked_by_phonetic_name_hit():
+    """A conversational advisory question must reach the LLM, not be claimed by the
+    person fast-path. Regression: phon("zhou") = "shou" is a substring of "should",
+    so any sentence containing "should" matched Professor Zhou with a strong
+    single-token hit and short-circuited the whole chain."""
+    from sqlalchemy import create_engine as _ce
+    from sqlalchemy.orm import sessionmaker as _sm
+    eng = _ce("sqlite:///:memory:"); Base.metadata.create_all(eng); d = _sm(bind=eng)()
+    d.add(models.Professor(name="Lyu Zhou", title="Assistant Professor",
+                           email="lyzhou@ttu.edu", department="ECE",
+                           office_building="ECE", office_number="243",
+                           photo_url="/campus/photo/30"))
+    d.commit()
+    q = "I like robotics and coding but I am scared of math, what should I study here and why?"
+    assert cs.person_answer(d, q) is None      # falls through to the LLM
+    assert cs.person_card(d, q) is None        # and no face is attached to it
+    # Deliberate lookups (bare name / short cue query) still take the free path.
+    assert "Lyu Zhou" in (cs.person_answer(d, "Lyu Zhou") or "")
+    assert "Lyu Zhou" in (cs.person_answer(d, "who is professor zhou") or "")
+    card = cs.person_card(d, "where is Lyu Zhou's office")
+    assert card and card["name"] == "Lyu Zhou"
+    d.close()

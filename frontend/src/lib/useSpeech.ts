@@ -33,9 +33,8 @@ const ENDRE = /\b(thank you|thanks summer|thank you summer|we'?re done|that'?s a
 // these are treated as thinking/background, NOT a question: ignored but they keep the
 // conversation alive rather than ending it or being sent to Summer as a command.
 const FILLER = /^(uh+|um+|umm+|hmm+|mhm+|mm+|ah+|oh+|eh+|er+|huh|huhh?|yeah|yep|nah|ok|okay|right|so|like|well|and|the|a|i)$/i
-// Short words that, on their own, cut Summer off mid-sentence (barge-in). Any longer
-// utterance interrupts too; this just lets a quick "stop"/"wait"/"actually" break in.
-const INTERRUPT = /\b(stop|wait|hold on|hold up|hang on|no|nope|actually|pause|cancel|never ?mind|one sec|excuse me)\b/i
+// (Barge-in follows the original summer_app model: while Summer talks, a wake word or
+// any engaged speech that isn't her own echo cuts her off — no special word list.)
 
 // A one-shot spoken yes/no prompt (e.g. "would you like your daily briefing?"). While
 // one is pending, the wake-word listener answers it with a spoken yes/no BEFORE treating
@@ -90,10 +89,6 @@ function voiceEnd() {
 function voiceClearText() {
   VOICE.text = ""
 }
-function voiceStop() {
-  VOICE.speaking = false
-  VOICE.text = ""
-}
 
 function forSpeech(t: string): string {
   return t.replace(/[*_`#>[\]|]/g, "").replace(/\s+/g, " ").trim()
@@ -145,29 +140,18 @@ export function useSpeech() {
   const vstate = useRef<"off" | "ambient" | "active">("off")
   const speaking = useRef(false)
   const currentSpeech = useRef("")
-  // Until this timestamp Summer is treated as "just spoke", so the mic-lagged tail of its
-  // OWN audio (which the recognizer keeps transcribing for a beat after playback ends) is
-  // dropped instead of being answered — the fix for Summer replying to itself.
-  const spokeUntil = useRef(0)
   const followTimer = useRef<number | undefined>(undefined)
   const onCmd = useRef<(s: string) => void>(() => {})
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const speakSeq = useRef(0) // bumped to cancel an in-progress streamed reply
-  const buffer = useRef("") // accumulates your speech until you pause
-  const flushTimer = useRef<number | undefined>(undefined)
-  // Wait this long after you stop talking before replying — long enough to let you
-  // FINISH your question (and any "uh…" mid-thought pause), short enough that the reply
-  // feels prompt rather than laggy. A bare wake word acknowledges much faster (see
-  // scheduleFlush) so being called feels instant.
-  const SILENCE_MS = 1100
   // Conversation lifecycle: once engaged, Summer listens continuously (no wake word
   // per turn) until an end phrase OR this many ms of silence, then drops back to
   // dormant. Generous so a started conversation isn't cut off while you think — Summer
   // waits ~10s of silence before ending it.
   const CONVO_IDLE_MS = 12000
-  // How long after Summer's audio ends to keep ignoring the mic — the recognizer keeps
-  // transcribing Summer's own tail for a beat, and those transcripts must be dropped so
-  // Summer never answers itself. During this window only the wake word breaks through.
+  // Keep the just-spoken text as an echo reference for a beat after the audio ends, so
+  // the recognizer's lagged tail of Summer's OWN voice is dropped, not answered. The
+  // clear is unconditional (guarded only by "text unchanged") — it can never stick.
   const ECHO_TAIL_MS = 2500
   const engaged = useRef(false)
   const convoTimer = useRef<number | undefined>(undefined)
@@ -284,7 +268,30 @@ export function useSpeech() {
           /* ignore */
         }
       }, 200)
+      // Chrome's synthesis can wedge (voices not loaded, background tab) without ever
+      // firing onend/onerror. If that happened while `speaking` was held, the mic went
+      // permanently deaf — so a length-scaled watchdog always resolves this promise.
+      const capMs = Math.min(30000, 3000 + clean.length * 90)
+      window.setTimeout(() => {
+        try {
+          synth.cancel()
+        } catch {
+          /* ignore */
+        }
+        resolve()
+      }, capMs)
     })
+  }
+
+  // Clear the echo reference a beat after the audio ends, ORIGINAL-summer_app style but
+  // with a tail: unconditional except "text unchanged", so it can never stick and leave
+  // the mic comparing everything against an old reply forever.
+  function scheduleEchoClear() {
+    const ref = currentSpeech.current
+    window.setTimeout(() => {
+      if (currentSpeech.current === ref) currentSpeech.current = ""
+      if (VOICE.text === ref) voiceClearText()
+    }, ECHO_TAIL_MS)
   }
 
   async function speak(text: string) {
@@ -295,10 +302,9 @@ export function useSpeech() {
     }
     const myTurn = ++speakSeq.current
     speaking.current = true
-    clearConvoTimer() // don't let the 8s idle fire while Summer is talking
+    clearConvoTimer() // don't let the idle countdown fire while Summer is talking
     currentSpeech.current = clean.toLowerCase()
     voiceStart(clean.toLowerCase())
-    spokeUntil.current = Date.now() + 60000 // held far out while speaking; tightened at the end
     const cancelled = () => myTurn !== speakSeq.current
 
     const chunks = splitSentences(clean)
@@ -327,20 +333,17 @@ export function useSpeech() {
         }
         if (cancelled()) break
       }
-    } catch {
-      /* ignore */
+    } finally {
+      // ALWAYS release the voice (unless a newer speak has taken over and owns the
+      // state) — a stuck `speaking` flag here is what made Summer deaf: the mic gate
+      // dropped everything while she was "talking" forever.
+      if (!cancelled()) {
+        speaking.current = false
+        voiceEnd()
+        scheduleEchoClear()
+        afterSpeak()
+      }
     }
-    if (cancelled()) return // a newer speak/stop took over
-    speaking.current = false
-    voiceEnd()
-    // Keep the echo reference for a few seconds after the audio ends — the recognizer keeps
-    // emitting transcripts of Summer's own tail for a beat, and those must be dropped, not
-    // answered. This window is why Summer no longer replies to itself.
-    spokeUntil.current = Date.now() + ECHO_TAIL_MS
-    window.setTimeout(() => {
-      if (Date.now() >= spokeUntil.current) { currentSpeech.current = ""; voiceClearText() }
-    }, ECHO_TAIL_MS)
-    afterSpeak()
   }
 
   // Call inside a user gesture (a tap) to unlock audio playback + speech.
@@ -392,26 +395,24 @@ export function useSpeech() {
       }
     }
     speaking.current = false
-    voiceStop()
-    // Even after a manual stop, keep suppressing for the echo tail so the just-played audio
-    // isn't transcribed back into a command. currentSpeech is cleared when the window ends.
-    spokeUntil.current = Date.now() + ECHO_TAIL_MS
-    window.setTimeout(() => {
-      if (Date.now() >= spokeUntil.current) { currentSpeech.current = ""; voiceClearText() }
-    }, ECHO_TAIL_MS)
+    VOICE.speaking = false
+    // Keep the echo text for a short tail so the just-played audio isn't transcribed
+    // back into a command, then clear it unconditionally.
+    scheduleEchoClear()
   }
 
   // ---- conversational state ----
+  // Echo test, same shape as the original summer_app: is this transcript mostly words
+  // Summer herself just said? Slightly lower bar while she is actively speaking (that
+  // audio is definitely hers); the reference text self-clears after a short tail, so
+  // this can never mute the mic permanently.
   function isEcho(txt: string) {
     const cs = VOICE.text || currentSpeech.current
     if (!cs) return false
     const w = txt.toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter((x) => x.length > 2)
     if (!w.length) return false
     const hit = w.filter((x) => cs.includes(x)).length
-    // Echo when enough of the words are in what Summer just said. The bar is LOW while
-    // Summer is actively speaking (that audio is definitely hers), so even a garbled
-    // transcript of her own voice is dropped rather than answered.
-    const bar = speaking.current || VOICE.speaking || Date.now() < spokeUntil.current ? 0.34 : 0.5
+    const bar = speaking.current || VOICE.speaking ? 0.45 : 0.55
     return hit / w.length >= bar
   }
   function clearFollow() {
@@ -432,7 +433,6 @@ export function useSpeech() {
     engaged.current = false
     vstate.current = "ambient"
     clearConvoTimer()
-    buffer.current = ""
     setHeard("")
     setAwake(false)
   }
@@ -464,7 +464,7 @@ export function useSpeech() {
     const rec = getSR()
     if (!rec) return
     rec.lang = "en-US"
-    rec.interimResults = true // live feedback so the user can see it's hearing them
+    rec.interimResults = false // final results only — the original summer_app model
     rec.maxAlternatives = 1
     rec.continuous = true
     // Track transient "network" errors from the browser's Web Speech service (it
@@ -472,29 +472,45 @@ export function useSpeech() {
     // fine). We retry quietly and only hint at the mic button if it keeps failing.
     let netFails = 0
     let lastErr = ""
-    // Send the full accumulated utterance once you've paused (good rhythm:
-    // wait until you actually stop, then reply to everything).
-    const flush = () => {
-      const raw = buffer.current.trim()
-      buffer.current = ""
-      setHeard("")
-      if (!raw) return
+    // ORIGINAL summer_app model (app/static/index.html): handle each FINAL result
+    // immediately — no buffering, no pause timers, no hard mute-gate while speaking.
+    // Echo is filtered by isEcho alone; a wake word or engaged speech that ISN'T echo
+    // barges in and cuts Summer off. That machine is proven and still running on the
+    // first Summer; the buffered version's layered suppression could wedge shut.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rec.onresult = (e: any) => {
+      const res = e.results[e.results.length - 1]
+      if (!res || !res.isFinal) return
+      const txt = (res[0].transcript || "").trim()
+      if (!txt) return
+      netFails = 0; lastErr = "" // recognition is working again — clear network backoff
+      if (recording.current) return // tap-to-talk (Whisper) is capturing — don't double-handle
+      if (isEcho(txt)) return // Summer's own voice (during speech or its short tail)
+      const hasWake = WAKE.test(txt)
+      if (speaking.current || VOICE.speaking) {
+        // Barge-in, original style: real speech (already echo-filtered above) with a
+        // wake word — or anything at all mid-conversation — cuts Summer off. Ambient
+        // background chatter while she talks to someone else is ignored.
+        if (!(hasWake || engaged.current)) return
+        stopSpeaking()
+      }
+      setHeard(txt)
       // PENDING PROMPT: if Summer just asked a yes/no question (e.g. the daily briefing
       // offer), a spoken "yes"/"no" answers it — no wake word, no click needed.
       if (PENDING_YESNO) {
-        if (YES_RE.test(raw)) { const h = PENDING_YESNO; PENDING_YESNO = null; h.onYes(); return }
-        if (NO_RE.test(raw)) { const h = PENDING_YESNO; PENDING_YESNO = null; h.onNo(); return }
+        if (YES_RE.test(txt)) { const h = PENDING_YESNO; PENDING_YESNO = null; h.onYes(); return }
+        if (NO_RE.test(txt)) { const h = PENDING_YESNO; PENDING_YESNO = null; h.onNo(); return }
       }
-      // DORMANT: ignore everything until the wake word ("Hey Summer" / "Summer").
-      // Once it's heard, engage and answer the rest of what was said (if anything).
+      // DORMANT: only the wake word ("Hey Summer" / "Summer") brings her out.
       if (!engaged.current) {
-        // SLEEP MODE: only the wake word ("Hey Summer" / "Summer") brings her out.
-        // Everything else is ignored so she stays quiet until directly addressed.
-        if (!WAKE.test(raw)) return
+        if (!hasWake) {
+          setHeard("")
+          return
+        }
         engage()
-        const after = raw.replace(WAKE_LEAD, "").trim()
-        // "Hey Summer" / "Summer" on its own: ACKNOWLEDGE warmly and professionally so
-        // the person knows they were heard, then wait for their actual question.
+        const after = txt.replace(WAKE_LEAD, "").trim()
+        // "Hey Summer" / "Summer" on its own: ACKNOWLEDGE so the person knows they
+        // were heard, then wait for their actual question.
         if (after.length < 2 || (ENDRE.test(after) && after.split(/\s+/).length <= 4)) {
           const a = pickAck()
           setHeard(a)
@@ -506,68 +522,19 @@ export function useSpeech() {
         onCmd.current(after)
         return
       }
-      // ENGAGED: just talk, no wake word needed. A short end phrase ("thanks",
-      // "done", "that's all", "stop", "goodbye") closes the conversation and drops
-      // back to dormant. Summer stays muted while speaking, so she never self-replies.
-      const cmd = raw.replace(WAKE_LEAD, "").trim()
-      if (cmd.length < 2) return
-      // Lone filler / background noise ("uh", "okay", a cough) → not a question. Ignore
-      // it but KEEP the conversation alive (don't end it just because you paused).
-      if (FILLER.test(cmd)) { resetConvoTimer(); return }
+      // ENGAGED: just talk, no wake word needed. Filler ("uh", "okay", a cough) keeps
+      // the conversation alive; a short end phrase closes it.
+      const cmd = txt.replace(WAKE_LEAD, "").trim()
+      if (cmd.length < 2 || FILLER.test(cmd)) {
+        resetConvoTimer()
+        return
+      }
       if (ENDRE.test(cmd) && cmd.split(/\s+/).length <= 4) {
         disengage()
         return
       }
       resetConvoTimer()
       onCmd.current(cmd)
-    }
-    const scheduleFlush = () => {
-      if (flushTimer.current) clearTimeout(flushTimer.current)
-      // Snappy when you only said the wake word ("Summer") so being called feels direct
-      // and immediate; generous for a real question so you can finish it.
-      const buf = buffer.current.trim()
-      const bareWake = !engaged.current && WAKE.test(buf) && buf.replace(WAKE_LEAD, "").trim().length < 2
-      flushTimer.current = window.setTimeout(flush, bareWake ? 650 : SILENCE_MS)
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    rec.onresult = (e: any) => {
-      let interim = ""
-      let final = ""
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i]
-        if (r.isFinal) final += r[0].transcript
-        else interim += r[0].transcript
-      }
-      const live = (final || interim).trim()
-      if (!live) return
-      netFails = 0; lastErr = ""  // recognition is working again — clear network backoff
-      if (recording.current) return // tap-to-talk (Whisper) is capturing — don't double-handle
-      if (isEcho(live)) return // ignore Summer's own voice (echo)
-
-      // WHILE SUMMER IS ACTIVELY SPEAKING: the mic hears her through the speakers, so honor
-      // ONLY a deliberate wake/stop that ISN'T an echo of her own words (her answers contain
-      // her own name "Summer"). Everything else is dropped, so she never answers herself.
-      // The lagged tail AFTER she stops is caught by isEcho above (spokeUntil lowers its
-      // bar), which drops her own transcribed audio without blocking a real follow-up.
-      if (speaking.current || VOICE.speaking) {
-        const mine = (VOICE.text || currentSpeech.current || "")
-        const deliberateWake = WAKE.test(live) && !mine.includes("summer")
-        const deliberateStop = INTERRUPT.test(live) && !INTERRUPT.test(mine)
-        if (!(deliberateWake || deliberateStop)) return
-        spokeUntil.current = 0 // real interruption — leave the echo-guard window
-        stopSpeaking()
-      }
-
-      // Real user speech keeps an engaged conversation alive (resets the 8s idle).
-      if (engaged.current) resetConvoTimer()
-
-      // Hearing you → hold any pending reply until you pause.
-      if (flushTimer.current) clearTimeout(flushTimer.current)
-      if (final) buffer.current = (buffer.current + " " + final).trim()
-      setHeard((buffer.current + " " + interim).trim())
-      // Only start the reply countdown once we have a finalized segment.
-      if (final) scheduleFlush()
     }
     // Surface real problems (so it's not a silent failure). 'no-speech' and
     // 'aborted' are normal background events — ignore those.
@@ -638,8 +605,6 @@ export function useSpeech() {
     micOn.current = false
     engaged.current = false
     vstate.current = "off"
-    buffer.current = ""
-    if (flushTimer.current) clearTimeout(flushTimer.current)
     clearConvoTimer()
     setHeard("")
     clearFollow()

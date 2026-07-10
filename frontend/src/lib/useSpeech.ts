@@ -636,6 +636,12 @@ export function useSpeech() {
   // the public kiosk.
   const serverWakeOn = useRef(false)
   const serverStream = useRef<MediaStream | null>(null)
+  const serverCtx = useRef<AudioContext | null>(null)
+  const serverRaf = useRef<number | undefined>(undefined)
+  const serverRec = useRef<MediaRecorder | null>(null)
+  const serverChunks = useRef<BlobPart[]>([])
+  const serverRecording = useRef(false)
+  const serverSilence = useRef<number | undefined>(undefined)
 
   function handleTranscript(raw: string) {
     if (!raw) return
@@ -659,58 +665,108 @@ export function useSpeech() {
     resetConvoTimer(); onCmd.current(cmd)
   }
 
-  async function serverWakeCycle() {
-    if (!serverWakeOn.current) return
-    // Never record over Summer's own voice (or a tap-to-talk capture) — wait it out. Her
-    // lagged tail after speaking is caught by isEcho() on the transcript below.
-    if (speaking.current || VOICE.speaking || recording.current) {
-      window.setTimeout(serverWakeCycle, 350); return
-    }
-    let stream: MediaStream
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    } catch {
-      setHeard("Microphone blocked. Click the address-bar lock, allow the mic, then reload.")
-      serverWakeOn.current = false; setWakeActive(false); return
-    }
-    serverStream.current = stream
+  function serverStartRec() {
+    if (serverRecording.current || !serverStream.current) return
     let mime = ""
     for (const m of ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"]) {
       if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(m)) { mime = m; break }
     }
-    const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
-    const chunks: BlobPart[] = []
-    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data) }
-    const finish = () => { try { if (rec.state !== "inactive") rec.stop() } catch { /* ignore */ } }
+    const rec = mime ? new MediaRecorder(serverStream.current, { mimeType: mime })
+      : new MediaRecorder(serverStream.current)
+    serverRec.current = rec
+    serverChunks.current = []
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) serverChunks.current.push(e.data) }
     rec.onstop = async () => {
-      stopVad()
-      try { stream.getTracks().forEach((t) => t.stop()) } catch { /* ignore */ }
-      const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" })
-      if (blob.size >= 1600 && !(speaking.current || VOICE.speaking)) {
+      serverRecording.current = false
+      const blob = new Blob(serverChunks.current, { type: rec.mimeType || "audio/webm" })
+      if (blob.size >= 1600) {
         try {
           const text = (await transcribeBlob(blob)).trim()
+          // Final self-reply guard: drop anything that is Summer's OWN voice leaking through.
           if (text && !isEcho(text)) handleTranscript(text)
-        } catch { /* transient — just loop */ }
+        } catch { /* transient — keep listening */ }
       }
-      if (serverWakeOn.current) window.setTimeout(serverWakeCycle, 150) // next utterance
     }
-    rec.start()
-    if (!engaged.current) setHeard('Listening — say "Summer"')
-    watchSilence(stream, finish)                                   // stop ~1.4s after you pause
-    window.setTimeout(finish, 12000)                               // hard cap per utterance
+    serverRecording.current = true
+    try { rec.start() } catch { serverRecording.current = false }
   }
 
-  function startServerWake(onCommand: (cmd: string) => void) {
+  function serverStopRec() {
+    if (serverSilence.current) { clearTimeout(serverSilence.current); serverSilence.current = undefined }
+    try { if (serverRec.current && serverRec.current.state !== "inactive") serverRec.current.stop() } catch { /* ignore */ }
+  }
+
+  // Continuous listener for the server-side wake path. ONE echo-cancelled mic stream + an
+  // energy VAD that runs the WHOLE time — including while Summer is speaking. Browser echo
+  // cancellation strips Summer's OWN audio out of the mic, so what's left is the student;
+  // sustained loud energy therefore means the USER is talking. When that happens while Summer
+  // is mid-sentence, we cut her off (barge-in), capture the utterance, and transcribe it.
+  // isEcho() on the transcript is the final backstop against Summer answering herself.
+  function serverListen(stream: MediaStream) {
+    const ctx = new AudioContext()
+    serverCtx.current = ctx
+    const analyser = ctx.createAnalyser()
+    analyser.fftSize = 512
+    ctx.createMediaStreamSource(stream).connect(analyser)
+    const data = new Uint8Array(analyser.frequencyBinCount)
+    let frames = 0, floorSum = 0, thresh = 10, loudRun = 0
+    const tick = () => {
+      if (!serverWakeOn.current) return
+      analyser.getByteTimeDomainData(data)
+      let max = 0
+      for (let i = 0; i < data.length; i++) { const v = Math.abs(data[i] - 128); if (v > max) max = v }
+      frames++
+      if (frames <= 18) {                              // calibrate to the room's noise floor first
+        floorSum += max
+        if (frames === 18) thresh = Math.max(8, Math.round(floorSum / 18) + 7)
+        serverRaf.current = requestAnimationFrame(tick); return
+      }
+      // While Summer is speaking, demand clearly-louder energy so a bit of echo leaking past
+      // the canceller doesn't make her interrupt herself; a real barge-in is louder than leak.
+      const bar = (speaking.current || VOICE.speaking) ? thresh + 14 : thresh
+      if (max > bar) {
+        loudRun++
+        if (loudRun >= 3) {                            // sustained → it's really the user
+          if (speaking.current || VOICE.speaking) stopSpeaking()   // BARGE-IN: stop and listen
+          if (!serverRecording.current) serverStartRec()
+          if (serverSilence.current) { clearTimeout(serverSilence.current); serverSilence.current = undefined }
+        }
+      } else {
+        loudRun = 0
+        if (serverRecording.current && serverSilence.current === undefined) {
+          serverSilence.current = window.setTimeout(serverStopRec, 1100)  // ~1.1s pause = end of turn
+        }
+      }
+      serverRaf.current = requestAnimationFrame(tick)
+    }
+    serverRaf.current = requestAnimationFrame(tick)
+  }
+
+  async function startServerWake(onCommand: (cmd: string) => void) {
     onCmd.current = onCommand
     if (serverWakeOn.current) return
     micOn.current = false                        // release the (failed) browser recognizer
     try { recRef.current?.abort() } catch { /* ignore */ }
+    let stream: MediaStream
+    try {
+      // Echo cancellation is the whole trick: the browser subtracts Summer's own audio from
+      // the mic, so the listener hears only the student — that's how it tells who is talking.
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      })
+    } catch {
+      setHeard("Microphone blocked. Click the address-bar lock, allow the mic, then reload.")
+      return
+    }
+    serverStream.current = stream
     serverWakeOn.current = true
     engaged.current = false                      // start dormant: needs "Summer"
     vstate.current = "active"
-    setWakeActive(true)
     setServerWake(true)
-    window.setTimeout(serverWakeCycle, 200)
+    setWakeActive(true)
+    setWakeBlocked(false)                         // hands-free is on now — drop the "blocked" notice
+    setHeard('Listening — say "Summer"')
+    serverListen(stream)
   }
 
   function stopServerWake() {
@@ -719,8 +775,13 @@ export function useSpeech() {
     setServerWake(false)
     setWakeActive(false)
     setHeard("")
+    if (serverRaf.current) cancelAnimationFrame(serverRaf.current)
+    serverRaf.current = undefined
+    serverStopRec()
     try { serverStream.current?.getTracks().forEach((t) => t.stop()) } catch { /* ignore */ }
-    stopVad()
+    try { serverCtx.current?.close() } catch { /* ignore */ }
+    serverStream.current = null
+    serverCtx.current = null
   }
 
   // Send recorded audio to the backend for Whisper transcription. Works on any

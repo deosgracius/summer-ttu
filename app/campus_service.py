@@ -731,10 +731,32 @@ PREREQ_REDIRECT = (
     "right person.")
 
 
+# Course-SELECTION / recommendation questions ("what should I take", "what should I study",
+# "recommend a class", "help me plan my schedule") — an academic-advising decision, so the
+# SAME redirect as prerequisites. Requires a first-person selection intent + course context,
+# so factual listings ("what classes are offered") and lookups ("what does Dr. X teach")
+# still pass through to the DB/LLM.
+_ADVISE_RE = re.compile(
+    r"\bwhat (?:class(?:es)?|course(?:s)?|electives?) (?:should|do|would|can|might) i "
+    r"(?:take|study|register|enroll|choose|pick|do|start)\b"
+    r"|\bwhat should i (?:take|study|register|enroll)"
+    r"(?:\s+(?:next|first|now|this semester|next semester))?\b"
+    r"|\bwhich (?:class(?:es)?|course(?:s)?|electives?) (?:should|do|would|can) i "
+    r"(?:take|study|register|choose|pick)\b"
+    r"|\brecommend(?:\s+me)?\s+(?:a|an|some|any|the|which|good)?\s*(?:class|course|elective|schedule)"
+    r"|\bwhat (?:class(?:es)?|course(?:s)?|electives?) (?:do|would|should) you (?:recommend|suggest)\b"
+    r"|\bhelp me (?:pick|choose|plan|build|select)\b.{0,30}"
+    r"\b(?:class|course|schedule|elective|degree|semester|plan)\b"
+    r"|\b(?:build|plan|make|design|create) (?:a |my )?"
+    r"(?:schedule|degree plan|course plan|four.?year plan|study plan)\b",
+    re.I)
+
+
 def prereq_redirect(query: str):
-    """Redirect any prerequisite / course-planning question to the catalog + advisor.
-    Returns None when the question isn't about prerequisites."""
-    return PREREQ_REDIRECT if _PREREQ_RE.search(query or "") else None
+    """Redirect any prerequisite OR course-selection / planning question to the catalog +
+    advisor — both are academic-advising decisions, not kiosk facts. None otherwise."""
+    q = query or ""
+    return PREREQ_REDIRECT if (_PREREQ_RE.search(q) or _ADVISE_RE.search(q)) else None
 
 
 # A person explicitly signalling they want MORE than the concise card (bio, research,

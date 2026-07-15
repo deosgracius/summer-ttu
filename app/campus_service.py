@@ -686,6 +686,34 @@ def knowledge_graph(db):
             "bio": (getattr(p, "bio", "") or "")[:340],
         }
         dirmap[_graph_key(p.name)] = p.name
+
+    # Staff and advisors are people in the directory too — include them so the graph shows
+    # the whole department, not only faculty. They don't teach or carry research areas, so
+    # they cluster under their own hubs ("Advising" / "Staff"). Deduped by name against
+    # faculty, so someone listed in two tables appears once.
+    def _add_person(name, title, office, email, hours, area, bio="", photo=""):
+        key = _graph_key(name or "")
+        if not name or key in dirmap:
+            return
+        pnodes[name] = {
+            "id": "p:" + name, "name": name, "photo": photo or "", "areas": [area],
+            "title": title or "", "office": office or "", "email": email or "",
+            "hours": hours or "", "bio": (bio or "")[:340],
+        }
+        dirmap[key] = name
+
+    for a in db.query(models.Advisor).all():
+        office = f"{(getattr(a, 'office_building', '') or '').strip()} {(getattr(a, 'office_number', '') or '').strip()}".strip()
+        hours = (getattr(a, "schedule", "") or getattr(a, "availability", "") or "").strip()
+        _add_person(a.name, "Academic Advisor", office, getattr(a, "email", "") or "", hours, "Advising")
+
+    for st in db.query(models.Staff).all():
+        office = f"{(getattr(st, 'office_building', '') or '').strip()} {(getattr(st, 'office_number', '') or '').strip()}".strip()
+        title = (getattr(st, "title", "") or "").strip()
+        area = "Advising" if re.search(r"advis", title, re.I) else "Staff"
+        _add_person(st.name, title, office, getattr(st, "email", "") or "", "", area,
+                    bio=getattr(st, "bio", "") or "", photo=getattr(st, "photo_url", "") or "")
+
     courses, teaches = {}, set()
     for c in db.query(models.CourseSection).all():
         crs = re.sub(r"\*+$", "", (getattr(c, "course", "") or "").strip())

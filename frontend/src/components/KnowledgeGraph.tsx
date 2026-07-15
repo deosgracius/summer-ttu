@@ -19,6 +19,9 @@ const AREA_COLORS: Record<string, string> = {
   "Power & Energy": "#f59e0b", "RF & Microwave": "#8b5cf6", "Comms & DSP": "#06b6d4",
   "Circuits & Micro": "#ec4899", "Photonics & Nano": "#22c55e",
   "Computing & Security": "#3b82f6", "Bio & Sensors": "#ef4444",
+  // Non-research clusters: advisors and other department staff get their own hubs so the
+  // graph shows the whole directory (people, not only faculty), colour-coded distinctly.
+  "Advising": "#fb923c", "Staff": "#94a3b8",
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type GNode = any

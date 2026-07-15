@@ -189,6 +189,40 @@ def test_knowledge_graph_structure(db):
     assert any(t["s"] == "p:Derek Johnston" and t["t"] == "c:ECE 3333" for t in g["teaches"])
 
 
+def test_knowledge_graph_includes_staff_and_advisors():
+    """Advisors and staff (not only faculty) appear in the graph, clustered under their
+    own hubs. Regression: the graph used to query Professor only, so academic advisers
+    and other staff were missing entirely."""
+    from sqlalchemy import create_engine as _ce
+    from sqlalchemy.orm import sessionmaker as _sm
+    eng = _ce("sqlite:///:memory:"); Base.metadata.create_all(eng); d = _sm(bind=eng)()
+    d.add_all([
+        models.Professor(name="Ada Faculty", title="Professor", department="ECE",
+                         office_building="ECE", office_number="100"),
+        models.Advisor(name="Jennifer Vanderpool", email="jen.vanderpool@ttu.edu",
+                       office_building="ECE", office_number="118", schedule="Mon-Fri 9-5"),
+        models.Staff(name="Sam Buyer", title="Business Manager", email="sam@ttu.edu",
+                     office_building="ECE", office_number="201"),
+        models.Staff(name="Pat Helper", title="Senior Academic Advisor", email="pat@ttu.edu",
+                     office_building="ECE", office_number="119"),
+    ])
+    d.commit()
+    g = cs.knowledge_graph(d)
+    names = {p["name"] for p in g["profs"]}
+    assert {"Jennifer Vanderpool", "Sam Buyer", "Pat Helper"} <= names
+    areas = {a["name"] for a in g["areas"]}
+    assert "Advising" in areas and "Staff" in areas
+    # An advisor is linked to the Advising hub; a staff advisor groups there too.
+    jen = next(p for p in g["profs"] if p["name"] == "Jennifer Vanderpool")
+    assert jen["areas"] == ["Advising"] and "ECE 118" in jen["office"]
+    pat = next(p for p in g["profs"] if p["name"] == "Pat Helper")
+    assert pat["areas"] == ["Advising"]      # title contains "Advisor" -> Advising hub
+    sam = next(p for p in g["profs"] if p["name"] == "Sam Buyer")
+    assert sam["areas"] == ["Staff"]
+    assert any(r["s"] == "p:Jennifer Vanderpool" and r["t"] == "a:Advising" for r in g["researches"])
+    d.close()
+
+
 def test_pronoun_not_matched_to_surname_he():
     """A follow-up pronoun ("what does he teach") must NOT match a professor whose
     surname is "He" — it should fall through (to the LLM, which has the context)."""

@@ -78,7 +78,7 @@ export function clearYesNo() {
 // versa) so it never transcribes Summer's own audio and replies to itself.
 // (A const object mutated via module-scope helpers — not a reassigned variable —
 // so it stays clean under the react-hooks lint rules.)
-const VOICE = { speaking: false, text: "" }
+const VOICE = { speaking: false, text: "", muted: false }
 function voiceStart(text: string) {
   VOICE.speaking = true
   VOICE.text = text
@@ -88,6 +88,19 @@ function voiceEnd() {
 }
 function voiceClearText() {
   VOICE.text = ""
+}
+
+// While the daily briefing is READING, the mic is fully muted. The background music and
+// Summer's own long briefing audio would otherwise trip the wake / barge-in listeners and
+// make her talk over herself. Every wake handler (browser recognizer + server VAD) checks
+// VOICE.muted and ignores ALL input until it clears — so during the briefing Summer is off,
+// then listens again the instant it ends. Shared module-level, so the chat's wake-word hook
+// (a separate useSpeech instance) honors it too.
+export function suspendListening() {
+  VOICE.muted = true
+}
+export function resumeListening() {
+  VOICE.muted = false
 }
 
 function forSpeech(t: string): string {
@@ -487,6 +500,7 @@ export function useSpeech() {
       if (!res || !res.isFinal) return
       const txt = (res[0].transcript || "").trim()
       if (!txt) return
+      if (VOICE.muted) return // briefing is reading — Summer is off, ignore everything
       netFails = 0; lastErr = "" // recognition is working again — clear network backoff
       if (recording.current) return // tap-to-talk (Whisper) is capturing — don't double-handle
       if (isEcho(txt)) return // Summer's own voice (during speech or its short tail)
@@ -645,6 +659,7 @@ export function useSpeech() {
 
   function handleTranscript(raw: string) {
     if (!raw) return
+    if (VOICE.muted) return // briefing is reading — Summer is off, ignore everything
     if (PENDING_YESNO) {
       if (YES_RE.test(raw)) { const h = PENDING_YESNO; PENDING_YESNO = null; h.onYes(); return }
       if (NO_RE.test(raw)) { const h = PENDING_YESNO; PENDING_YESNO = null; h.onNo(); return }
@@ -712,6 +727,9 @@ export function useSpeech() {
     let frames = 0, floorSum = 0, thresh = 10, loudRun = 0
     const tick = () => {
       if (!serverWakeOn.current) return
+      // Briefing is reading — keep the loop alive but don't record or barge in (the music
+      // and Summer's own audio would otherwise trip the VAD).
+      if (VOICE.muted) { serverRaf.current = requestAnimationFrame(tick); return }
       analyser.getByteTimeDomainData(data)
       let max = 0
       for (let i = 0; i < data.length; i++) { const v = Math.abs(data[i] - 128); if (v > max) max = v }

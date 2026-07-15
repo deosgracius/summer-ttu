@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { Play, Mail, Volume2, Music } from "lucide-react"
 import { api, consumeFreshLogin } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
-import { useSpeech, awaitYesNo, clearYesNo } from "@/lib/useSpeech"
+import { useSpeech, awaitYesNo, clearYesNo, suspendListening, resumeListening } from "@/lib/useSpeech"
 import { PanelCard } from "@/components/panels/PanelCard"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -116,14 +116,22 @@ export default function WelcomeBriefing() {
     } catch {
       /* no music if autoplay is blocked — still read the update */
     }
-    setPhase("playing")
-    setText(r.text)
-    const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
-    fade(audio, isMobile ? 0.16 : 0.28, 800)
-    await new Promise((res) => setTimeout(res, 2500))
-    fade(audio, isMobile ? 0.03 : 0.12, 600)
-    await speak(r.text)
-    fade(audio, 0, 1400, () => audio.pause())
+    // Mic OFF for the whole briefing: the music and Summer's own reading would otherwise
+    // trip the wake / barge-in listener and make her talk over herself. `finally` guarantees
+    // listening resumes the instant the briefing ends (or errors out).
+    suspendListening()
+    try {
+      setPhase("playing")
+      setText(r.text)
+      const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+      fade(audio, isMobile ? 0.16 : 0.28, 800)
+      await new Promise((res) => setTimeout(res, 2500))
+      fade(audio, isMobile ? 0.03 : 0.12, 600)
+      await speak(r.text)
+      fade(audio, 0, 1400, () => audio.pause())
+    } finally {
+      resumeListening()
+    }
     setPhase(r.needs_email ? "emailOffer" : "done")
   }
 
@@ -139,17 +147,26 @@ export default function WelcomeBriefing() {
       setNote("Couldn't read your emails right now.")
       return
     }
-    setPhase("playing")
-    setText(r.text || "")
-    await speak(r.text || "")
+    suspendListening()
+    try {
+      setPhase("playing")
+      setText(r.text || "")
+      await speak(r.text || "")
+    } finally {
+      resumeListening()
+    }
     setPhase("done")
   }
 
   function dismiss() {
+    resumeListening() // never leave the mic muted if the briefing is cut short
     stopSpeaking()
     audioRef.current?.pause()
     setPhase("done")
   }
+
+  // Safety net: if the card unmounts mid-briefing (navigation, logout), un-mute the mic.
+  useEffect(() => () => resumeListening(), [])
 
   // Let a SPOKEN "yes"/"no" answer the current prompt (no click needed): the daily
   // briefing offer, and then the "read your important emails?" follow-up.

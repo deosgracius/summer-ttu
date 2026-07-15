@@ -45,6 +45,30 @@ function catColor(cat: string) { return CAT_COLORS[cat] || FALLBACK[hashN(cat ||
 const STATUS_COLOR: Record<string, string> = { offline: "#ef4444", down: "#ef4444", degraded: "#f59e0b", unconfigured: "#f59e0b" }
 function nodeColor(n: Node) { return STATUS_COLOR[n.status] || catColor(n.category) }
 
+// ---- edge color-coding: fold the many relationship kinds into a few semantic classes ----
+const LINK_CLASS: Record<string, string> = {
+  // control / invocation flow
+  request: "control", routes: "control", escalates: "control", calls: "control", uses: "control", retrieves: "control", retriever: "control",
+  // data access
+  reads: "data", queries: "data", embeds: "data", "stored in": "data", "synced from": "data",
+  // quality / guards
+  "guarded by": "quality", tests: "quality", monitors: "quality",
+  // build / deploy
+  builds: "delivery", deploys: "delivery", "deploys to": "delivery",
+  // organization
+  teaches: "teaches", "in-area": "structure",
+  // layout scaffolding (root↔hub, member↔hub spokes)
+  structure: "structure",
+}
+const CLASS_COLOR: Record<string, string> = {
+  control: "#38bdf8", data: "#2dd4bf", quality: "#34d399", delivery: "#fbbf24", teaches: "#a78bfa", structure: "#41506a",
+}
+const CLASS_LABEL: Record<string, string> = {
+  control: "control flow", data: "data access", quality: "quality / guard", delivery: "build / deploy", teaches: "teaches", structure: "structure",
+}
+function linkClass(kind: string) { return LINK_CLASS[kind] || "structure" }
+function linkHex(l: Node) { return CLASS_COLOR[linkClass(l.kind)] }
+
 function circleTexture(img: HTMLImageElement, color: string) {
   const s = 128, c = document.createElement("canvas"); c.width = c.height = s
   const x = c.getContext("2d")!
@@ -146,6 +170,13 @@ export default function EngineeringBrain() {
     members.forEach((m) => { const c = m.category || "Other"; if (!byCat.has(c)) byCat.set(c, []); byCat.get(c)!.push(m) })
     const cats = [...byCat.keys()].sort((a, b) => byCat.get(b)!.length - byCat.get(a)!.length)
     return { byCat, cats }
+  }, [current])
+
+  // Which relationship-line classes actually appear in this layer (for the legend).
+  const lineClasses = useMemo(() => {
+    const set = new Set<string>(["structure"])
+    ;(current?.edges || []).forEach((e) => set.add(linkClass(e.kind)))
+    return ["control", "data", "quality", "delivery", "teaches", "structure"].filter((c) => set.has(c))
   }, [current])
 
   useEffect(() => {
@@ -251,8 +282,12 @@ export default function EngineeringBrain() {
         g.add(label)
         return g
       })
-      .linkColor((l: Node) => (!focusRef.current ? hexA("#5b6b8c", 0.22) : hot(l) ? hexA("#8aa0c8", 0.95) : hexA("#5b6b8c", 0.05)))
-      .linkWidth((l: Node) => (hot(l) ? 1.6 : 0.5))
+      .linkColor((l: Node) => {
+        const base = linkHex(l)
+        if (!focusRef.current) return hexA(base, linkClass(l.kind) === "structure" ? 0.16 : 0.5)
+        return hot(l) ? hexA(base, 0.98) : hexA(base, 0.06)
+      })
+      .linkWidth((l: Node) => (hot(l) ? 1.9 : linkClass(l.kind) === "structure" ? 0.4 : 1))
       .linkDirectionalParticles((l: Node) => (hot(l) ? 3 : 0))
       .linkDirectionalParticleWidth(2)
       .onNodeHover((n: Node | null) => {
@@ -376,13 +411,22 @@ export default function EngineeringBrain() {
         ) : null}
       </div>
 
-      {/* Legend (graph only) */}
+      {/* Legend (graph only): node categories + relationship-line colors */}
       {current && view === "graph" && (
-        <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex max-w-[min(92vw,660px)] flex-wrap gap-x-3 gap-y-1 rounded-lg border border-border/40 bg-background/60 px-3 py-2 text-[10px] text-muted-foreground backdrop-blur">
-          {grouped.cats.map((c) => (
-            <span key={c} className="inline-flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full" style={{ background: catColor(c) }} /> {c}</span>
-          ))}
-          <span className="inline-flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full bg-red-500" /> offline/down</span>
+        <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex max-w-[min(92vw,720px)] flex-col gap-1 rounded-lg border border-border/40 bg-background/60 px-3 py-2 text-[10px] text-muted-foreground backdrop-blur">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="font-medium text-foreground/70">Nodes</span>
+            {grouped.cats.map((c) => (
+              <span key={c} className="inline-flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full" style={{ background: catColor(c) }} /> {c}</span>
+            ))}
+            <span className="inline-flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full bg-red-500" /> offline/down</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="font-medium text-foreground/70">Lines</span>
+            {lineClasses.map((lc) => (
+              <span key={lc} className="inline-flex items-center gap-1.5"><span className="inline-block h-[3px] w-4 rounded" style={{ background: CLASS_COLOR[lc] }} /> {CLASS_LABEL[lc]}</span>
+            ))}
+          </div>
         </div>
       )}
 

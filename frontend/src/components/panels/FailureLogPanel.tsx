@@ -21,8 +21,9 @@ interface Rates {
   total_turns: number
   hallucinations_blocked: number
   hallucination_pct: number
-  system_failures: number
-  system_failure_pct: number
+  fallback_turns: number
+  fallback_pct: number
+  open_failures: number
 }
 interface FailureReport {
   enabled: boolean
@@ -106,7 +107,7 @@ export default function FailureLogPanel() {
       </p>
 
       {d?.rates && (
-        <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="mt-4 grid grid-cols-3 gap-3">
           <div className="rounded-lg border border-border/60 p-3">
             <div className="text-2xl font-semibold tabular-nums text-amber-400">
               {d.rates.hallucination_pct}%
@@ -119,12 +120,22 @@ export default function FailureLogPanel() {
           </div>
           <div className="rounded-lg border border-border/60 p-3">
             <div className="text-2xl font-semibold tabular-nums text-red-400">
-              {d.rates.system_failure_pct}%
+              {d.rates.fallback_pct}%
             </div>
-            <div className="text-xs font-medium">System-failure rate</div>
+            <div className="text-xs font-medium">AI-fallback rate</div>
             <div className="mt-0.5 text-[11px] text-muted-foreground">
-              {d.rates.system_failures} failure event{d.rates.system_failures === 1 ? "" : "s"} across{" "}
-              {d.rates.total_turns} answered turns (brain/voice down, unexpected errors).
+              {d.rates.fallback_turns} of {d.rates.total_turns} turns where the AI brain was
+              unreachable and Summer answered from the database instead.
+            </div>
+          </div>
+          <div className="rounded-lg border border-border/60 p-3">
+            <div className="text-2xl font-semibold tabular-nums">
+              {d.rates.open_failures}
+            </div>
+            <div className="text-xs font-medium">Open failure issues</div>
+            <div className="mt-0.5 text-[11px] text-muted-foreground">
+              Distinct unresolved problems (voice/brain/errors) listed below — a count, not a
+              rate; each is deduped with its own hit count.
             </div>
           </div>
         </div>

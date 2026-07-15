@@ -418,9 +418,19 @@ async def run_kiosk_traced(goal, db, provider=None, history=None):
     from . import grounding
     hist_text = " ".join(f"{t.get('q', '')} {t.get('a', '')}"
                          for t in (history or []) if isinstance(t, dict))
+    _pre = result.get("reply", "") or ""
     result["reply"] = grounding.enforce(
-        result.get("reply", ""),
+        _pre,
         grounding.evidence_from_actions(result.get("actions", [])) + " " + hist_text)
+    # If the gate replaced the reply with the safe referral, the model asserted a fact
+    # nobody retrieved — a caught hallucination. Record it so the central admin sees a live
+    # hallucination rate under System failures, and tag this turn for the rate math.
+    hallucinated = bool(_pre.strip()) and result["reply"] != _pre and result["reply"] == grounding.FALLBACK
+    if hallucinated:
+        from . import failures
+        failures.record("hallucination",
+                        "Provenance gate blocked an ungrounded fact (possible hallucination)",
+                        detail=_pre, severity="warning")
     result["latency_ms"] = (time.perf_counter() - t0) * 1000
     u = result.get("usage")
     if u and (u.get("input") or u.get("output")):
@@ -431,7 +441,8 @@ async def run_kiosk_traced(goal, db, provider=None, history=None):
         except Exception:
             db.rollback()
     from . import insights
-    insights.log(db, "kiosk", "llm", goal, route="llm", provider=provider)
+    insights.log(db, "kiosk", "llm", goal,
+                 route=("grounding_blocked" if hallucinated else "llm"), provider=provider)
     tracing.record("kiosk", goal, result, result["latency_ms"])
     return result
 

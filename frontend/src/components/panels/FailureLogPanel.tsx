@@ -16,9 +16,18 @@ interface Failure {
   first_seen: string
   last_seen: string
 }
+interface Rates {
+  llm_turns: number
+  total_turns: number
+  hallucinations_blocked: number
+  hallucination_pct: number
+  system_failures: number
+  system_failure_pct: number
+}
 interface FailureReport {
   enabled: boolean
   open: number
+  rates?: Rates
   items: Failure[]
 }
 
@@ -95,6 +104,31 @@ export default function FailureLogPanel() {
         recorded here (deduped with a count) so you can see and fix it. Mark an item fixed once
         you've handled it.
       </p>
+
+      {d?.rates && (
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="rounded-lg border border-border/60 p-3">
+            <div className="text-2xl font-semibold tabular-nums text-amber-400">
+              {d.rates.hallucination_pct}%
+            </div>
+            <div className="text-xs font-medium">Hallucination rate</div>
+            <div className="mt-0.5 text-[11px] text-muted-foreground">
+              {d.rates.hallucinations_blocked} caught of {d.rates.llm_turns} AI answers — facts the
+              model asserted that weren’t retrieved, blocked by the provenance gate.
+            </div>
+          </div>
+          <div className="rounded-lg border border-border/60 p-3">
+            <div className="text-2xl font-semibold tabular-nums text-red-400">
+              {d.rates.system_failure_pct}%
+            </div>
+            <div className="text-xs font-medium">System-failure rate</div>
+            <div className="mt-0.5 text-[11px] text-muted-foreground">
+              {d.rates.system_failures} failure event{d.rates.system_failures === 1 ? "" : "s"} across{" "}
+              {d.rates.total_turns} answered turns (brain/voice down, unexpected errors).
+            </div>
+          </div>
+        </div>
+      )}
 
       {!d ? (
         <p className="mt-3 text-sm text-muted-foreground">Loading…</p>

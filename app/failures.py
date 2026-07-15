@@ -68,8 +68,41 @@ def _prune(db) -> None:
         db.rollback()
 
 
+def rates(db) -> dict:
+    """Live quality gauges for the central admin, computed from the retained logs:
+
+      * hallucination rate — how often the LLM path was caught asserting a fact nobody
+        retrieved (the provenance gate replaced the reply), as a share of LLM answers.
+      * system-failure rate — how often a turn hit an operational failure (brain/voice
+        down, an unhandled error), as a share of all answered turns.
+
+    Approximate (the logs are pruned windows), so the raw counts are returned alongside
+    the percentages to show the basis. Best-effort: never raises into the admin view."""
+    try:
+        from sqlalchemy import func
+        llm = db.query(models.QueryLog).filter(models.QueryLog.answered_by == "llm").count()
+        total = db.query(models.QueryLog).count()
+        blocked = db.query(models.QueryLog).filter(models.QueryLog.route == "grounding_blocked").count()
+        # Operational failures EXCLUDE the hallucination guard: a caught fabrication is a
+        # quality signal, not a system fault. Sum the deduped per-row counts.
+        fail = int(db.query(func.coalesce(func.sum(models.FailureLog.count), 0))
+                   .filter(models.FailureLog.source != "hallucination").scalar() or 0)
+
+        def pct(n, d):
+            return min(100.0, round(100.0 * n / d, 1)) if d else 0.0
+
+        return {
+            "llm_turns": llm, "total_turns": total,
+            "hallucinations_blocked": blocked, "hallucination_pct": pct(blocked, llm),
+            "system_failures": fail, "system_failure_pct": pct(fail, total),
+        }
+    except Exception:
+        return {"llm_turns": 0, "total_turns": 0, "hallucinations_blocked": 0,
+                "hallucination_pct": 0.0, "system_failures": 0, "system_failure_pct": 0.0}
+
+
 def report(db, include_resolved: bool = False, limit: int = 100) -> dict:
-    """The central admin's view: open failures (most recent first) + counts."""
+    """The central admin's view: open failures (most recent first) + counts + live rates."""
     q = db.query(models.FailureLog)
     if not include_resolved:
         q = q.filter(models.FailureLog.resolved.is_(False))
@@ -78,6 +111,7 @@ def report(db, include_resolved: bool = False, limit: int = 100) -> dict:
     return {
         "enabled": ENABLED,
         "open": open_n,
+        "rates": rates(db),
         "items": [{
             "id": r.id, "source": r.source, "severity": r.severity, "summary": r.summary,
             "detail": r.detail, "count": r.count, "resolved": bool(r.resolved),

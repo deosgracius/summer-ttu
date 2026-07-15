@@ -72,6 +72,16 @@ def clear_query_insights(db: Session = Depends(get_db),
     return {"cleared": n}
 
 
+@router.get("/engineering-brain")
+def engineering_brain(db: Session = Depends(get_db),
+                      user: models.User = Depends(require_roles("admin"))):
+    """ADMIN ONLY: the layered 'Engineering Brain' — Summer's own architecture (with live
+    status) and the ECE organization as connected graphs, plus a live health block. Read-only;
+    contains no secrets (only presence booleans become a status word)."""
+    from .. import engineering_brain as eb
+    return eb.build(db)
+
+
 @router.get("/failures")
 def list_failures(resolved: int = 0, db: Session = Depends(get_db),
                   user: models.User = Depends(require_roles("central_admin"))):

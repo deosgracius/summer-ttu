@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, type ReactNode } from "react"
-import { MessageSquare, GraduationCap, ListChecks, ShieldCheck, Settings as SettingsIcon, Network } from "lucide-react"
+import { MessageSquare, GraduationCap, ListChecks, ShieldCheck, Settings as SettingsIcon, Network, Cpu } from "lucide-react"
 import { useAuth } from "@/lib/auth"
 import { Button } from "@/components/ui/button"
 import AgentChat from "@/components/AgentChat"
@@ -24,10 +24,12 @@ import WelcomeBriefing from "@/components/WelcomeBriefing"
 import OnboardingModal from "@/components/OnboardingModal"
 // 3D graph pulls in three.js — lazy-load so it only ships when the tab is opened.
 const KnowledgeGraph = lazy(() => import("@/components/KnowledgeGraph"))
+// Admin-only "Engineering Brain" (also three.js) — lazy so it ships only when opened.
+const EngineeringBrain = lazy(() => import("@/components/EngineeringBrain"))
 import SplineRobot from "@/components/SplineRobot"
 import SpaceBackground from "@/components/SpaceBackground"
 
-type TabId = "assistant" | "campus" | "graph" | "items" | "admin" | "settings"
+type TabId = "assistant" | "campus" | "graph" | "brain" | "items" | "admin" | "settings"
 
 // A labeled group of admin panels — a heading + one-line description over its cards, so the
 // Admin tab reads as clear sections instead of one long undifferentiated stack.
@@ -67,6 +69,7 @@ export default function DashboardPage() {
     { id: "graph", label: "Knowledge Graph", icon: Network, show: true },
     { id: "items", label: "My Items", icon: ListChecks, show: true },
     { id: "admin", label: "Admin", icon: ShieldCheck, show: isAdmin },
+    { id: "brain", label: "Engineering Brain", icon: Cpu, show: isAdmin },
     { id: "settings", label: "Settings", icon: SettingsIcon, show: true },
   ]
 
@@ -122,12 +125,14 @@ export default function DashboardPage() {
         </div>
       </nav>
 
-      {tab === "graph" ? (
+      {tab === "graph" || tab === "brain" ? (
         // Full-bleed: the graph uses the entire area below the header/nav, edge to edge,
         // with no card chrome — so it fills the screen without the fullscreen toggle.
         <div className="relative z-10">
           <Suspense fallback={<p className="p-4 text-sm text-muted-foreground">Loading 3D graph…</p>}>
-            <KnowledgeGraph onAsk={(q) => { setPendingAsk(q); setTab("assistant") }} />
+            {tab === "graph"
+              ? <KnowledgeGraph onAsk={(q) => { setPendingAsk(q); setTab("assistant") }} />
+              : <EngineeringBrain />}
           </Suspense>
         </div>
       ) : (

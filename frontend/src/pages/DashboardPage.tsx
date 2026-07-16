@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, type ReactNode } from "react"
-import { MessageSquare, GraduationCap, ListChecks, ShieldCheck, Settings as SettingsIcon, Network, Cpu } from "lucide-react"
+import { MessageSquare, GraduationCap, ListChecks, ShieldCheck, Settings as SettingsIcon, Cpu } from "lucide-react"
 import { useAuth } from "@/lib/auth"
 import { Button } from "@/components/ui/button"
 import AgentChat from "@/components/AgentChat"
@@ -22,14 +22,14 @@ import FailureLogPanel from "@/components/panels/FailureLogPanel"
 import MyAvailabilityPanel from "@/components/panels/MyAvailabilityPanel"
 import WelcomeBriefing from "@/components/WelcomeBriefing"
 import OnboardingModal from "@/components/OnboardingModal"
-// 3D graph pulls in three.js — lazy-load so it only ships when the tab is opened.
-const KnowledgeGraph = lazy(() => import("@/components/KnowledgeGraph"))
-// Admin-only "Engineering Brain" (also three.js) — lazy so it ships only when opened.
+// Admin-only "Engineering Brain" (3D, three.js) — lazy so it ships only when opened.
+// It carries both a System and an Organization layer, so it replaces the old public
+// Knowledge Graph tab (which was the same campus directory as its Organization layer).
 const EngineeringBrain = lazy(() => import("@/components/EngineeringBrain"))
 import SplineRobot from "@/components/SplineRobot"
 import SpaceBackground from "@/components/SpaceBackground"
 
-type TabId = "assistant" | "campus" | "graph" | "brain" | "items" | "admin" | "settings"
+type TabId = "assistant" | "campus" | "brain" | "items" | "admin" | "settings"
 
 // A labeled group of admin panels — a heading + one-line description over its cards, so the
 // Admin tab reads as clear sections instead of one long undifferentiated stack.
@@ -66,7 +66,6 @@ export default function DashboardPage() {
   const tabs: { id: TabId; label: string; icon: typeof MessageSquare; show: boolean }[] = [
     { id: "assistant", label: "Assistant", icon: MessageSquare, show: true },
     { id: "campus", label: "Campus", icon: GraduationCap, show: true },
-    { id: "graph", label: "Knowledge Graph", icon: Network, show: true },
     { id: "items", label: "My Items", icon: ListChecks, show: true },
     { id: "admin", label: "Admin", icon: ShieldCheck, show: isAdmin },
     { id: "brain", label: "Engineering Brain", icon: Cpu, show: isAdmin },
@@ -125,14 +124,11 @@ export default function DashboardPage() {
         </div>
       </nav>
 
-      {tab === "graph" || tab === "brain" ? (
-        // Full-bleed: the graph uses the entire area below the header/nav, edge to edge,
-        // with no card chrome — so it fills the screen without the fullscreen toggle.
+      {tab === "brain" ? (
+        // Full-bleed: the brain uses the entire area below the header/nav, edge to edge.
         <div className="relative z-10">
-          <Suspense fallback={<p className="p-4 text-sm text-muted-foreground">Loading 3D graph…</p>}>
-            {tab === "graph"
-              ? <KnowledgeGraph onAsk={(q) => { setPendingAsk(q); setTab("assistant") }} />
-              : <EngineeringBrain />}
+          <Suspense fallback={<p className="p-4 text-sm text-muted-foreground">Loading the brain…</p>}>
+            <EngineeringBrain />
           </Suspense>
         </div>
       ) : (

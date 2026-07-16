@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { Cpu, Building2, X, RefreshCw, Network, LayoutGrid, Activity, Info, type LucideIcon } from "lucide-react"
+import { Cpu, Building2, X, RefreshCw, Network, LayoutGrid, Activity, Info, Crosshair, type LucideIcon } from "lucide-react"
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore — 3d-force-graph ships loose types
 import ForceGraph3D from "3d-force-graph"
@@ -275,10 +275,12 @@ export default function EngineeringBrain() {
           g.add(sphereMesh(nodeColor(n), 5)); half = 5   // a system component
         }
         const big = n.kind === "hub" || n.kind === "root"
-        const text = (n.kind === "course" ? n.name : n.name) || ""
-        const label = textSprite(text, big ? 34 : 22, big ? 9 : 4.6)
+        // Name every node, including the outer course ("leaf") nodes — smaller so the
+        // outer ring stays readable rather than crowded.
+        const fontPx = big ? 34 : n.kind === "course" ? 17 : 22
+        const worldH = big ? 9 : n.kind === "course" ? 3.3 : 4.6
+        const label = textSprite(n.name || "", fontPx, worldH)
         label.position.set(0, -(half + (big ? 6 : 3)), 0)
-        if (n.kind === "course") { label.visible = false; label.userData.leafLabel = true }
         g.add(label)
         return g
       })
@@ -313,7 +315,6 @@ export default function EngineeringBrain() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         obj.traverse((o: any) => {
           if (o.material) { o.material.transparent = true; o.material.opacity = op }
-          if (o.userData && o.userData.leafLabel) o.visible = !!bright && bright.has(n.id)
         })
       })
     }
@@ -335,6 +336,14 @@ export default function EngineeringBrain() {
       gRef.current = null
     }
   }, [current, view, grouped, idx, layer])
+
+  // Recenter the graph to its initial face-on framing (after the user orbits/zooms away).
+  function resetView() {
+    const G = gRef.current
+    if (!G) return
+    G.cameraPosition({ x: 0, y: 0, z: 900 }, { x: 0, y: 0, z: 0 }, 700)
+    window.setTimeout(() => G.zoomToFit?.(600, 60), 720)
+  }
 
   const h = data?.health
   const worst = h?.flags?.some((f) => f.level === "error") ? "error" : h?.flags?.some((f) => f.level === "warn") ? "warn" : "ok"
@@ -397,6 +406,11 @@ export default function EngineeringBrain() {
             <Activity className="size-4" /> Health
             <span className={`inline-block size-2 rounded-full ${worst === "error" ? "bg-red-500" : worst === "warn" ? "bg-amber-400" : "bg-emerald-400"}`} />
           </button>
+          {view === "graph" && (
+            <button onClick={resetView} title="Reset view" className="rounded-md p-2 text-muted-foreground transition-colors hover:text-foreground">
+              <Crosshair className="size-4" />
+            </button>
+          )}
           <button onClick={load} title="Refresh" className="rounded-md p-2 text-muted-foreground transition-colors hover:text-foreground">
             <RefreshCw className="size-4" />
           </button>

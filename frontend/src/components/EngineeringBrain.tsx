@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { Cpu, Building2, X, RefreshCw, Network, LayoutGrid } from "lucide-react"
+import { Cpu, Building2, X, RefreshCw, Network, LayoutGrid, Activity, Info, type LucideIcon } from "lucide-react"
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore — 3d-force-graph ships loose types
 import ForceGraph3D from "3d-force-graph"
 import * as THREE from "three"
 import { api } from "@/lib/api"
-import { Button } from "@/components/ui/button"
 
 /**
  * ADMIN-ONLY "Engineering Brain" — rendered as the SAME organized concentric "second brain"
@@ -120,6 +119,26 @@ function StatusWord({ s }: { s: string }) {
   return <span className={`font-medium ${STATUS_PILL[s] || "text-muted-foreground"}`}>{s}</span>
 }
 
+// A compact segmented toggle (iOS-style) for the two-option switches in the toolbar.
+function Seg({ value, onChange, options }: {
+  value: string; onChange: (v: string) => void; options: { id: string; label: string; icon: LucideIcon }[]
+}) {
+  return (
+    <div className="inline-flex items-center rounded-lg bg-muted/40 p-0.5">
+      {options.map((o) => {
+        const Icon = o.icon
+        const active = value === o.id
+        return (
+          <button key={o.id} onClick={() => onChange(o.id)} aria-pressed={active}
+            className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors ${active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+            <Icon className="size-4" /> {o.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 // Readiness pipeline (mirrors the video's Ownership→…→Deployment), derived from live status.
 const STAGES = ["Designed", "Built", "Tested", "Deployed", "Monitored"]
 function readinessDone(status: string) {
@@ -143,6 +162,9 @@ export default function EngineeringBrain() {
   const [layer, setLayer] = useState<"system" | "organization">("system")
   const [view, setView] = useState<"graph" | "board">("graph")
   const [selected, setSelected] = useState<Node | null>(null)
+  // Health + legend are collapsed by default so the default view is just the graph + toolbar.
+  const [showHealth, setShowHealth] = useState(false)
+  const [showLegend, setShowLegend] = useState(false)
 
   async function load() {
     setErr("")
@@ -336,6 +358,7 @@ export default function EngineeringBrain() {
   }, [current, view, grouped, idx, layer])
 
   const h = data?.health
+  const worst = h?.flags?.some((f) => f.level === "error") ? "error" : h?.flags?.some((f) => f.level === "warn") ? "warn" : "ok"
   function Tile({ label, value, sub, tone }: { label: string; value: ReactNode; sub?: string; tone?: string }) {
     return (
       <div className="rounded-lg border border-border/60 bg-background/70 px-3 py-2 backdrop-blur">
@@ -346,7 +369,6 @@ export default function EngineeringBrain() {
     )
   }
 
-  const btn = "h-8 bg-background/80 backdrop-blur"
   const deps = selected ? (current?.edges || []).filter((e) => e.source === selected.id).map((e) => idx[e.target]).filter(Boolean) : []
   const taught = selected ? (current?.edges || []).filter((e) => e.source === selected.id && idx[e.target]?.kind === "course").map((e) => idx[e.target]) : []
 
@@ -358,7 +380,7 @@ export default function EngineeringBrain() {
 
       {/* Board view */}
       {current && view === "board" && (
-        <div className="absolute inset-0 overflow-y-auto px-4 pb-6 pt-52 sm:pt-48">
+        <div className="absolute inset-0 overflow-y-auto px-4 pb-6 pt-20">
           <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {grouped.cats.map((c) => (
               <div key={c} className="rounded-xl border border-border/60 bg-background/70 p-3 backdrop-blur">
@@ -382,51 +404,69 @@ export default function EngineeringBrain() {
         </div>
       )}
 
-      {/* Controls + health tiles + flags */}
-      <div className="pointer-events-none absolute left-3 top-3 z-10 flex max-w-[min(96vw,560px)] flex-col gap-2">
-        <div className="pointer-events-auto flex flex-wrap items-center gap-2">
-          <Button size="sm" variant={layer === "system" ? "default" : "outline"} className={btn} onClick={() => setLayer("system")}><Cpu className="size-4" /> System</Button>
-          <Button size="sm" variant={layer === "organization" ? "default" : "outline"} className={btn} onClick={() => setLayer("organization")}><Building2 className="size-4" /> Organization</Button>
-          <span className="mx-1 h-5 w-px bg-border/60" />
-          <Button size="sm" variant={view === "graph" ? "default" : "outline"} className={btn} onClick={() => setView("graph")}><Network className="size-4" /> Graph</Button>
-          <Button size="sm" variant={view === "board" ? "default" : "outline"} className={btn} onClick={() => setView("board")}><LayoutGrid className="size-4" /> Board</Button>
-          <Button size="sm" variant="outline" className={btn} onClick={load}><RefreshCw className="size-4" /></Button>
+      {/* Toolbar — clean segmented toggles; Health is collapsed behind a chip. */}
+      <div className="pointer-events-none absolute left-3 top-3 z-10 flex max-w-[min(96vw,640px)] flex-col gap-2">
+        <div className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-xl border border-border/60 bg-background/80 p-1 shadow-lg backdrop-blur">
+          <Seg value={layer} onChange={(v) => setLayer(v as "system" | "organization")}
+            options={[{ id: "system", label: "System", icon: Cpu }, { id: "organization", label: "Organization", icon: Building2 }]} />
+          <span className="mx-0.5 h-6 w-px bg-border/60" />
+          <Seg value={view} onChange={(v) => setView(v as "graph" | "board")}
+            options={[{ id: "graph", label: "Graph", icon: Network }, { id: "board", label: "Board", icon: LayoutGrid }]} />
+          <span className="mx-0.5 h-6 w-px bg-border/60" />
+          <button onClick={() => setShowHealth((v) => !v)} aria-pressed={showHealth}
+            className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors ${showHealth ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+            <Activity className="size-4" /> Health
+            <span className={`inline-block size-2 rounded-full ${worst === "error" ? "bg-red-500" : worst === "warn" ? "bg-amber-400" : "bg-emerald-400"}`} />
+          </button>
+          <button onClick={load} title="Refresh" className="rounded-md p-2 text-muted-foreground transition-colors hover:text-foreground">
+            <RefreshCw className="size-4" />
+          </button>
         </div>
-        {h && (
-          <div className="pointer-events-auto grid grid-cols-3 gap-2">
-            <Tile label="AI brain" value={<StatusWord s={h.brain.status} />} sub={h.brain.provider !== "none" ? h.brain.provider : "not set"} />
-            <Tile label="Graph store" value={<StatusWord s={h.neo4j.status} />} sub="Neo4j" />
-            <Tile label="Vectors" value={<StatusWord s={h.pgvector.status} />} sub="pgvector" />
-            <Tile label="Deterministic" value={`${h.coverage.deterministic_pct}%`} sub="answered free" tone="text-emerald-400" />
-            <Tile label="Hallucination" value={`${h.quality.hallucination_pct}%`} sub="of AI answers" tone="text-amber-400" />
-            <Tile label="Open failures" value={h.quality.open_failures} sub="unresolved" tone={h.quality.open_failures ? "text-red-400" : ""} />
+        {showHealth && h && (
+          <div className="pointer-events-auto w-[min(96vw,440px)] rounded-xl border border-border/60 bg-background/90 p-3 shadow-xl backdrop-blur">
+            <div className="grid grid-cols-3 gap-2">
+              <Tile label="AI brain" value={<StatusWord s={h.brain.status} />} sub={h.brain.provider !== "none" ? h.brain.provider : "not set"} />
+              <Tile label="Graph store" value={<StatusWord s={h.neo4j.status} />} sub="Neo4j" />
+              <Tile label="Vectors" value={<StatusWord s={h.pgvector.status} />} sub="pgvector" />
+              <Tile label="Deterministic" value={`${h.coverage.deterministic_pct}%`} sub="answered free" tone="text-emerald-400" />
+              <Tile label="Hallucination" value={`${h.quality.hallucination_pct}%`} sub="of AI answers" tone="text-amber-400" />
+              <Tile label="Open failures" value={h.quality.open_failures} sub="unresolved" tone={h.quality.open_failures ? "text-red-400" : ""} />
+            </div>
+            {h.flags?.length ? (
+              <div className="mt-2 flex flex-col gap-1">
+                {h.flags.slice(0, 5).map((f, i) => (
+                  <div key={i} className={`rounded-md border px-2.5 py-1 text-[11px] ${f.level === "error" ? "border-red-500/40 bg-red-500/10 text-red-300" : f.level === "warn" ? "border-amber-500/40 bg-amber-500/10 text-amber-200" : "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"}`}>{f.text}</div>
+                ))}
+              </div>
+            ) : null}
           </div>
         )}
-        {h?.flags?.length ? (
-          <div className="pointer-events-auto flex flex-col gap-1">
-            {h.flags.slice(0, 4).map((f, i) => (
-              <div key={i} className={`rounded-md border px-2.5 py-1 text-[11px] backdrop-blur ${f.level === "error" ? "border-red-500/40 bg-red-500/10 text-red-300" : f.level === "warn" ? "border-amber-500/40 bg-amber-500/10 text-amber-200" : "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"}`}>{f.text}</div>
-            ))}
-          </div>
-        ) : null}
       </div>
 
-      {/* Legend (graph only): node categories + relationship-line colors */}
+      {/* Legend — collapsed behind a chip so the default view stays clean. */}
       {current && view === "graph" && (
-        <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex max-w-[min(92vw,720px)] flex-col gap-1 rounded-lg border border-border/40 bg-background/60 px-3 py-2 text-[10px] text-muted-foreground backdrop-blur">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="font-medium text-foreground/70">Nodes</span>
-            {grouped.cats.map((c) => (
-              <span key={c} className="inline-flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full" style={{ background: catColor(c) }} /> {c}</span>
-            ))}
-            <span className="inline-flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full bg-red-500" /> offline/down</span>
-          </div>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="font-medium text-foreground/70">Lines</span>
-            {lineClasses.map((lc) => (
-              <span key={lc} className="inline-flex items-center gap-1.5"><span className="inline-block h-[3px] w-4 rounded" style={{ background: CLASS_COLOR[lc] }} /> {CLASS_LABEL[lc]}</span>
-            ))}
-          </div>
+        <div className="absolute bottom-3 left-3 z-10 flex flex-col items-start gap-1.5">
+          {showLegend && (
+            <div className="flex max-w-[min(92vw,720px)] flex-col gap-1 rounded-lg border border-border/50 bg-background/85 px-3 py-2 text-[10px] text-muted-foreground shadow-xl backdrop-blur">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="font-medium text-foreground/70">Nodes</span>
+                {grouped.cats.map((c) => (
+                  <span key={c} className="inline-flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full" style={{ background: catColor(c) }} /> {c}</span>
+                ))}
+                <span className="inline-flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full bg-red-500" /> offline/down</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="font-medium text-foreground/70">Lines</span>
+                {lineClasses.map((lc) => (
+                  <span key={lc} className="inline-flex items-center gap-1.5"><span className="inline-block h-[3px] w-4 rounded" style={{ background: CLASS_COLOR[lc] }} /> {CLASS_LABEL[lc]}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          <button onClick={() => setShowLegend((v) => !v)} aria-pressed={showLegend}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-background/80 px-2.5 py-1.5 text-xs font-medium text-muted-foreground shadow backdrop-blur transition-colors hover:text-foreground">
+            <Info className="size-3.5" /> Legend
+          </button>
         </div>
       )}
 

@@ -41,6 +41,14 @@ _GENERIC = {"the", "office", "hours", "department", "campus", "building", "cente
             "coordinator", "chair", "texas", "tech", "university", "monday", "tuesday",
             "wednesday", "thursday", "friday", "saturday", "sunday", "summer", "fall",
             "spring", "walk", "contact", "please", "hello"}
+# A candidate whose LAST word is one of these is a place/building (e.g. "Holden Hall",
+# "Chemistry Building"), not a person. Buildings are a fixed public set and the model
+# routinely reformats them ("Electrical & Computer Eng" -> "…Engineering"), so treating
+# them as ungrounded person-facts made the gate referral-block CORRECT course answers.
+# The gate's real job is fabricated PEOPLE and course codes, so skip place names.
+_PLACE_SUFFIX = {"hall", "center", "centre", "building", "complex", "library", "union",
+                 "commons", "tower", "annex", "auditorium", "arena", "stadium", "house",
+                 "wing", "plaza", "court", "field", "gym", "gymnasium", "pavilion"}
 
 
 def _norm(s: str) -> str:
@@ -75,9 +83,12 @@ def _candidates(reply: str):
     for m in _NAME.finditer(reply or ""):
         cand = m.group(1)
         low = cand.lower()
+        toks = low.split()
         if low in _NOT_NAMES:
             continue
-        if all(t in _GENERIC for t in low.split()):
+        if all(t in _GENERIC for t in toks):
+            continue
+        if toks[-1] in _PLACE_SUFFIX:  # a building/place, not a person — don't gate it
             continue
         claims.add(cand)
     return claims
@@ -93,6 +104,13 @@ def enforce(reply: str, evidence: str) -> str:
     for claim in _candidates(reply or ""):
         nc = _norm(claim)
         if nc in ev or nc.replace(" ", "") in ev_nospace:
+            continue
+        # A course/room code (letters + number) is grounded if BOTH parts appear in the
+        # evidence — the source often stores subject and number in separate fields, so
+        # "ECE 3312" needn't be one contiguous token to be real. (A fully invented code
+        # like "PHYS 9999" still has neither part in evidence, so it's still blocked.)
+        cm = re.fullmatch(r"([a-z]{2,5})\s?(\d{2,4}[a-z]?)", nc)
+        if cm and cm.group(1) in ev_nospace and cm.group(2) in ev_nospace:
             continue
         return FALLBACK  # an ungrounded fact slipped in — replace the whole reply
     return reply or ""

@@ -72,7 +72,7 @@ export default function FileImportPanel() {
           ref={fileRef}
           type="file"
           accept=".csv,.tsv,.txt,.json,.xlsx"
-          className="text-sm"
+          className="block w-full cursor-pointer text-sm text-muted-foreground file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary-foreground hover:file:bg-primary/90"
           onChange={(e) => {
             const f = e.target.files?.[0]
             if (f) analyze(f)

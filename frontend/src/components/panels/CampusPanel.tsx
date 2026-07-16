@@ -189,7 +189,7 @@ function ImportWidget({ onDone }: { onDone: () => void }) {
             setFile(e.target.files?.[0] ?? null)
             setResult(null)
           }}
-          className="text-xs file:mr-2 file:rounded file:border-0 file:bg-secondary file:px-2 file:py-1 file:text-secondary-foreground"
+          className="cursor-pointer text-xs text-muted-foreground file:mr-2 file:cursor-pointer file:rounded file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary-foreground hover:file:bg-primary/90"
         />
         <Button size="sm" variant="secondary" disabled={busy} onClick={() => send(false)}>
           Preview

@@ -52,6 +52,31 @@ def test_course_code_grounded_across_split_fields(monkeypatch):
     assert grounding.enforce("ECE 3372 is Electronics I.", ev) == "ECE 3372 is Electronics I."
 
 
+def test_multi_section_course_answer_with_buildings_passes(monkeypatch):
+    # The ECE 3312 false positive: a CORRECT multi-section answer whose building names the
+    # model reformatted must NOT be referral-blocked (it showed up as a 5.6% hallucination).
+    monkeypatch.setenv("KIOSK_GROUNDING", "1")
+    ev = _ev(
+        {"subject": "ECE", "course": "3312", "section": "201", "title": "Advanced Electronics",
+         "building": "Electrical & Computer Eng", "room": "00118"},
+        {"subject": "ECE", "course": "3312", "section": "001", "title": "Advanced Electronics",
+         "building": "Holden Hall", "room": "00038"},
+        {"subject": "ECE", "course": "3312", "section": "002", "title": "Advanced Electronics",
+         "building": "Engineering Center", "room": "00110"},
+    )
+    reply = ("Advanced Electronics (ECE 3312): Section 201 meets in Electrical & Computer "
+             "Engineering, room 118; Section 001 in Holden Hall, room 38; Section 002 in "
+             "Engineering Center, room 110.")
+    assert grounding.enforce(reply, ev) == reply
+
+
+def test_building_suffix_name_not_gated(monkeypatch):
+    # A place (last word a building suffix) isn't a person — don't gate it even if absent.
+    monkeypatch.setenv("KIOSK_GROUNDING", "1")
+    assert grounding.enforce("It meets in Holden Hall.", _ev({"x": "ece 3312"})) \
+        == "It meets in Holden Hall."
+
+
 def test_disabled_flag_is_passthrough(monkeypatch):
     monkeypatch.setenv("KIOSK_GROUNDING", "0")
     out = grounding.enforce("Hendrick Vanderpool teaches everything.", _ev(STAFF))

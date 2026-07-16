@@ -60,7 +60,7 @@ const LINK_CLASS: Record<string, string> = {
   structure: "structure",
 }
 const CLASS_COLOR: Record<string, string> = {
-  control: "#38bdf8", data: "#2dd4bf", quality: "#34d399", delivery: "#fbbf24", teaches: "#a78bfa", structure: "#41506a",
+  control: "#7dd3fc", data: "#5eead4", quality: "#6ee7b7", delivery: "#fcd34d", teaches: "#c4b5fd", structure: "#5a6d94",
 }
 const CLASS_LABEL: Record<string, string> = {
   control: "control flow", data: "data access", quality: "quality / guard", delivery: "build / deploy", teaches: "teaches", structure: "structure",
@@ -306,10 +306,10 @@ export default function EngineeringBrain() {
       })
       .linkColor((l: Node) => {
         const base = linkHex(l)
-        if (!focusRef.current) return hexA(base, linkClass(l.kind) === "structure" ? 0.16 : 0.5)
-        return hot(l) ? hexA(base, 0.98) : hexA(base, 0.06)
+        if (!focusRef.current) return hexA(base, linkClass(l.kind) === "structure" ? 0.28 : 0.8)
+        return hot(l) ? hexA(base, 1) : hexA(base, 0.1)
       })
-      .linkWidth((l: Node) => (hot(l) ? 1.9 : linkClass(l.kind) === "structure" ? 0.4 : 1))
+      .linkWidth((l: Node) => (hot(l) ? 2.2 : linkClass(l.kind) === "structure" ? 0.5 : 1.2))
       .linkDirectionalParticles((l: Node) => (hot(l) ? 3 : 0))
       .linkDirectionalParticleWidth(2)
       .onNodeHover((n: Node | null) => {

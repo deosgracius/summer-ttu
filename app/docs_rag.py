@@ -121,7 +121,7 @@ def ingest_document(db, title: str, source: str, text: str, kind: str = "text") 
         db.add(models.DocumentChunk(
             document_id=doc.id, ordinal=i, text=ch,
             vector=json.dumps(vec) if vec is not None else "[]",
-            model=embeddings.EMBED_MODEL if vec is not None else ""))
+            model=embeddings.effective_model() if vec is not None else ""))
     db.commit()
     return {"document_id": doc.id, "title": doc.title, "chunks": len(chunks),
             "embedded": embedded, "embeddings_on": embeddings.is_configured()}
@@ -152,12 +152,19 @@ def search_documents(db, query: str, limit: int = 5) -> dict:
 
     scored = []
     for r in rows:
+        score = None
         if qvec is not None and r.vector and r.vector != "[]":
             try:
-                score = cosine(qvec, json.loads(r.vector))
+                vec = json.loads(r.vector)
+                # Only compare when the dimensions agree. A provider switch (e.g. OpenAI's
+                # 1536-d -> Gemini's 768-d) leaves stale rows of the old width; cosine() on
+                # mismatched lengths would raise or mislead, so fall through to keyword
+                # overlap for those rows instead of dropping them from the results.
+                if len(vec) == len(qvec):
+                    score = cosine(qvec, vec)
             except Exception:
-                score = 0.0
-        else:
+                score = None
+        if score is None:
             score = _keyword_score(r.text, query)
         if score > 0:
             scored.append((score, r))

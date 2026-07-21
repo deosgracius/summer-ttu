@@ -128,7 +128,7 @@ SYSTEM = (
     "After acting, reply in one short sentence about what you did. Never invent tool results."
 )
 MAX_STEPS = 6
-DEFAULT_MODEL = {"anthropic": "claude-haiku-4-5", "openai": "gpt-4o-mini", "gemini": "gemini-2.0-flash"}
+DEFAULT_MODEL = {"anthropic": "claude-haiku-4-5", "openai": "gpt-4o-mini", "gemini": "gemini-flash-lite-latest"}
 _HISTORY = defaultdict(lambda: deque(maxlen=16))
 
 
@@ -239,7 +239,7 @@ async def run_agent(goal, db, user, provider=None, voice=False):
     if provider == "openai" and not (str(model).startswith("gpt") or str(model).startswith("o")):
         model = DEFAULT_MODEL.get("openai", "gpt-4o-mini")
     if provider == "gemini" and not str(model).startswith("gemini"):
-        model = DEFAULT_MODEL.get("gemini", "gemini-2.0-flash")
+        model = DEFAULT_MODEL.get("gemini", "gemini-flash-lite-latest")
     avail = available_tools(user.role, granted_services=_granted_services_for(db, user.id))
     system = SYSTEM + _context(user) + _memories(db, user)
     if voice:
@@ -397,7 +397,7 @@ async def run_kiosk_traced(goal, db, provider=None, history=None):
     # regardless of the (possibly slower) dashboard model in LLM_MODEL.
     model = os.getenv("KIOSK_LLM_MODEL") or DEFAULT_MODEL.get(provider, "")
     if provider == "gemini" and not str(model).startswith("gemini"):
-        model = DEFAULT_MODEL.get("gemini", "gemini-2.0-flash")
+        model = DEFAULT_MODEL.get("gemini", "gemini-flash-lite-latest")
     from .tools import TOOLS
     avail = {n: TOOLS[n] for n in KIOSK_TOOLS if n in TOOLS}
     system = KIOSK_SYSTEM + f"\nToday's date: {datetime.date.today().isoformat()}."
@@ -545,7 +545,7 @@ async def _run_gemini(goal, db, user, avail, system, hist, model):
     if not key:
         return {"reply": "No GEMINI_API_KEY is set (needed to use the Gemini brain).", "actions": []}
     client = genai.Client(api_key=key)
-    model = model or DEFAULT_MODEL.get("gemini", "gemini-2.0-flash")
+    model = model or DEFAULT_MODEL.get("gemini", "gemini-flash-lite-latest")
 
     # Gemini's function-declaration schema is a strict subset of JSON Schema. Strip any
     # field it doesn't accept (e.g. additionalProperties, $defs) or it rejects the tool.

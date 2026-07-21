@@ -7,15 +7,15 @@ they share no keywords. That's what keyword search can't do.
 
 Gracefully optional, like the rest: if no embedding provider is configured we return
 None and the caller falls back to keyword-only search. Two providers are supported —
-OpenAI text-embedding-3-small (1536 dims, default) and Gemini text-embedding-004
-(768 dims). The active provider/model is resolved at call time from the environment.
+OpenAI text-embedding-3-small (1536 dims, default) and Gemini gemini-embedding-001
+(3072 dims). The active provider/model is resolved at call time from the environment.
 """
 import os
 import hashlib
 
 # OpenAI default (kept for back-compat; effective_model() returns the active provider's model).
 EMBED_MODEL = os.getenv("EMBED_MODEL", "text-embedding-3-small")
-GEMINI_EMBED_MODEL_DEFAULT = "text-embedding-004"
+GEMINI_EMBED_MODEL_DEFAULT = "gemini-embedding-001"
 
 
 def _provider():
@@ -72,7 +72,7 @@ def embed_text(text: str):
             _k = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
             client = genai.Client(api_key=_k) if _k else genai.Client()  # api-key or Vertex env
             resp = client.models.embed_content(model=effective_model(), contents=payload)
-            return list(resp.embeddings[0].values)   # 768-d
+            return list(resp.embeddings[0].values)   # 3072-d (gemini-embedding-001)
         import openai
         client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
         resp = client.embeddings.create(model=effective_model(), input=payload)

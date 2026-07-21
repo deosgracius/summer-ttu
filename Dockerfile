@@ -17,4 +17,6 @@ COPY import_ttu_ece.py ./
 COPY import_cross_listed.py ./
 COPY --from=web /web/dist ./webdist
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Bind the host-provided $PORT when present (Render/Zeabur/Koyeb set it), else 8000
+# (Fly's fly.toml internal_port). Shell form so ${PORT} expands at runtime.
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

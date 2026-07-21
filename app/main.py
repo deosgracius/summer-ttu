@@ -132,22 +132,12 @@ import threading as _threading
 _threading.Thread(target=_db_init, name="db-init", daemon=True).start()
 
 
-# Keep the Neon (serverless) database warm. It auto-suspends after ~5 min idle, so the
-# first request after a long gap cold-started and failed ("connection error") even with
-# the network fine. The always-on machine pings it every few minutes so it never sleeps.
-def _db_keepalive():
-    import time as _t
-    while True:
-        _t.sleep(240)
-        try:
-            with engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
-        except Exception:
-            pass
-
-
-import threading as _threading
-_threading.Thread(target=_db_keepalive, daemon=True, name="db-keepalive").start()
+# NOTE: we intentionally DON'T keep the database warm with a periodic ping. On free
+# serverless Postgres (Neon / Supabase) an always-on ping keeps the DB active 24/7 and
+# burns the monthly free compute-hour cap — which is exactly what suspended the database
+# and crash-looped the app. Instead we let it idle-suspend and rely on pool_pre_ping
+# (see database.py) to transparently reconnect on the next request; that first request
+# after idle just waits a few seconds for the DB to wake. Free-tier friendly.
 
 # Hide the interactive API docs / OpenAPI schema in production (set DISABLE_DOCS=1)
 # so the full endpoint surface isn't published to the public internet.

@@ -120,6 +120,30 @@ function guessLang(t: string): string {
   return "en"
 }
 
+// Pick the best FREE female voice available in `pool` (already language-filtered).
+// Browser voice quality varies hugely by device: the neural "Natural"/"Online"
+// Microsoft voices (Edge) and Google's voices (Chrome) are the best free options, so
+// rank by known high-quality female names + the neural quality tag, and never return a
+// male voice. Falls back to the first non-male voice, then the first voice.
+const MALE_NAME =
+  /\b(male|david|mark|george|guy|james|ryan|eric|christopher|daniel|alex|fred|tom|paul|ravi|william|brandon|jacob|liam|noah|steffan)\b/i
+const FEMALE_PREF = [
+  /aria/i, /jenny/i, /michelle/i, /\bava\b/i, /emma/i, /libby/i, /sonia/i, /clara/i, // MS neural (Natural/Online)
+  /google uk english female/i, /google us english/i, // Chrome (neural)
+  /samantha/i, /allison/i, /susan/i, /karen/i, /moira/i, /tessa/i, /fiona/i, /serena/i, // Apple
+  /zira/i, /hazel/i, /eva/i, /catherine/i, // older / local female
+  /female/i, // last resort
+]
+function pickFemaleVoice(pool: SpeechSynthesisVoice[]): SpeechSynthesisVoice | undefined {
+  const fem = pool.filter((v) => !MALE_NAME.test(v.name))
+  const natural = fem.filter((v) => /natural|online|neural/i.test(v.name)) // neural = best free quality
+  for (const rx of FEMALE_PREF) {
+    const m = natural.find((v) => rx.test(v.name)) || fem.find((v) => rx.test(v.name))
+    if (m) return m
+  }
+  return fem[0] || pool[0]
+}
+
 function getSR(): AnyRec | null {
   const w = window as unknown as { SpeechRecognition?: new () => AnyRec; webkitSpeechRecognition?: new () => AnyRec }
   const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition
@@ -267,9 +291,8 @@ export function useSpeech() {
       const vs = synth.getVoices()
       const inLang = vs.filter((v) => v.lang.toLowerCase().startsWith(code))
       const pool = inLang.length ? inLang : vs.filter((v) => /^en/i.test(v.lang))
-      // Prefer a female voice in that language to match the ElevenLabs voice.
-      const female = pool.find((v) => /female|zira|aria|jenny|samantha|eva|hazel|susan|fiona|google/i.test(v.name))
-      const v = female || pool[0]
+      // Prefer the best FREE female voice available (neural voices where present).
+      const v = pickFemaleVoice(pool)
       if (v) {
         u.voice = v
         u.lang = v.lang

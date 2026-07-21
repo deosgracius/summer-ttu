@@ -155,7 +155,7 @@ def llm_generate(question: str, contexts: list) -> str:
             from google import genai
             client = genai.Client()
             r = client.models.generate_content(
-                model=os.getenv("LLM_MODEL", "gemini-2.0-flash-001"), contents=prompt)
+                model=os.getenv("LLM_MODEL", "gemini-flash-lite-latest"), contents=prompt)
             return (getattr(r, "text", "") or "").strip() or extractive_generate(question, contexts)
         if os.getenv("ANTHROPIC_API_KEY"):
             import anthropic

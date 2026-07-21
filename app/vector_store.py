@@ -96,11 +96,11 @@ def sync_embeddings(db) -> dict:
             continue  # embedding call failed; try again next sync
         payload = json.dumps(vec)
         if row:
-            row.text, row.vector, row.model, row.text_hash = text, payload, embeddings.EMBED_MODEL, h
+            row.text, row.vector, row.model, row.text_hash = text, payload, embeddings.effective_model(), h
             updated += 1
         else:
             db.add(models.CourseEmbedding(code=code, text=text, vector=payload,
-                                          model=embeddings.EMBED_MODEL, text_hash=h))
+                                          model=embeddings.effective_model(), text_hash=h))
             created += 1
 
     # Drop embeddings for courses that no longer exist (e.g. after a semester clear).
@@ -118,7 +118,7 @@ def sync_embeddings(db) -> dict:
 def status(db) -> dict:
     n = db.query(models.CourseEmbedding).count()
     return {"configured": embeddings.is_configured(), "embedded_courses": n,
-            "model": embeddings.EMBED_MODEL}
+            "model": embeddings.effective_model()}
 
 
 # --- searching -------------------------------------------------------------

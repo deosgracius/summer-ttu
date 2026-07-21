@@ -41,8 +41,11 @@ def _central_passcode_ok(passcode: str) -> bool:
     Fly secret). Returns False if the secret is unset, so an empty passcode never
     passes. The passcode is NEVER logged and is usable ONLY for central register/reset
     — it is not a login credential."""
-    expected = os.getenv("CENTRAL_ADMIN_PASSWORD", "")
-    return bool(expected) and hmac.compare_digest((passcode or "").encode(), expected.encode())
+    # .strip() both sides: a secret set via the shell often picks up a trailing newline
+    # ("fly secrets set" / echo), which made a correctly-typed passcode fail the exact
+    # match. Surrounding whitespace is never meaningful in a passcode, so trim it.
+    expected = os.getenv("CENTRAL_ADMIN_PASSWORD", "").strip()
+    return bool(expected) and hmac.compare_digest((passcode or "").strip().encode(), expected.encode())
 
 def _out(user):
     try:

@@ -1312,8 +1312,14 @@ async function outlookStatus(){ try{const x=await(await fetch("/oauth/outlook/st
   olBtn.style.display=(!x.configured||x.connected)?"none":""; olDisc.style.display=x.connected?"":"none";
   $("olStatus").textContent=!x.configured?"(Outlook not configured)":x.connected?"Outlook connected \u2713":"";}catch(e){}}
 async function discOutlook(){await fetch("/oauth/outlook/disconnect",{method:"POST",headers:headers()});outlookStatus();}
+let _wsRetry=0;
 function connectWS(){const p=location.protocol==="https:"?"wss":"ws";const ws=new WebSocket(p+"://"+location.host+"/ws/tasks");window._ws=ws;
-  ws.onopen=()=>$("status2").textContent="online";ws.onclose=()=>$("status2").textContent="offline";ws.onmessage=()=>loadAll();}
+  ws.onopen=()=>{$("status2").textContent="online";_wsRetry=0;};
+  ws.onmessage=()=>loadAll();
+  // Free hosts (e.g. Render) sleep on idle and drop the socket; auto-reconnect with
+  // capped backoff and refresh the data on the way back so the board never stays stale.
+  ws.onclose=()=>{$("status2").textContent="offline";const d=Math.min(30000,1000*Math.pow(2,_wsRetry++));
+    setTimeout(()=>{connectWS();loadAll();},d);};}
 
 let recognition=null,voices=[],speaking=false,micOn=false,vstate="off",followTimer=null,pendingMic=false,suppressWindow=false;
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;

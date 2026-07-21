@@ -12,7 +12,7 @@ router. No secrets are ever included (only presence booleans become a status wor
 import os
 import datetime
 
-from . import campus_service, failures, insights, graph
+from . import campus_service, failures, insights, graph, embeddings
 
 # Layer order = drawing/legend order, top of the stack (interface) to the bottom (delivery).
 SYSTEM_CATEGORIES = ["Interface", "API", "Orchestration", "Retrieval", "Data", "Voice", "Quality", "Delivery"]
@@ -34,7 +34,7 @@ _SYSTEM_NODES = [
     ("postgres", "Postgres (Neon)", "Data", "store", "Source of truth — every authoritative fact is retrieved here, never generated.", "SQLAlchemy", "live"),
     ("pgvector", "pgvector", "Data", "store", "Vector column for nearest-neighbour; today JSON + Python cosine (~100 courses).", "<=> (ready)", "ready"),
     ("neo4j", "Neo4j (Aura)", "Data", "store", "Property graph for course relationships and prerequisite traversal.", "graph", "offline"),
-    ("embeddings", "Embeddings", "Data", "integration", "OpenAI text-embedding-3-small (1536-d), cached per text hash.", "OpenAI", "live"),
+    ("embeddings", "Embeddings", "Data", "integration", "Sentence embeddings for semantic search, cached per text hash. Provider set live below.", "embeddings", "live"),
     ("llm", "AI brain", "Orchestration", "integration", "The language model provider used for open-ended questions.", "provider", "live"),
     ("stt", "Voice · STT", "Voice", "integration", "Speech-to-text (Whisper) for the kiosk microphone.", "Whisper", "live"),
     ("tts", "Voice · TTS", "Voice", "integration", "Text-to-speech (ElevenLabs) with a browser-voice fallback.", "ElevenLabs", "live"),
@@ -89,7 +89,7 @@ def _brain_status():
 
 
 def _embeddings_status() -> str:
-    return "live" if os.getenv("OPENAI_API_KEY") else "unconfigured"
+    return "live" if embeddings.is_configured() else "unconfigured"
 
 
 def _live_status_overrides():
@@ -109,10 +109,16 @@ def _live_status_overrides():
 
 def _system_layer():
     dyn = _live_status_overrides()
+    model = embeddings.effective_model()
     nodes = [{
         "id": nid, "name": name, "category": cat, "kind": kind,
         "status": dyn.get(nid, status), "purpose": purpose, "tools": tools,
     } for (nid, name, cat, kind, purpose, tools, status) in _SYSTEM_NODES]
+    # Reflect the embedding provider/model that is actually live this boot.
+    for n in nodes:
+        if n["id"] == "embeddings":
+            n["purpose"] = f"Active model: {model or 'none (keyword-only search)'}, cached per text hash."
+            n["tools"] = model or "keyword-only"
     edges = [{"source": s, "target": t, "kind": k} for (s, t, k) in _SYSTEM_EDGES]
     return {"nodes": nodes, "edges": edges, "categories": SYSTEM_CATEGORIES}
 
@@ -160,7 +166,7 @@ def _health(db) -> dict:
                       "text": "Neo4j graph store is offline — prerequisite questions degrade to the advisor redirect."})
     if emb == "unconfigured":
         flags.append({"level": "warn",
-                      "text": "OPENAI_API_KEY is not set — semantic / vector search is unavailable."})
+                      "text": "No embedding provider is configured (set GOOGLE_API_KEY or OPENAI_API_KEY) — semantic / vector search is unavailable."})
     if r.get("open_failures"):
         n = r["open_failures"]
         flags.append({"level": "warn",

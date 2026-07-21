@@ -10,7 +10,11 @@ from .routers import auth, tasks, events, reminders, emails, memories, admin, oa
 from .realtime import manager
 from . import models
 
-Base.metadata.create_all(bind=engine)
+# NOTE: schema creation + column migrations + seeds run in a guarded BACKGROUND thread at
+# the bottom of this module (see _db_init) — NOT here at import time — so a cold or
+# unreachable Neon at boot can never block uvicorn from starting and serving /health.
+# Doing this DB work unguarded at import is what crash-looped the machine when the
+# database was slow/suspended (Neon auto-suspends after ~5 min idle).
 
 
 def _migrate():
@@ -106,28 +110,34 @@ def _seed_central_admin():
         db.close()
 
 
-_migrate()
-_seed_events()
-_seed_campus()
-_seed_central_admin()
-
-
-# Keep the Neon (serverless) database warm. It auto-suspends after ~5 min idle, so the
-# first request after a long gap cold-started and failed ("connection error") even with
-# the network fine. The always-on machine pings it every few minutes so it never sleeps.
-def _db_keepalive():
-    import time as _t
-    while True:
-        _t.sleep(240)
-        try:
-            with engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
-        except Exception:
-            pass
+def _db_init():
+    """One-time DB setup: schema, lightweight column migrations, and seeds. Runs in a
+    BACKGROUND daemon thread and swallows/logs any error, so a slow or unreachable Neon at
+    boot can NEVER stop uvicorn from starting and serving /health. Previously these ran at
+    import time, unguarded — so a cold Neon (it auto-suspends after ~5 min) hung the import
+    and the machine restart-looped."""
+    try:
+        Base.metadata.create_all(bind=engine)
+        _migrate()
+        _seed_events()
+        _seed_campus()
+        _seed_central_admin()
+        logging.info("DB init complete")
+    except Exception:
+        logging.exception("DB init failed — the app is still serving; DB-backed routes "
+                          "will work once the database is reachable")
 
 
 import threading as _threading
-_threading.Thread(target=_db_keepalive, daemon=True, name="db-keepalive").start()
+_threading.Thread(target=_db_init, name="db-init", daemon=True).start()
+
+
+# NOTE: we intentionally DON'T keep the database warm with a periodic ping. On free
+# serverless Postgres (Neon / Supabase) an always-on ping keeps the DB active 24/7 and
+# burns the monthly free compute-hour cap — which is exactly what suspended the database
+# and crash-looped the app. Instead we let it idle-suspend and rely on pool_pre_ping
+# (see database.py) to transparently reconnect on the next request; that first request
+# after idle just waits a few seconds for the DB to wake. Free-tier friendly.
 
 # Hide the interactive API docs / OpenAPI schema in production (set DISABLE_DOCS=1)
 # so the full endpoint surface isn't published to the public internet.

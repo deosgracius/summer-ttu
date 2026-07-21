@@ -128,7 +128,7 @@ SYSTEM = (
     "After acting, reply in one short sentence about what you did. Never invent tool results."
 )
 MAX_STEPS = 6
-DEFAULT_MODEL = {"anthropic": "claude-haiku-4-5", "openai": "gpt-4o-mini"}
+DEFAULT_MODEL = {"anthropic": "claude-haiku-4-5", "openai": "gpt-4o-mini", "gemini": "gemini-2.0-flash"}
 _HISTORY = defaultdict(lambda: deque(maxlen=16))
 
 
@@ -238,6 +238,8 @@ async def run_agent(goal, db, user, provider=None, voice=False):
         model = DEFAULT_MODEL.get("anthropic", "claude-haiku-4-5")
     if provider == "openai" and not (str(model).startswith("gpt") or str(model).startswith("o")):
         model = DEFAULT_MODEL.get("openai", "gpt-4o-mini")
+    if provider == "gemini" and not str(model).startswith("gemini"):
+        model = DEFAULT_MODEL.get("gemini", "gemini-2.0-flash")
     avail = available_tools(user.role, granted_services=_granted_services_for(db, user.id))
     system = SYSTEM + _context(user) + _memories(db, user)
     if voice:
@@ -250,8 +252,10 @@ async def run_agent(goal, db, user, provider=None, voice=False):
             result = await _run_anthropic(goal, db, user, avail, system, hist, model)
         elif provider == "openai":
             result = await _run_openai(goal, db, user, avail, system, hist, model)
+        elif provider == "gemini":
+            result = await _run_gemini(goal, db, user, avail, system, hist, model)
         else:
-            result = {"reply": f"Unknown provider '{provider}'. Use 'anthropic' or 'openai'.", "actions": []}
+            result = {"reply": f"Unknown provider '{provider}'. Use 'anthropic', 'openai', or 'gemini'.", "actions": []}
         from . import insights
         insights.log(db, "dashboard", "llm", goal, route="llm", provider=provider)
     except Exception as e:
@@ -392,6 +396,8 @@ async def run_kiosk_traced(goal, db, provider=None, history=None):
     # Kiosk answers are quick lookups — use the FAST model for snappy replies,
     # regardless of the (possibly slower) dashboard model in LLM_MODEL.
     model = os.getenv("KIOSK_LLM_MODEL") or DEFAULT_MODEL.get(provider, "")
+    if provider == "gemini" and not str(model).startswith("gemini"):
+        model = DEFAULT_MODEL.get("gemini", "gemini-2.0-flash")
     from .tools import TOOLS
     avail = {n: TOOLS[n] for n in KIOSK_TOOLS if n in TOOLS}
     system = KIOSK_SYSTEM + f"\nToday's date: {datetime.date.today().isoformat()}."
@@ -402,6 +408,8 @@ async def run_kiosk_traced(goal, db, provider=None, history=None):
             result = await _run_anthropic(goal, db, None, avail, system, hist, model)
         elif provider == "openai":
             result = await _run_openai(goal, db, None, avail, system, hist, model)
+        elif provider == "gemini":
+            result = await _run_gemini(goal, db, None, avail, system, hist, model)
         else:
             return {"reply": "The kiosk assistant isn't configured.", "actions": [], "latency_ms": 0.0}
     except Exception as e:
@@ -525,3 +533,78 @@ async def _run_openai(goal, db, user, avail, system, hist, model):
             actions.append({"tool": tc.function.name, "input": args, "result": out})
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(out)})
     return {"reply": "Stopped after too many steps.", "actions": actions, "usage": {"provider": "openai", "model": model, "input": in_tok, "output": out_tok}}
+
+
+async def _run_gemini(goal, db, user, avail, system, hist, model):
+    """Tool-calling loop against Google Gemini (google-genai SDK). Same contract as the
+    Anthropic/OpenAI runners: returns {reply, actions, usage}. Gemini is the free-tier
+    brain for the $0 deployment; the deterministic router still answers ~86% with no LLM."""
+    from google import genai
+    from google.genai import types
+    key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not key:
+        return {"reply": "No GEMINI_API_KEY is set (needed to use the Gemini brain).", "actions": []}
+    client = genai.Client(api_key=key)
+    model = model or DEFAULT_MODEL.get("gemini", "gemini-2.0-flash")
+
+    # Gemini's function-declaration schema is a strict subset of JSON Schema. Strip any
+    # field it doesn't accept (e.g. additionalProperties, $defs) or it rejects the tool.
+    _ALLOW = {"type", "description", "properties", "required", "items", "enum"}
+    def _clean(s):
+        if not isinstance(s, dict):
+            return s
+        out = {}
+        for k, v in s.items():
+            if k not in _ALLOW:
+                continue
+            if k == "properties" and isinstance(v, dict):
+                out[k] = {pk: _clean(pv) for pk, pv in v.items()}
+            elif k == "items":
+                out[k] = _clean(v)
+            else:
+                out[k] = v
+        return out
+
+    decls = []
+    for n, t in avail.items():
+        d = {"name": n, "description": t["description"]}
+        schema = _clean(t["schema"] or {})
+        if schema.get("properties"):
+            d["parameters"] = schema
+        decls.append(d)
+    tools = [types.Tool(function_declarations=decls)]
+    config = types.GenerateContentConfig(system_instruction=system, tools=tools, max_output_tokens=1024)
+
+    contents = []
+    for m in hist:
+        role = "model" if m["role"] == "assistant" else "user"
+        contents.append({"role": role, "parts": [{"text": m["content"]}]})
+    contents.append({"role": "user", "parts": [{"text": goal}]})
+
+    _wrap = lambda out: out if isinstance(out, dict) else {"result": out}
+    actions = []
+    in_tok = 0; out_tok = 0
+    for _ in range(MAX_STEPS):
+        resp = await client.aio.models.generate_content(model=model, contents=contents, config=config)
+        try:
+            um = resp.usage_metadata
+            in_tok += um.prompt_token_count or 0; out_tok += um.candidates_token_count or 0
+        except Exception:
+            pass
+        cand = (resp.candidates or [None])[0]
+        if not cand or not cand.content:
+            return {"reply": "(no response)", "actions": actions, "usage": {"provider": "gemini", "model": model, "input": in_tok, "output": out_tok}}
+        parts = cand.content.parts or []
+        calls = [p.function_call for p in parts if getattr(p, "function_call", None)]
+        if not calls:
+            text = "".join(getattr(p, "text", "") or "" for p in parts).strip()
+            return {"reply": text or "(done)", "actions": actions, "usage": {"provider": "gemini", "model": model, "input": in_tok, "output": out_tok}}
+        contents.append(cand.content)
+        fr_parts = []
+        for fc in calls:
+            args = dict(fc.args or {})
+            out = await avail[fc.name]["fn"](args, db, user)
+            actions.append({"tool": fc.name, "input": args, "result": out})
+            fr_parts.append({"function_response": {"name": fc.name, "response": _wrap(out)}})
+        contents.append({"role": "user", "parts": fr_parts})
+    return {"reply": "Stopped after too many steps.", "actions": actions, "usage": {"provider": "gemini", "model": model, "input": in_tok, "output": out_tok}}

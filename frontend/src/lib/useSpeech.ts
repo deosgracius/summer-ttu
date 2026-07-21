@@ -193,7 +193,7 @@ export function useSpeech() {
   // Keep the just-spoken text as an echo reference for a beat after the audio ends, so
   // the recognizer's lagged tail of Summer's OWN voice is dropped, not answered. The
   // clear is unconditional (guarded only by "text unchanged") — it can never stick.
-  const ECHO_TAIL_MS = 2500
+  const ECHO_TAIL_MS = 4000
   const engaged = useRef(false)
   const convoTimer = useRef<number | undefined>(undefined)
 
@@ -632,13 +632,16 @@ export function useSpeech() {
     }
     recRef.current = rec
     micOn.current = true
-    // Start RESPONSIVE so the mic works the instant someone speaks — no wake word
-    // needed for the first turn. It only drops to dormant after an end phrase or 8s
-    // of silence, and re-engages easily (wake word OR a real question) from there.
-    engaged.current = true
-    vstate.current = "active"
-    setAwake(true)
-    resetConvoTimer()
+    // Start DORMANT so the wake word ("Hey Summer" / "Summer") is required before the
+    // FIRST turn. Starting engaged treated ANY first utterance as a command — including
+    // Summer's own greeting/reply audio leaking into the mic once isEcho misses it —
+    // which is what made her answer random background speech and talk over herself.
+    // engage() promotes her to a live conversation on the wake word; idle/end-phrase
+    // drops her back here. The UI already shows the "say Hey Summer" prompt while awake
+    // is false, and tap-to-talk still calls engage() so the mic button needs no wake word.
+    engaged.current = false
+    vstate.current = "ambient"
+    setAwake(false)
     try {
       rec.start()
     } catch {

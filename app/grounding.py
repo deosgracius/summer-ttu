@@ -103,14 +103,22 @@ def enforce(reply: str, evidence: str) -> str:
     ev_nospace = ev.replace(" ", "")
     for claim in _candidates(reply or ""):
         nc = _norm(claim)
-        if nc in ev or nc.replace(" ", "") in ev_nospace:
-            continue
-        # A course/room code (letters + number) is grounded if BOTH parts appear in the
-        # evidence — the source often stores subject and number in separate fields, so
-        # "ECE 3312" needn't be one contiguous token to be real. (A fully invented code
-        # like "PHYS 9999" still has neither part in evidence, so it's still blocked.)
+        # Route a course/room code (letters+digits) through a token-aware check FIRST.
+        # The subject must appear as a whole \b word; the number must be a STANDALONE
+        # token — NOT adjacent to another digit or a hyphen, so digits borrowed from a
+        # phone (806 inside 806-742-3388) or a longer code (330 inside 3306) don't count.
+        # Leading zeros (a room stored '00118' -> claim '118') AND trailing punctuation
+        # (a comma/period after the number) are tolerated. This blocks 'ECE 806' and
+        # truncated 'ECE 330' while still grounding the real code AND a leading-zero room.
         cm = re.fullmatch(r"([a-z]{2,5})\s?(\d{2,4}[a-z]?)", nc)
-        if cm and cm.group(1) in ev_nospace and cm.group(2) in ev_nospace:
+        if cm:
+            letters, digits = cm.group(1), cm.group(2)
+            if (re.search(r"\b" + letters + r"\b", ev)
+                    and re.search(r"(?<![\d-])0*" + re.escape(digits) + r"(?![\d-])", ev)):
+                continue
+            return FALLBACK
+        # Email / phone / person name: grounded if it appears verbatim (spacing-insensitive).
+        if nc in ev or nc.replace(" ", "") in ev_nospace:
             continue
         return FALLBACK  # an ungrounded fact slipped in — replace the whole reply
     return reply or ""

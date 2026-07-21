@@ -4,8 +4,10 @@ import re
 import httpx
 
 API = "https://api.elevenlabs.io/v1"
-DEFAULT_VOICE = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")  # "Rachel" (public)
-DEFAULT_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_multilingual_v2")
+# .strip() these: a secret pasted into a host's env UI very often carries a trailing
+# newline, which makes httpx reject the xi-api-key header as an "illegal header value".
+DEFAULT_VOICE = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM").strip()  # "Rachel" (public)
+DEFAULT_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_multilingual_v2").strip()
 
 # Automatic language switching: when a reply is NOT in English, speak it with a
 # voice that matches the language. English keeps the configured default voice.
@@ -66,7 +68,7 @@ def voice_for_lang(lang: str) -> str:
 
 
 def _key() -> str | None:
-    return os.getenv("ELEVENLABS_API_KEY") or None
+    return (os.getenv("ELEVENLABS_API_KEY") or "").strip() or None
 
 
 # ---- Speech-to-text (Whisper) — reliable mic transcription ----
@@ -119,7 +121,7 @@ async def tts(text: str, voice_id: str | None = None, model: str | None = None) 
     # Auto-switch the voice by language: a non-English reply is spoken with the
     # matching voice; English keeps the caller's configured/default voice.
     lang = detect_lang(text)
-    vid = voice_for_lang(lang) if lang != "en" else (voice_id or DEFAULT_VOICE)
+    vid = (voice_for_lang(lang) if lang != "en" else (voice_id or DEFAULT_VOICE)).strip()
     payload = {
         "text": text[:5000],
         "model_id": model or DEFAULT_MODEL,

@@ -9,6 +9,7 @@ import SpaceBackground from "@/components/SpaceBackground"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import CampusSearch from "@/components/CampusSearch"
+import KioskScreensaver from "@/components/KioskScreensaver"
 
 interface Person {
   name: string
@@ -38,6 +39,8 @@ export default function KioskPage() {
   const [turns, setTurns] = useState<Turn[]>([])
   const [loading, setLoading] = useState(false)
   const [muted, setMuted] = useState(false)
+  // Sleep-mode screensaver: a tap dismisses it until the next idle cycle.
+  const [dismissed, setDismissed] = useState(false)
   const { supported: voiceIn, canSpeak, listening, wakeActive, awake, wakeBlocked, serverWake, heard, listen, speak, stopSpeaking, startWakeWord, stopWakeWord, startServerWake, stopServerWake, primeAudio } =
     useSpeech()
   const idleTimer = useRef<number | undefined>(undefined)
@@ -70,6 +73,11 @@ export default function KioskPage() {
       setQuestion("")
     }
   }, [awake])
+  // Re-arm the sleep-mode screensaver once someone engages, so it returns after the next idle.
+  useEffect(() => { if (awake || turns.length) setDismissed(false) }, [awake, turns.length])
+
+  // Sleep mode: mic listening, dormant (not awake/answering), nothing on screen, not dismissed.
+  const sleeping = wakeActive && !awake && !loading && turns.length === 0 && !dismissed
 
   // Speech mode is the DEFAULT: start listening on load. Audio output unlocks on
   // the first click/keypress anywhere (browser requirement) — no button needed.
@@ -113,6 +121,22 @@ export default function KioskPage() {
     <div className="summer-bg min-h-svh bg-background text-foreground flex flex-col items-center px-4 py-8">
       <SpaceBackground />
       <SplineRobot ambient />
+
+      {/* Sleep-mode attract loop: an auto-orbiting 3D showcase of the ECE faculty, shown while
+          the kiosk is dormant. Say "Hey Summer" (mic keeps listening beneath it) or tap to begin. */}
+      {sleeping && (
+        <div className="fixed inset-0 z-40 bg-[#060a12]" onClick={() => { primeAudio(); setDismissed(true) }}>
+          <KioskScreensaver />
+          <div className="pointer-events-none absolute inset-x-0 top-8 flex flex-col items-center text-center">
+            <div className="text-3xl font-semibold tracking-tight text-white/90 drop-shadow">TTU ECE Faculty</div>
+            <div className="mt-1 text-sm text-white/50">Electrical &amp; Computer Engineering</div>
+          </div>
+          <div className="pointer-events-none absolute inset-x-0 bottom-10 flex flex-col items-center gap-1.5 text-center">
+            <div className="text-2xl font-semibold text-white/90 drop-shadow">Say <span className="text-sky-400">“Hey Summer”</span></div>
+            <div className="text-sm text-white/55">or tap anywhere to begin</div>
+          </div>
+        </div>
+      )}
       <div className="relative z-10 flex flex-col items-center text-center mb-6">
         <SummerOrb size={380} state={loading ? "thinking" : "idle"} />
         <h1 className="mt-3 text-4xl font-semibold tracking-tight">Hi, I'm Summer.</h1>

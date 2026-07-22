@@ -44,6 +44,33 @@ def knowledge_graph(db: Session = Depends(get_db)):
     return campus_service.knowledge_graph(db)
 
 
+@router.get("/faculty-graph")
+def faculty_graph(db: Session = Depends(get_db)):
+    """Public, lean feed for the kiosk sleep-mode screensaver: FACULTY ONLY (incl. emeritus),
+    each with photo + title, clustered by research area. No staff/advisors/courses. Read-only
+    public directory data (names, photos, research areas — same as the public knowledge graph)."""
+    from .. import campus_service, models
+    profs, areas, researches = [], set(), []
+    for p in db.query(models.Professor).all():
+        ar = [a for a in campus_service._areas_for(
+            f"{getattr(p, 'bio', '') or ''} {getattr(p, 'title', '') or ''}")
+            if a not in ("Staff", "Advising")] or ["ECE Faculty"]
+        profs.append({
+            "id": "p:" + p.name, "name": p.name,
+            "photo": getattr(p, "photo_url", "") or "",
+            "title": getattr(p, "title", "") or "",
+            "areas": ar,
+        })
+        for a in ar:
+            areas.add(a)
+            researches.append({"s": "p:" + p.name, "t": "a:" + a})
+    return {
+        "profs": profs,
+        "areas": [{"id": "a:" + a, "name": a} for a in sorted(areas)],
+        "researches": researches,
+    }
+
+
 def _crud(name: str, model, schema_in, schema_out, search_fields):
     """Wire up GET (list) / GET id / POST / PATCH / DELETE for one resource."""
     sub = APIRouter(prefix=f"/{name}")

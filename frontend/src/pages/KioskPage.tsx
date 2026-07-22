@@ -59,6 +59,17 @@ export default function KioskPage() {
     resetIdle()
     return () => window.clearTimeout(idleTimer.current)
   }, [])
+
+  // Keep the free host awake while a kiosk is on screen. Render's free tier spins down after
+  // ~15 min with no inbound traffic; the screensaver renders locally and makes no requests, so
+  // without this the host would still sleep. A tiny /health ping every few minutes counts as
+  // traffic → no spin-down, no cold start for the next visitor. /health touches no database.
+  useEffect(() => {
+    const ping = () => { fetch("/health", { cache: "no-store" }).catch(() => {}) }
+    ping()
+    const id = window.setInterval(ping, 4 * 60 * 1000) // every 4 min, well under the 15-min cutoff
+    return () => window.clearInterval(id)
+  }, [])
   useEffect(() => {
     // Newest answer is rendered at the TOP, so keep the view scrolled up to it — no
     // hunting down the bottom of a long conversation.

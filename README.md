@@ -1,5 +1,7 @@
 # Summer — TTU Campus AI Assistant
 
+**Live demo:** [Public kiosk](https://summer-ttu.onrender.com/kiosk) | [Admin platform](https://summer-ttu.onrender.com/)
+
 A production-shaped **generative-AI assistant** for a university department, built end to end:
 a grounded, multi-retriever RAG system with an agentic layer, wrapped in the engineering you
 need to actually *operate* it — evaluation, safety testing, observability, role-based security,

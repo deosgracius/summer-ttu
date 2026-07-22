@@ -80,7 +80,7 @@ function labelSprite(text: string, color: string) {
   x.fillStyle = color; x.fillText(text, w / 2, 40)
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, transparent: true }))
-  sp.scale.set(30 * (w / 76), 30, 1); return sp
+  sp.scale.set(24 * (w / 76), 24, 1); return sp
 }
 
 // Cache the fetch at module scope so re-entering sleep mode is instant (no refetch/flicker).
@@ -103,7 +103,7 @@ export default function KioskScreensaver() {
       const areas = [...byArea.keys()].sort((a, b) => byArea.get(b)!.length - byArea.get(a)!.length)
 
       const nodes: Any[] = [], links: Any[] = []
-      const R_HUB = 320, R_MEM = 1040, BAND = 175, BASE = 3, GAP = 0.05
+      const R_HUB = 380, R_MEM = 720, ROW = 215, BASE = 3, GAP = 0.05
       const put = (n: Any, ang: number, r: number, y = 0) => {
         n.x = n.fx = Math.cos(ang) * r; n.y = n.fy = y; n.z = n.fz = Math.sin(ang) * r
       }
@@ -112,23 +112,27 @@ export default function KioskScreensaver() {
       const totalW = sectors.reduce((n, s) => n + s.list.length + BASE, 0) || 1
       const usable = Math.PI * 2 - GAP * sectors.length
       let cur = 0
-      for (const s of sectors) {
+      sectors.forEach((s, si) => {
         const span = usable * ((s.list.length + BASE) / totalW)
         const start = cur + GAP / 2, mid = start + span / 2
         const col = areaColor(s.a)
+        // Stagger hub height so neighbouring area labels don't collide.
         const hub: Any = { id: "a:" + s.a, name: s.a, kind: "hub", color: col }
-        put(hub, mid, R_HUB, 0); nodes.push(hub)
+        put(hub, mid, R_HUB, si % 2 ? 70 : -70); nodes.push(hub)
+        // Two tidy concentric rows per area (inner/outer), evenly fanned across the sector.
+        const perRow = Math.ceil(s.list.length / 2)
         s.list.forEach((p, i) => {
-          const frac = s.list.length === 1 ? 0.5 : i / (s.list.length - 1)
-          const t = start + span * (0.06 + 0.88 * frac)     // keep off the sector seams
-          const r = R_MEM + (i % 3) * BAND                  // 3 radial bands
-          const y = (((i * 37) % 7) - 3) * 62               // spread in height (depth)
+          const row = i % 2, colr = Math.floor(i / 2)
+          const frac = perRow <= 1 ? 0.5 : colr / (perRow - 1)
+          const t = start + span * (0.1 + 0.8 * frac)
+          const r = R_MEM + row * ROW
+          const y = (row === 0 ? 55 : -55) + (((i * 29) % 5) - 2) * 22
           const node: Any = { ...p, kind: "faculty", color: col }
           put(node, t, r, y); nodes.push(node)
           links.push({ source: p.id, target: "a:" + s.a, color: col })
         })
         cur += GAP + span
-      }
+      })
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const G = (new ForceGraph3D(elRef.current) as any)
@@ -166,17 +170,26 @@ export default function KioskScreensaver() {
       const fit = () => { if (elRef.current) { const r = elRef.current.getBoundingClientRect(); G.width(r.width).height(r.height) } }
       fitRef.current = fit; fit(); window.addEventListener("resize", fit)
 
-      // Slow turntable orbit around the vertical axis, viewed from slightly above. Radius/height
-      // are framed for the larger, more-spread layout.
-      const R = 2150, H = 920
-      let a = Math.PI * 0.12
-      const orbit = () => {
+      // Frame the whole disc to fit the viewport, THEN orbit at that distance with a gentle
+      // top-down tilt — so the graph is centered and nothing runs off the bottom of the screen.
+      window.setTimeout(() => {
         if (cancelled) return
-        a += 0.0013
-        G.cameraPosition({ x: Math.sin(a) * R, y: H, z: Math.cos(a) * R }, { x: 0, y: 0, z: 0 })
-        rafRef.current = requestAnimationFrame(orbit)
-      }
-      window.setTimeout(orbit, 50)
+        try { G.zoomToFit(0, 150) } catch { /* ignore */ }
+        const p = G.camera().position
+        let dist = Math.hypot(p.x, p.y, p.z)
+        if (!isFinite(dist) || dist < 900) dist = 2600
+        dist *= 1.12                                  // a little breathing room
+        const ELEV = 0.6                              // ~34° above the disc plane
+        const H = Math.sin(ELEV) * dist, Rr = Math.cos(ELEV) * dist
+        let a = Math.PI * 0.1
+        const orbit = () => {
+          if (cancelled) return
+          a += 0.0012
+          G.cameraPosition({ x: Math.sin(a) * Rr, y: H, z: Math.cos(a) * Rr }, { x: 0, y: 0, z: 0 })
+          rafRef.current = requestAnimationFrame(orbit)
+        }
+        orbit()
+      }, 90)
     }
 
     if (CACHE) build(CACHE)

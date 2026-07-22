@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { Cpu, Building2, X, RefreshCw, Network, LayoutGrid, Activity, Info, Crosshair, type LucideIcon } from "lucide-react"
+import { Cpu, Building2, X, RefreshCw, Network, LayoutGrid, Activity, Info, Crosshair, Search, type LucideIcon } from "lucide-react"
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore — 3d-force-graph ships loose types
 import ForceGraph3D from "3d-force-graph"
@@ -141,6 +141,7 @@ export default function EngineeringBrain() {
   // Health + legend are collapsed by default so the default view is just the graph + toolbar.
   const [showHealth, setShowHealth] = useState(false)
   const [showLegend, setShowLegend] = useState(false)
+  const [query, setQuery] = useState("")
 
   async function load() {
     setErr("")
@@ -169,6 +170,15 @@ export default function EngineeringBrain() {
     const cats = [...byCat.keys()].sort((a, b) => byCat.get(b)!.length - byCat.get(a)!.length)
     return { byCat, cats }
   }, [current])
+
+  // Name search: match any person/course node by name (skip the synthetic root/hub nodes).
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return [] as Node[]
+    return (current?.nodes || [])
+      .filter((n) => !["root", "hub"].includes(n.kind) && (n.name || "").toLowerCase().includes(q))
+      .slice(0, 8)
+  }, [query, current])
 
   useEffect(() => {
     setSelected(null)
@@ -345,6 +355,19 @@ export default function EngineeringBrain() {
     window.setTimeout(() => G.zoomToFit?.(600, 60), 720)
   }
 
+  // Jump to a node found via search: select it (opens the detail panel + highlights it) and,
+  // in graph view, fly the camera to its pinned position — same focus as clicking the node.
+  function focusNode(id: string) {
+    const n = idx[id]
+    if (n) setSelected(n)
+    setQuery("")
+    const G = gRef.current
+    if (G && view === "graph") {
+      const gn = G.graphData().nodes.find((x: Node) => x.id === id)
+      if (gn) G.cameraPosition({ x: gn.x, y: gn.y, z: (gn.z || 0) + 230 }, { x: gn.x, y: gn.y, z: gn.z || 0 }, 800)
+    }
+  }
+
   const h = data?.health
   const worst = h?.flags?.some((f) => f.level === "error") ? "error" : h?.flags?.some((f) => f.level === "warn") ? "warn" : "ok"
   function Tile({ label, value, sub, tone }: { label: string; value: ReactNode; sub?: string; tone?: string }) {
@@ -414,6 +437,40 @@ export default function EngineeringBrain() {
           <button onClick={load} title="Refresh" className="rounded-md p-2 text-muted-foreground transition-colors hover:text-foreground">
             <RefreshCw className="size-4" />
           </button>
+        </div>
+
+        {/* Name search — type a person or course to jump straight to it. */}
+        <div className="pointer-events-auto relative w-[min(92vw,320px)]">
+          <div className="flex items-center gap-2 rounded-xl border border-border/60 bg-background/80 px-3 py-1.5 shadow-lg backdrop-blur">
+            <Search className="size-4 shrink-0 text-muted-foreground" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && matches[0]) focusNode(matches[0].id)
+                else if (e.key === "Escape") setQuery("")
+              }}
+              placeholder="Search names…"
+              className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+            />
+            {query && (
+              <button onClick={() => setQuery("")} className="shrink-0 text-muted-foreground hover:text-foreground" aria-label="Clear search">
+                <X className="size-3.5" />
+              </button>
+            )}
+          </div>
+          {query.trim() && (
+            <div className="absolute left-0 right-0 mt-1 max-h-64 overflow-y-auto rounded-xl border border-border/60 bg-background/95 py-1 shadow-xl backdrop-blur">
+              {matches.length ? matches.map((m) => (
+                <button key={m.id} onClick={() => focusNode(m.id)}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted/60">
+                  <span className="inline-block size-2 shrink-0 rounded-full" style={{ background: nodeColor(m) }} />
+                  <span className="min-w-0 flex-1 truncate">{m.name}</span>
+                  <span className="shrink-0 text-[10px] text-muted-foreground">{m.category || m.kind}</span>
+                </button>
+              )) : <div className="px-3 py-2 text-xs text-muted-foreground">No matches</div>}
+            </div>
+          )}
         </div>
         {showHealth && h && (
           <div className="pointer-events-auto w-[min(96vw,440px)] rounded-xl border border-border/60 bg-background/90 p-3 shadow-xl backdrop-blur">

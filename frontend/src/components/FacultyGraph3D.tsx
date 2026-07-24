@@ -76,7 +76,7 @@ function labelSprite(text: string, color: string) {
   x.fillStyle = color; x.fillText(text, w / 2, 40)
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, transparent: true }))
-  sp.scale.set(24 * (w / 76), 24, 1); return sp
+  sp.scale.set(36 * (w / 76), 36, 1); return sp
 }
 
 let CACHE: Any = null
@@ -137,8 +137,8 @@ export default function FacultyGraph3D() {
         .nodeThreeObject((n: Any) => {
           if (n.kind === "hub") {
             const g = new THREE.Group()
-            g.add(new THREE.Mesh(new THREE.SphereGeometry(26, 24, 24), new THREE.MeshLambertMaterial({ color: n.color })))
-            const lab = labelSprite(n.name, "#eaf1ff"); lab.position.set(0, 52, 0); g.add(lab)
+            g.add(new THREE.Mesh(new THREE.SphereGeometry(34, 24, 24), new THREE.MeshLambertMaterial({ color: n.color })))
+            const lab = labelSprite(n.name, "#f2f6ff"); lab.position.set(0, 66, 0); g.add(lab)
             return g
           }
           const mat = new THREE.SpriteMaterial({ map: faceTexture(null, n.name, n.color), depthWrite: false, transparent: true })
@@ -172,7 +172,7 @@ export default function FacultyGraph3D() {
         let a = Math.PI * 0.1
         const orbit = () => {
           if (cancelled) return
-          a += 0.0016   // a touch faster since it only shows briefly
+          a += 0.0009   // slow, readable orbit
           G.cameraPosition({ x: Math.sin(a) * Rr, y: H, z: Math.cos(a) * Rr }, { x: 0, y: 0, z: 0 })
           rafRef.current = requestAnimationFrame(orbit)
         }

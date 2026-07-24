@@ -33,7 +33,7 @@ function Card({ m, w, showOffice, doctor }: { m: Member; w: number; showOffice: 
     <div style={{ width: w }} className="flex flex-col items-center">
       <div style={{ width: w, height: w }} className="overflow-hidden rounded-2xl border border-white/10 bg-[#141a28] shadow-lg">
         {m.photo && !broken ? (
-          <img src={m.photo} alt={display} onError={() => setBroken(true)} className="h-full w-full object-cover" />
+          <img src={m.photo} alt={display} onError={() => setBroken(true)} className="h-full w-full object-cover" style={{ objectPosition: "center 20%" }} />
         ) : (
           <div className="grid h-full w-full place-items-center font-semibold text-white/70" style={{ fontSize: w * 0.28 }}>{initials(m.name)}</div>
         )}

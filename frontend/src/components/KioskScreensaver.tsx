@@ -70,11 +70,12 @@ export default function KioskScreensaver() {
     const out: Page[] = []
     for (const s of data?.sections || []) {
       if (!s.members?.length) continue
-      const n = Math.ceil(s.members.length / PAGE_SIZE)
+      const size = s.key === "faculty" ? 12 : PAGE_SIZE   // Faculty: 12/page; others fit in one
+      const n = Math.ceil(s.members.length / size)
       for (let c = 0; c < n; c++) {
         out.push({
           key: s.key, title: s.title, subtitle: s.subtitle, office: s.office, doctor: s.doctor,
-          members: s.members.slice(c * PAGE_SIZE, (c + 1) * PAGE_SIZE),
+          members: s.members.slice(c * size, (c + 1) * size),
           page: c + 1, pages: n, total: s.members.length,
         })
       }

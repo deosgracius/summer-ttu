@@ -19,7 +19,7 @@ interface Page { key: string; title: string; subtitle?: string; office: boolean;
 const ACCENT: Record<string, string> = { faculty: "#38bdf8", instructors: "#22d3ee", staff: "#f59e0b", emeritus: "#a78bfa" }
 const PAGE_SIZE = 18
 const PAGE_MS = 12000
-const GRAPH_MS = 7500   // the 3D "second brain" finale after Staff
+const GRAPH_MS = 15000   // the 3D "second brain" finale after Staff
 let CACHE: Dir | null = null
 
 function initials(n: string) {
@@ -58,6 +58,12 @@ export default function KioskScreensaver() {
     if (CACHE) return
     api.get<Dir>("/campus/directory").then((d) => { CACHE = d; setData(d) }).catch(() => {})
   }, [])
+
+  // Preload every photo up front so each section's whole grid shows at once (no pop-in).
+  useEffect(() => {
+    if (!data?.sections) return
+    for (const s of data.sections) for (const m of s.members) if (m.photo) { const im = new Image(); im.src = m.photo }
+  }, [data])
 
   // Flatten the sections into pages of at most PAGE_SIZE members each.
   const pages = useMemo(() => {
@@ -132,7 +138,7 @@ export default function KioskScreensaver() {
 
   return (
     <div className="absolute inset-0 flex flex-col overflow-hidden bg-[#060a12]">
-      <style>{`@keyframes ssSpinIn { 0% { opacity: 0; transform: translateX(60%) rotate(13deg) scale(0.85) } 60% { opacity: 1 } 100% { opacity: 1; transform: translateX(0) rotate(0deg) scale(1) } }`}</style>
+      <style>{`@keyframes ssSpinIn { from { opacity: 0; transform: scale(0.98) } to { opacity: 1; transform: scale(1) } }`}</style>
       <div className="pointer-events-none absolute inset-0 opacity-20" aria-hidden
         style={{ background: `radial-gradient(55% 45% at 50% 28%, ${accent}22, transparent 70%)` }} />
 
@@ -146,7 +152,7 @@ export default function KioskScreensaver() {
       {/* Grid — up to 18 people */}
       <div ref={wrapRef} className="relative z-10 flex-1 px-6 pb-28 pt-4">
         <div key={step} className="flex h-full flex-wrap content-center items-start justify-center gap-x-4 gap-y-3"
-          style={{ animation: "ssSpinIn 0.75s cubic-bezier(0.22,1,0.36,1) both", transformOrigin: "center" }}>
+          style={{ animation: "ssSpinIn 0.45s ease-out both" }}>
           {page.members.map((m) => <Card key={m.id} m={m} w={cardW} showOffice={page.office} doctor={page.doctor} />)}
         </div>
       </div>

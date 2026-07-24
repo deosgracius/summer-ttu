@@ -71,6 +71,43 @@ def faculty_graph(db: Session = Depends(get_db)):
     }
 
 
+@router.get("/directory")
+def directory(db: Session = Depends(get_db)):
+    """Public directory for the kiosk screensaver, split into sections: Faculty (Ph.D.
+    professors), Instructors (other teaching faculty), Staff, and Emeritus. Big-photo grid,
+    name + office (emeritus: name only). Read-only public directory data."""
+    from .. import models
+
+    def office_of(x):
+        return f"{(getattr(x, 'office_building', '') or '').strip()} {(getattr(x, 'office_number', '') or '').strip()}".strip()
+
+    def person(x):
+        return {"id": "p:" + x.name, "name": x.name, "photo": getattr(x, "photo_url", "") or "",
+                "title": getattr(x, "title", "") or "", "office": office_of(x)}
+
+    faculty, instructors, emeritus = [], [], []
+    for p in db.query(models.Professor).all():
+        t = (getattr(p, "title", "") or "").lower()
+        if "emerit" in t:
+            emeritus.append(person(p))
+        elif ("instructor" in t or "lecturer" in t) and "professor" not in t:
+            instructors.append(person(p))
+        elif any(k in t for k in ("professor", "dean", "endowed chair", "distinguished",
+                                  "regents chair", "faculty fellow")):
+            faculty.append(person(p))
+        else:
+            instructors.append(person(p))
+    staff = [person(s) for s in db.query(models.Staff).all()]
+
+    key = lambda m: m["name"].split()[-1].lower()  # sort each section by last name
+    return {"sections": [
+        {"key": "faculty", "title": "Faculty Directory", "subtitle": "Ph.D. Faculty", "office": True, "members": sorted(faculty, key=key)},
+        {"key": "instructors", "title": "Instructors", "subtitle": "Teaching Faculty", "office": True, "members": sorted(instructors, key=key)},
+        {"key": "staff", "title": "Staff Directory", "subtitle": "Department Staff", "office": True, "members": sorted(staff, key=key)},
+        {"key": "emeritus", "title": "Emeritus Professors", "subtitle": "", "office": False, "members": sorted(emeritus, key=key)},
+    ]}
+
+
 def _crud(name: str, model, schema_in, schema_out, search_fields):
     """Wire up GET (list) / GET id / POST / PATCH / DELETE for one resource."""
     sub = APIRouter(prefix=f"/{name}")

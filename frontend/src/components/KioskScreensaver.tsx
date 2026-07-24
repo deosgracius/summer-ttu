@@ -1,132 +1,115 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { api } from "@/lib/api"
 
 /**
- * Kiosk sleep-mode attract loop: a guided, area-by-area coverflow of the ECE faculty.
- * It focuses on ONE research area at a time (hiding the rest), fans that area's professors
- * through a 3D coverflow carousel — big center photo + name, neighbours scaled/blurred — then
- * moves to the next area. Each area holds for at least 15s, and long enough to show all of its
- * faculty. Mounted only while the kiosk is dormant; unmounts the instant Summer wakes.
+ * Kiosk sleep-mode attract loop: a directory slideshow. It cycles through the department's
+ * sections — Faculty (Ph.D.), Instructors, Staff, Emeritus — one at a time (hiding the rest),
+ * ~15s each. Each section shows ALL its members at once as a grid of big square photos with the
+ * name (and office number, except emeritus) beneath. Card size auto-fits so everyone shows
+ * without scrolling. Mounted only while the kiosk is dormant; unmounts the instant Summer wakes.
  */
-interface Prof { id: string; name: string; photo?: string; title?: string; areas?: string[] }
-interface Data { profs: Prof[]; areas: { id: string; name: string }[] }
+interface Member { id: string; name: string; photo?: string; office?: string }
+interface Section { key: string; title: string; subtitle?: string; office: boolean; members: Member[] }
+interface Dir { sections: Section[] }
 
-const AREA_COLORS: Record<string, string> = {
-  "Power & Energy": "#f59e0b", "RF & Microwave": "#a78bfa", "Comms & DSP": "#22d3ee",
-  "Circuits & Micro": "#f472b6", "Photonics & Nano": "#34d399",
-  "Computing & Security": "#60a5fa", "Bio & Sensors": "#f87171", "ECE Faculty": "#94a3b8",
-}
-const accentFor = (a: string) => AREA_COLORS[a] || "#38bdf8"
+const ACCENT: Record<string, string> = { faculty: "#38bdf8", instructors: "#22d3ee", staff: "#f59e0b", emeritus: "#a78bfa" }
+const SECTION_MS = 15000
+let CACHE: Dir | null = null
 
-const PER_PHOTO = 2200   // ms each professor holds center
-const MIN_AREA = 15000   // ms minimum per research area
-
-// Cache the fetch at module scope so re-entering sleep mode is instant.
-let CACHE: Data | null = null
-
-function initials(name: string) {
-  const p = (name || "").trim().split(/\s+/)
+function initials(n: string) {
+  const p = (n || "").trim().split(/\s+/)
   return ((p[0]?.[0] || "") + (p.length > 1 ? p[p.length - 1][0] : "")).toUpperCase() || "?"
 }
 
-function Card({ p, accent, center }: { p: Prof; accent: string; center: boolean }) {
+function Card({ m, w, showOffice }: { m: Member; w: number; showOffice: boolean }) {
   const [broken, setBroken] = useState(false)
+  const nameFs = w < 130 ? 13 : w < 190 ? 15 : 18
   return (
-    <div className="flex flex-col items-center">
-      <div
-        className="relative w-64 h-80 md:w-80 md:h-[440px] overflow-hidden rounded-3xl border-2 shadow-2xl"
-        style={{ borderColor: center ? accent : "rgba(255,255,255,0.12)", background: "#141a28" }}
-      >
-        {p.photo && !broken ? (
-          <img src={p.photo} alt={p.name} onError={() => setBroken(true)} className="h-full w-full object-cover" />
+    <div style={{ width: w }} className="flex flex-col items-center">
+      <div style={{ width: w, height: w }} className="overflow-hidden rounded-2xl border border-white/10 bg-[#141a28] shadow-lg">
+        {m.photo && !broken ? (
+          <img src={m.photo} alt={m.name} onError={() => setBroken(true)} className="h-full w-full object-cover" />
         ) : (
-          <div className="grid h-full w-full place-items-center text-6xl font-semibold text-white/80">{initials(p.name)}</div>
+          <div className="grid h-full w-full place-items-center font-semibold text-white/70" style={{ fontSize: w * 0.28 }}>{initials(m.name)}</div>
         )}
       </div>
-      <div className="mt-4 text-center">
-        <div className="text-2xl font-semibold text-white drop-shadow md:text-3xl">{p.name}</div>
-        {p.title && <div className="mx-auto mt-1 max-w-xs truncate text-sm text-white/60 md:text-base">{p.title}</div>}
+      <div className="mt-2 w-full px-1 text-center">
+        <div className="truncate font-semibold text-white" style={{ fontSize: nameFs }} title={m.name}>{m.name}</div>
+        {showOffice && m.office ? <div className="truncate text-white/55" style={{ fontSize: nameFs - 3 }}>{m.office}</div> : null}
       </div>
     </div>
   )
 }
 
 export default function KioskScreensaver() {
-  const [data, setData] = useState<Data | null>(CACHE)
-  const [areaIdx, setAreaIdx] = useState(0)
+  const [data, setData] = useState<Dir | null>(CACHE)
   const [idx, setIdx] = useState(0)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const [cardW, setCardW] = useState(160)
 
   useEffect(() => {
     if (CACHE) return
-    api.get<Data>("/campus/faculty-graph").then((d) => { CACHE = d; setData(d) }).catch(() => {})
+    api.get<Dir>("/campus/directory").then((d) => { CACHE = d; setData(d) }).catch(() => {})
   }, [])
 
-  // Group faculty by their first research area, biggest area first.
-  const areas = useMemo(() => {
-    if (!data?.profs?.length) return [] as { name: string; profs: Prof[] }[]
-    const first = (p: Prof) => (p.areas && p.areas[0]) || "ECE Faculty"
-    const m = new Map<string, Prof[]>()
-    data.profs.forEach((p) => { const a = first(p); if (!m.has(a)) m.set(a, []); m.get(a)!.push(p) })
-    return [...m.entries()].sort((a, b) => b[1].length - a[1].length).map(([name, profs]) => ({ name, profs }))
-  }, [data])
+  const sections = (data?.sections || []).filter((s) => s.members?.length)
 
-  // Per-area guided tour: fan through this area's faculty (~PER_PHOTO each), hold at least
-  // MIN_AREA and long enough to show them all, then advance to the next area.
+  // Cycle the sections one at a time, ~15s each.
   useEffect(() => {
-    if (!areas.length) return
-    const count = areas[areaIdx % areas.length].profs.length
-    setIdx(0)
-    const photo = window.setInterval(() => setIdx((i) => (i + 1) % count), PER_PHOTO)
-    const next = window.setTimeout(() => setAreaIdx((a) => (a + 1) % areas.length), Math.max(MIN_AREA, count * PER_PHOTO))
-    return () => { window.clearInterval(photo); window.clearTimeout(next) }
-  }, [areaIdx, areas])
+    if (sections.length <= 1) return
+    const t = window.setInterval(() => setIdx((i) => (i + 1) % sections.length), SECTION_MS)
+    return () => window.clearInterval(t)
+  }, [sections.length])
 
-  if (!areas.length) return <div className="absolute inset-0 bg-[#060a12]" />
-  const area = areas[areaIdx % areas.length]
-  const profs = area.profs
-  const total = profs.length
-  const accent = accentFor(area.name)
+  const section = sections.length ? sections[idx % sections.length] : null
+
+  // Fit the square-card grid so every member of the current section shows without scrolling.
+  useEffect(() => {
+    if (!section) return
+    const measure = () => {
+      const el = wrapRef.current; if (!el) return
+      const W = el.clientWidth - 8, H = el.clientHeight - 8, n = section.members.length
+      const textH = 54, gap = 18
+      let best = 90
+      for (let w = 280; w >= 84; w -= 4) {
+        const cols = Math.max(1, Math.floor(W / (w + gap)))
+        const rows = Math.max(1, Math.floor(H / (w + textH + gap)))
+        if (cols * rows >= n) { best = w; break }
+      }
+      setCardW(best)
+    }
+    measure()
+    window.addEventListener("resize", measure)
+    return () => window.removeEventListener("resize", measure)
+  }, [section])
+
+  if (!section) return <div className="absolute inset-0 bg-[#060a12]" />
+  const accent = ACCENT[section.key] || "#38bdf8"
 
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center overflow-hidden bg-[#060a12]">
-      {/* Ambient wash in the area's accent color */}
-      <div className="pointer-events-none absolute inset-0 opacity-25" aria-hidden
-        style={{ background: `radial-gradient(60% 50% at 50% 42%, ${accent}22, transparent 70%)` }} />
+    <div className="absolute inset-0 flex flex-col bg-[#060a12]">
+      <div className="pointer-events-none absolute inset-0 opacity-20" aria-hidden
+        style={{ background: `radial-gradient(55% 45% at 50% 28%, ${accent}22, transparent 70%)` }} />
 
-      {/* Research-area heading (rotates as the tour advances) */}
-      <div className="absolute top-24 z-10 text-center">
-        <div className="text-xs uppercase tracking-[0.3em] text-white/45">Research area</div>
-        <h2 key={area.name} className="mt-1.5 text-4xl font-bold tracking-tight md:text-5xl" style={{ color: accent }}>{area.name}</h2>
+      {/* Section heading (rotates through Faculty / Instructors / Staff / Emeritus) */}
+      <div className="z-10 pt-16 text-center">
+        <div className="text-[11px] uppercase tracking-[0.3em] text-white/40">TTU · Electrical &amp; Computer Engineering</div>
+        <h2 key={section.key} className="mt-1.5 text-4xl font-bold tracking-tight md:text-5xl" style={{ color: accent }}>{section.title}</h2>
+        <div className="mt-1 text-sm text-white/55">{section.subtitle ? `${section.subtitle} · ` : ""}{section.members.length}</div>
       </div>
 
-      {/* Coverflow: big center photo + name, neighbours scaled/blurred. */}
-      <div className="relative flex h-[560px] w-full items-center justify-center [perspective:1200px]">
-        {profs.map((p, i) => {
-          let pos = ((i - idx) % total + total) % total
-          if (pos > Math.floor(total / 2)) pos -= total
-          const center = pos === 0, adj = Math.abs(pos) === 1
-          return (
-            <div key={p.id}
-              className="absolute transition-all duration-700 ease-in-out"
-              style={{
-                transform: `translateX(${pos * 46}%) scale(${center ? 1 : adj ? 0.82 : 0.64}) rotateY(${pos * -9}deg)`,
-                zIndex: center ? 10 : adj ? 5 : 1,
-                opacity: center ? 1 : adj ? 0.5 : 0,
-                filter: center ? "blur(0px)" : "blur(5px)",
-                visibility: Math.abs(pos) > 1 ? "hidden" : "visible",
-              }}
-            >
-              <Card p={p} accent={accent} center={center} />
-            </div>
-          )
-        })}
+      {/* Grid of everyone in the section */}
+      <div ref={wrapRef} className="relative z-10 flex-1 px-6 pb-24 pt-5">
+        <div className="flex h-full flex-wrap content-center items-start justify-center gap-x-4 gap-y-3">
+          {section.members.map((m) => <Card key={m.id} m={m} w={cardW} showOffice={section.office} />)}
+        </div>
       </div>
 
-      {/* Area progress dots */}
-      <div className="absolute bottom-28 z-10 flex items-center gap-2">
-        {areas.map((a, i) => (
-          <span key={a.name} className="h-1.5 rounded-full transition-all duration-500"
-            style={{ width: i === areaIdx % areas.length ? 26 : 6, background: i === areaIdx % areas.length ? accent : "rgba(255,255,255,0.28)" }} />
+      {/* Section progress */}
+      <div className="absolute bottom-24 left-0 right-0 z-10 flex items-center justify-center gap-2">
+        {sections.map((s, i) => (
+          <span key={s.key} className="h-1.5 rounded-full transition-all duration-500"
+            style={{ width: i === idx % sections.length ? 26 : 6, background: i === idx % sections.length ? accent : "rgba(255,255,255,0.28)" }} />
         ))}
       </div>
     </div>

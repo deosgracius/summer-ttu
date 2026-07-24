@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { api } from "@/lib/api"
+import FacultyGraph3D from "@/components/FacultyGraph3D"
 
 /**
  * Kiosk sleep-mode attract loop: a directory slideshow. It pages through the department's
@@ -18,6 +19,7 @@ interface Page { key: string; title: string; subtitle?: string; office: boolean;
 const ACCENT: Record<string, string> = { faculty: "#38bdf8", instructors: "#22d3ee", staff: "#f59e0b", emeritus: "#a78bfa" }
 const PAGE_SIZE = 18
 const PAGE_MS = 12000
+const GRAPH_MS = 7500   // the 3D "second brain" finale after Staff
 let CACHE: Dir | null = null
 
 function initials(n: string) {
@@ -33,7 +35,7 @@ function Card({ m, w, showOffice, doctor }: { m: Member; w: number; showOffice: 
     <div style={{ width: w }} className="flex flex-col items-center">
       <div style={{ width: w, height: w }} className="overflow-hidden rounded-2xl border border-white/10 bg-[#141a28] shadow-lg">
         {m.photo && !broken ? (
-          <img src={m.photo} alt={display} onError={() => setBroken(true)} className="h-full w-full object-cover" style={{ objectPosition: "center 20%" }} />
+          <img src={m.photo} alt={display} onError={() => setBroken(true)} className="h-full w-full object-cover" style={{ objectPosition: "center" }} />
         ) : (
           <div className="grid h-full w-full place-items-center font-semibold text-white/70" style={{ fontSize: w * 0.28 }}>{initials(m.name)}</div>
         )}
@@ -74,14 +76,19 @@ export default function KioskScreensaver() {
     return out
   }, [data])
 
-  // Advance one page every few seconds, cycling through every section.
-  useEffect(() => {
-    if (pages.length <= 1) return
-    const t = window.setInterval(() => setIdx((i) => (i + 1) % pages.length), PAGE_MS)
-    return () => window.clearInterval(t)
-  }, [pages.length])
+  // Steps = each directory page, plus a final 3D "second brain" graph after Staff.
+  const stepCount = pages.length ? pages.length + 1 : 0
+  const step = stepCount ? idx % stepCount : 0
+  const onGraph = stepCount > 0 && step === pages.length
 
-  const page = pages.length ? pages[idx % pages.length] : null
+  // Advance through the steps; the graph finale holds GRAPH_MS, each page PAGE_MS.
+  useEffect(() => {
+    if (stepCount <= 1) return
+    const t = window.setTimeout(() => setIdx((i) => (i + 1) % stepCount), onGraph ? GRAPH_MS : PAGE_MS)
+    return () => window.clearTimeout(t)
+  }, [idx, stepCount, onGraph])
+
+  const page = !onGraph && pages.length ? pages[step] : null
 
   // Fit up to 18 square cards to the content box; cap the size so small photos stay sharp.
   useEffect(() => {
@@ -103,6 +110,20 @@ export default function KioskScreensaver() {
     return () => window.removeEventListener("resize", measure)
   }, [page])
 
+  if (!pages.length) return <div className="absolute inset-0 bg-[#060a12]" />
+  // Finale: the 3D "second brain" graph of all faculty + research areas.
+  if (onGraph) {
+    return (
+      <div className="absolute inset-0 bg-[#060a12]">
+        <FacultyGraph3D />
+        <div className="pointer-events-none absolute inset-x-0 top-14 z-10 text-center">
+          <div className="text-[11px] uppercase tracking-[0.3em] text-white/40">TTU · Electrical &amp; Computer Engineering</div>
+          <h2 className="mt-1.5 text-4xl font-bold tracking-tight text-sky-300 md:text-5xl">Research Network</h2>
+          <div className="mt-1 text-sm text-white/55">Faculty &amp; their research areas</div>
+        </div>
+      </div>
+    )
+  }
   if (!page) return <div className="absolute inset-0 bg-[#060a12]" />
   const accent = ACCENT[page.key] || "#38bdf8"
   const sub = page.pages > 1
@@ -111,6 +132,7 @@ export default function KioskScreensaver() {
 
   return (
     <div className="absolute inset-0 flex flex-col bg-[#060a12]">
+      <style>{`@keyframes ssSpinIn { 0% { opacity: 0; transform: rotate(-10deg) scale(0.86) } 100% { opacity: 1; transform: rotate(0deg) scale(1) } }`}</style>
       <div className="pointer-events-none absolute inset-0 opacity-20" aria-hidden
         style={{ background: `radial-gradient(55% 45% at 50% 28%, ${accent}22, transparent 70%)` }} />
 
@@ -123,7 +145,8 @@ export default function KioskScreensaver() {
 
       {/* Grid — up to 18 people */}
       <div ref={wrapRef} className="relative z-10 flex-1 px-6 pb-28 pt-4">
-        <div className="flex h-full flex-wrap content-center items-start justify-center gap-x-4 gap-y-3">
+        <div key={step} className="flex h-full flex-wrap content-center items-start justify-center gap-x-4 gap-y-3"
+          style={{ animation: "ssSpinIn 0.75s cubic-bezier(0.22,1,0.36,1) both", transformOrigin: "center" }}>
           {page.members.map((m) => <Card key={m.id} m={m} w={cardW} showOffice={page.office} doctor={page.doctor} />)}
         </div>
       </div>
@@ -131,10 +154,11 @@ export default function KioskScreensaver() {
       {/* Page progress — one dot per page, colored by its section */}
       <div className="absolute bottom-24 left-0 right-0 z-10 flex items-center justify-center gap-2">
         {pages.map((p, i) => {
-          const active = i === idx % pages.length
+          const active = i === step
           return <span key={i} className="h-1.5 rounded-full transition-all duration-500"
             style={{ width: active ? 22 : 8, background: ACCENT[p.key] || "#38bdf8", opacity: active ? 1 : 0.35 }} />
         })}
+        <span className="h-1.5 w-2 rounded-full" style={{ background: "#cbd5e1", opacity: 0.3 }} />
       </div>
     </div>
   )

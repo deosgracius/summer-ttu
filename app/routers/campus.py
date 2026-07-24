@@ -85,10 +85,17 @@ def directory(db: Session = Depends(get_db)):
         return {"id": "p:" + x.name, "name": x.name, "photo": getattr(x, "photo_url", "") or "",
                 "title": getattr(x, "title", "") or "", "office": office_of(x)}
 
+    # Manual section overrides for people whose raw title lands them in the wrong bucket.
+    force = {"derek johnston": "faculty", "ben esser": "instructors"}
     faculty, instructors, emeritus = [], [], []
     for p in db.query(models.Professor).all():
         t = (getattr(p, "title", "") or "").lower()
-        if "emerit" in t:
+        forced = force.get((p.name or "").strip().lower())
+        if forced == "faculty":
+            faculty.append(person(p))
+        elif forced == "instructors":
+            instructors.append(person(p))
+        elif "emerit" in t:
             emeritus.append(person(p))
         elif ("instructor" in t or "lecturer" in t) and "professor" not in t:
             instructors.append(person(p))
@@ -100,11 +107,12 @@ def directory(db: Session = Depends(get_db)):
     staff = [person(s) for s in db.query(models.Staff).all()]
 
     key = lambda m: m["name"].split()[-1].lower()  # sort each section by last name
+    # `doctor`: these are Ph.D. professors, so the UI prefixes "Dr." to the name.
     return {"sections": [
-        {"key": "faculty", "title": "Faculty Directory", "subtitle": "Ph.D. Faculty", "office": True, "members": sorted(faculty, key=key)},
-        {"key": "instructors", "title": "Instructors", "subtitle": "Teaching Faculty", "office": True, "members": sorted(instructors, key=key)},
-        {"key": "staff", "title": "Staff Directory", "subtitle": "Department Staff", "office": True, "members": sorted(staff, key=key)},
-        {"key": "emeritus", "title": "Emeritus Professors", "subtitle": "", "office": False, "members": sorted(emeritus, key=key)},
+        {"key": "faculty", "title": "Faculty Directory", "subtitle": "Ph.D. Faculty", "office": True, "doctor": True, "members": sorted(faculty, key=key)},
+        {"key": "instructors", "title": "Instructors", "subtitle": "Teaching Faculty", "office": True, "doctor": False, "members": sorted(instructors, key=key)},
+        {"key": "emeritus", "title": "Emeritus Professors", "subtitle": "", "office": False, "doctor": True, "members": sorted(emeritus, key=key)},
+        {"key": "staff", "title": "Staff Directory", "subtitle": "Department Staff", "office": True, "doctor": False, "members": sorted(staff, key=key)},
     ]}
 
 

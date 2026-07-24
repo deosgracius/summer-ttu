@@ -138,10 +138,6 @@ export default function KioskPage() {
       {sleeping && (
         <div className="fixed inset-0 z-40 bg-[#060a12]" onClick={() => { primeAudio(); setDismissed(true) }}>
           <KioskScreensaver />
-          <div className="pointer-events-none absolute inset-x-0 top-8 flex flex-col items-center text-center">
-            <div className="text-3xl font-semibold tracking-tight text-white/90 drop-shadow">TTU ECE Faculty</div>
-            <div className="mt-1 text-sm text-white/50">Electrical &amp; Computer Engineering</div>
-          </div>
           <div className="pointer-events-none absolute inset-x-0 bottom-10 flex flex-col items-center gap-1.5 text-center">
             <div className="text-2xl font-semibold text-white/90 drop-shadow">Say <span className="text-sky-400">“Hey Summer”</span></div>
             <div className="text-sm text-white/55">or tap anywhere to begin</div>

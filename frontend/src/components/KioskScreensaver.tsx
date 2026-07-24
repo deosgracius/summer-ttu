@@ -131,8 +131,8 @@ export default function KioskScreensaver() {
     : (page.subtitle ? `${page.subtitle} · ${page.total}` : `${page.total}`)
 
   return (
-    <div className="absolute inset-0 flex flex-col bg-[#060a12]">
-      <style>{`@keyframes ssSpinIn { 0% { opacity: 0; transform: rotate(-10deg) scale(0.86) } 100% { opacity: 1; transform: rotate(0deg) scale(1) } }`}</style>
+    <div className="absolute inset-0 flex flex-col overflow-hidden bg-[#060a12]">
+      <style>{`@keyframes ssSpinIn { 0% { opacity: 0; transform: translateX(60%) rotate(13deg) scale(0.85) } 60% { opacity: 1 } 100% { opacity: 1; transform: translateX(0) rotate(0deg) scale(1) } }`}</style>
       <div className="pointer-events-none absolute inset-0 opacity-20" aria-hidden
         style={{ background: `radial-gradient(55% 45% at 50% 28%, ${accent}22, transparent 70%)` }} />
 

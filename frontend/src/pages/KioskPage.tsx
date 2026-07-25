@@ -138,9 +138,11 @@ export default function KioskPage() {
       {sleeping && (
         <div className="fixed inset-0 z-40 bg-[#060a12]" onClick={() => { primeAudio(); setDismissed(true) }}>
           <KioskScreensaver />
-          <div className="pointer-events-none absolute inset-x-0 bottom-10 flex flex-col items-center gap-1.5 text-center">
-            <div className="text-2xl font-semibold text-white/90 drop-shadow">Say <span className="text-sky-400">“Hey Summer”</span></div>
-            <div className="text-sm text-white/55">or tap anywhere to begin</div>
+          {/* Wake prompt sits in its own gradient "footer" band, so the directory grid fades
+              out above it instead of colliding with the names, offices, and progress dots. */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col items-center gap-1 px-4 pb-8 pt-24 text-center bg-gradient-to-t from-[#060a12] via-[#060a12]/95 to-transparent">
+            <div className="text-2xl font-semibold text-white drop-shadow">Say <span className="text-sky-400">“Hey Summer”</span></div>
+            <div className="text-sm text-white/50">or tap anywhere to begin</div>
           </div>
         </div>
       )}

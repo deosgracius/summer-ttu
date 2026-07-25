@@ -66,17 +66,52 @@ function faceTexture(img: HTMLImageElement | null, name: string, color: string) 
   x.fillStyle = "#f4f8ff"; x.fillText(name || "", W / 2, ny)
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t
 }
-function labelSprite(text: string, color: string) {
-  const font = "800 52px Inter, system-ui, sans-serif"
-  const meas = document.createElement("canvas").getContext("2d")!; meas.font = font
-  const w = Math.ceil(meas.measureText(text).width) + 40
-  const c = document.createElement("canvas"); c.width = w; c.height = 76
-  const x = c.getContext("2d")!; x.font = font; x.textAlign = "center"; x.textBaseline = "middle"
-  x.lineWidth = 8; x.strokeStyle = "rgba(6,10,20,0.92)"; x.strokeText(text, w / 2, 40)
-  x.fillStyle = color; x.fillText(text, w / 2, 40)
+// Hub label: research-area name with its faculty count beneath, on a transparent plate.
+function hubLabel(text: string, color: string, count: number) {
+  const nameF = "800 54px Inter, system-ui, sans-serif"
+  const subF = "600 30px Inter, system-ui, sans-serif"
+  const meas = document.createElement("canvas").getContext("2d")!; meas.font = nameF
+  const w = Math.ceil(meas.measureText(text).width) + 56, h = 120
+  const c = document.createElement("canvas"); c.width = w; c.height = h
+  const x = c.getContext("2d")!; x.textAlign = "center"; x.textBaseline = "middle"
+  x.font = nameF
+  x.lineWidth = 9; x.strokeStyle = "rgba(6,10,20,0.92)"; x.strokeText(text, w / 2, 36)
+  x.fillStyle = color; x.fillText(text, w / 2, 36)
+  if (count) {
+    const sub = `${count} faculty`
+    x.font = subF
+    x.lineWidth = 6; x.strokeStyle = "rgba(6,10,20,0.92)"; x.strokeText(sub, w / 2, 88)
+    x.fillStyle = "rgba(230,238,250,0.82)"; x.fillText(sub, w / 2, 88)
+  }
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, transparent: true }))
-  sp.scale.set(46 * (w / 76), 46, 1); return sp
+  const HH = 76; sp.scale.set(HH * (w / h), HH, 1); return sp
+}
+
+// Soft additive glow behind a hub, for depth.
+function glowSprite(color: string, size: number) {
+  const s = 128, c = document.createElement("canvas"); c.width = s; c.height = s
+  const x = c.getContext("2d")!
+  const r = parseInt(color.slice(1, 3), 16), g = parseInt(color.slice(3, 5), 16), b = parseInt(color.slice(5, 7), 16)
+  const grad = x.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2)
+  grad.addColorStop(0, `rgba(${r},${g},${b},0.8)`)
+  grad.addColorStop(0.4, `rgba(${r},${g},${b},0.32)`)
+  grad.addColorStop(1, `rgba(${r},${g},${b},0)`)
+  x.fillStyle = grad; x.fillRect(0, 0, s, s)
+  const tex = new THREE.CanvasTexture(c)
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }))
+  sp.scale.set(size, size, 1); return sp
+}
+
+// One-line description of each research area (what the field covers), shown in the legend.
+const AREA_DESC: Record<string, string> = {
+  "Power & Energy": "Pulsed power, high-voltage & power electronics",
+  "Photonics & Nano": "Lasers, optics, nano-materials & semiconductors",
+  "RF & Microwave": "Antennas, radar & electromagnetics",
+  "Comms & DSP": "Communications, signal & information processing",
+  "Circuits & Micro": "Analog, VLSI & integrated-circuit design",
+  "Computing & Security": "AI/ML, networks, systems & cybersecurity",
+  "Bio & Sensors": "Biomedical devices, imaging & sensing",
 }
 
 let CACHE: Any = null
@@ -86,7 +121,7 @@ export default function FacultyGraph3D() {
   const gRef = useRef<Any>(null)
   const rafRef = useRef<number | undefined>(undefined)
   const fitRef = useRef<() => void>(() => {})
-  const [legend, setLegend] = useState<{ name: string; color: string; count: number }[]>([])
+  const [legend, setLegend] = useState<{ name: string; color: string; count: number; desc: string }[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -101,7 +136,7 @@ export default function FacultyGraph3D() {
       const byArea = new Map<string, Any[]>()
       profs.forEach((p) => { const a = firstArea(p); if (!a) return; if (!byArea.has(a)) byArea.set(a, []); byArea.get(a)!.push(p) })
       const areas = [...byArea.keys()].sort((a, b) => byArea.get(b)!.length - byArea.get(a)!.length)
-      if (!cancelled) setLegend(areas.map((a) => ({ name: a, color: areaColor(a), count: byArea.get(a)!.length })))
+      if (!cancelled) setLegend(areas.map((a) => ({ name: a, color: areaColor(a), count: byArea.get(a)!.length, desc: AREA_DESC[a] || "" })))
 
       const nodes: Any[] = [], links: Any[] = []
       // Hubs sit evenly on a ring; each hub's faculty are packed onto concentric arcs within its
@@ -116,7 +151,7 @@ export default function FacultyGraph3D() {
         const list = byArea.get(a)!
         const col = areaColor(a)
         const ang = (si * 2 * Math.PI) / nA
-        const hub: Any = { id: "a:" + a, name: a, kind: "hub", color: col }
+        const hub: Any = { id: "a:" + a, name: a, kind: "hub", color: col, count: list.length }
         put(hub, ang, R_RING, 0); nodes.push(hub)
         const N = list.length
         let placed = 0, ring = 0
@@ -149,8 +184,10 @@ export default function FacultyGraph3D() {
         .nodeThreeObject((n: Any) => {
           if (n.kind === "hub") {
             const g = new THREE.Group()
-            g.add(new THREE.Mesh(new THREE.SphereGeometry(42, 24, 24), new THREE.MeshLambertMaterial({ color: n.color })))
-            const lab = labelSprite(n.name, "#f2f6ff"); lab.position.set(0, 88, 0); g.add(lab)
+            g.add(glowSprite(n.color, 230))
+            g.add(new THREE.Mesh(new THREE.SphereGeometry(42, 24, 24),
+              new THREE.MeshStandardMaterial({ color: n.color, emissive: n.color, emissiveIntensity: 0.45, roughness: 0.5 })))
+            const lab = hubLabel(n.name, "#f2f6ff", n.count); lab.position.set(0, 96, 0); g.add(lab)
             return g
           }
           const pre = n.photo ? imgCache.get(n.photo) : undefined
@@ -170,6 +207,8 @@ export default function FacultyGraph3D() {
         .linkDirectionalParticleSpeed(0.005)
       gRef.current = G
       try { const ctl = G.controls(); if (ctl) ctl.enabled = false } catch { /* ignore */ }
+      // Fog fades distant faces into the background for depth.
+      try { G.scene().fog = new THREE.Fog(0x060a12, 1650, 3700) } catch { /* ignore */ }
 
       const fit = () => { if (elRef.current) { const r = elRef.current.getBoundingClientRect(); G.width(r.width).height(r.height) } }
       fitRef.current = fit; fit(); window.addEventListener("resize", fit)
@@ -219,18 +258,24 @@ export default function FacultyGraph3D() {
   }, [])
 
   return (
-    <div className="absolute inset-0">
+    <div className="absolute inset-0" style={{ animation: "rgIn 1.2s ease-out both" }}>
+      <style>{`@keyframes rgIn { from { opacity: 0 } to { opacity: 1 } }`}</style>
       <div ref={elRef} className="absolute inset-0" />
-      {/* Legend: research areas with their colour and faculty count — so a viewer can read
-          which cluster is which and how many faculty work in each area. */}
+      {/* Legend: each research area's colour, faculty count, and what the field covers —
+          so a viewer can read which cluster is which and what the department works on. */}
       {legend.length > 0 && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-6 z-10 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 px-8">
+        <div className="pointer-events-none absolute inset-x-0 bottom-5 z-10 flex flex-wrap items-stretch justify-center gap-2 px-8">
           {legend.map((a) => (
             <div key={a.name}
-              className="inline-flex items-center gap-2 rounded-full bg-black/40 px-3 py-1 text-[13px] text-white/85 ring-1 ring-white/10 backdrop-blur-sm">
-              <span className="size-2.5 rounded-full" style={{ background: a.color }} />
-              <span className="font-medium">{a.name}</span>
-              <span className="tabular-nums text-white/45">{a.count}</span>
+              className="flex max-w-[240px] items-start gap-2.5 rounded-xl bg-black/55 px-3.5 py-2 ring-1 ring-white/10 backdrop-blur-md">
+              <span className="mt-1 size-2.5 shrink-0 rounded-full" style={{ background: a.color, boxShadow: `0 0 8px 1px ${a.color}` }} />
+              <div className="min-w-0 text-left">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-[13px] font-semibold text-white/90">{a.name}</span>
+                  <span className="text-[11px] font-medium tabular-nums text-white/45">{a.count}</span>
+                </div>
+                {a.desc ? <div className="text-[11px] leading-snug text-white/55">{a.desc}</div> : null}
+              </div>
             </div>
           ))}
         </div>

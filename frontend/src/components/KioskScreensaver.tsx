@@ -139,6 +139,9 @@ export default function KioskScreensaver() {
     return (
       <div className="absolute inset-0 bg-[#060a12]">
         <FacultyGraph3D />
+        {/* Vignette: darken the edges for depth */}
+        <div className="pointer-events-none absolute inset-0 z-[1]" aria-hidden
+          style={{ background: "radial-gradient(125% 95% at 50% 40%, transparent 58%, rgba(0,0,0,0.5) 100%)" }} />
         {/* Summer sits at the heart of the research network */}
         <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center">
           <div style={{ transform: "translateY(-5%)" }}><SummerOrb size={270} state="idle" /></div>

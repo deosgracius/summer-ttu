@@ -101,9 +101,10 @@ export default function FacultyGraph3D() {
       if (!cancelled) setLegend(areas.map((a) => ({ name: a, color: areaColor(a), count: byArea.get(a)!.length })))
 
       const nodes: Any[] = [], links: Any[] = []
-      // Hubs sit evenly on a ring; each hub's faculty are packed onto concentric arcs within
-      // its slice with >=1.2*FACE spacing, so clusters are distinct and nothing overlaps.
-      const R_RING = 720, FACE = 125, HALF = 0.52, SP = 1.2 * FACE
+      // Hubs sit evenly on a ring; each hub's faculty are packed onto concentric arcs within its
+      // slice, centres SP apart. Face sprites (below) render a bit smaller than SP, so nothing
+      // overlaps while the faces stay large. FACE here is the spacing unit, not the render size.
+      const R_RING = 640, FACE = 150, HALF = 0.52, SP = 1.2 * FACE
       const put = (n: Any, ang: number, r: number, y = 0) => {
         n.x = n.fx = Math.cos(ang) * r; n.y = n.fy = y; n.z = n.fz = Math.sin(ang) * r
       }
@@ -151,7 +152,7 @@ export default function FacultyGraph3D() {
           }
           const pre = n.photo ? imgCache.get(n.photo) : undefined
           const mat = new THREE.SpriteMaterial({ map: faceTexture(pre || null, n.name, n.color), depthWrite: false, transparent: true })
-          const sprite = new THREE.Sprite(mat); sprite.scale.set(125 * (600 / 740), 125, 1)
+          const sprite = new THREE.Sprite(mat); sprite.scale.set(170 * (600 / 740), 170, 1)
           if (n.photo && !pre) {
             const im = new Image(); im.crossOrigin = "anonymous"
             im.onload = () => { mat.map = faceTexture(im, n.name, n.color); mat.needsUpdate = true }
@@ -174,7 +175,7 @@ export default function FacultyGraph3D() {
         if (cancelled) return
         // Deterministic framing tuned offline: readable faces, whole ring in view. SHIFT lifts
         // the whole graph up so the dense clusters clear the bottom wake-prompt band.
-        const dist = 2700, SHIFT = -120
+        const dist = 2200, SHIFT = -110
         const ELEV = 0.72, H = Math.sin(ELEV) * dist, Rr = Math.cos(ELEV) * dist
         let a = Math.PI * 0.1
         const orbit = () => {

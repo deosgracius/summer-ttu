@@ -76,7 +76,7 @@ function labelSprite(text: string, color: string) {
   x.fillStyle = color; x.fillText(text, w / 2, 40)
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, transparent: true }))
-  sp.scale.set(36 * (w / 76), 36, 1); return sp
+  sp.scale.set(46 * (w / 76), 46, 1); return sp
 }
 
 let CACHE: Any = null
@@ -140,13 +140,13 @@ export default function FacultyGraph3D() {
         .nodeThreeObject((n: Any) => {
           if (n.kind === "hub") {
             const g = new THREE.Group()
-            g.add(new THREE.Mesh(new THREE.SphereGeometry(34, 24, 24), new THREE.MeshLambertMaterial({ color: n.color })))
-            const lab = labelSprite(n.name, "#f2f6ff"); lab.position.set(0, 66, 0); g.add(lab)
+            g.add(new THREE.Mesh(new THREE.SphereGeometry(42, 24, 24), new THREE.MeshLambertMaterial({ color: n.color })))
+            const lab = labelSprite(n.name, "#f2f6ff"); lab.position.set(0, 88, 0); g.add(lab)
             return g
           }
           const pre = n.photo ? imgCache.get(n.photo) : undefined
           const mat = new THREE.SpriteMaterial({ map: faceTexture(pre || null, n.name, n.color), depthWrite: false, transparent: true })
-          const sprite = new THREE.Sprite(mat); sprite.scale.set(150 * (600 / 740), 150, 1)
+          const sprite = new THREE.Sprite(mat); sprite.scale.set(175 * (600 / 740), 175, 1)
           if (n.photo && !pre) {
             const im = new Image(); im.crossOrigin = "anonymous"
             im.onload = () => { mat.map = faceTexture(im, n.name, n.color); mat.needsUpdate = true }
@@ -154,10 +154,10 @@ export default function FacultyGraph3D() {
           }
           return sprite
         })
-        .linkColor((l: Any) => hexA(l.color || "#5b6b8c", 0.35))
-        .linkWidth(1)
+        .linkColor((l: Any) => hexA(l.color || "#5b6b8c", 0.6))
+        .linkWidth(2.5)
         .linkDirectionalParticles(2)
-        .linkDirectionalParticleWidth(1.6)
+        .linkDirectionalParticleWidth(2.4)
         .linkDirectionalParticleSpeed(0.004)
       gRef.current = G
       try { const ctl = G.controls(); if (ctl) ctl.enabled = false } catch { /* ignore */ }
@@ -167,11 +167,9 @@ export default function FacultyGraph3D() {
 
       window.setTimeout(() => {
         if (cancelled) return
-        try { G.zoomToFit(0, 150) } catch { /* ignore */ }
-        const p = G.camera().position
-        let dist = Math.hypot(p.x, p.y, p.z)
-        if (!isFinite(dist) || dist < 900) dist = 2600
-        dist *= 0.82   // zoom in a bit so faces and names are readable
+        // Deterministic framing tuned offline: close enough that faces and names read clearly,
+        // while the orbit brings the disc's edges through view.
+        const dist = (R_MEM + ROW) * 1.6
         const ELEV = 0.6, H = Math.sin(ELEV) * dist, Rr = Math.cos(ELEV) * dist
         let a = Math.PI * 0.1
         const orbit = () => {

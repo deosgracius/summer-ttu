@@ -52,6 +52,8 @@ def faculty_graph(db: Session = Depends(get_db)):
     from .. import campus_service, models
     profs, areas, researches = [], set(), []
     for p in db.query(models.Professor).all():
+        if "emerit" in (getattr(p, "title", "") or "").lower():
+            continue  # Research Network shows active faculty only
         ar = [a for a in campus_service._areas_for(
             f"{getattr(p, 'bio', '') or ''} {getattr(p, 'title', '') or ''}")
             if a not in ("Staff", "Advising")] or ["ECE Faculty"]
@@ -86,8 +88,44 @@ def directory(db: Session = Depends(get_db)):
         return {"id": "p:" + x.name, "name": x.name, "photo": getattr(x, "photo_url", "") or "",
                 "title": getattr(x, "title", "") or "", "office": office_of(x)}
 
+    # Short rank shown under each name. Owner overrides win (e.g. Emily Pereira is a
+    # professor, not the "Assistant Professor" the website still lists).
+    role_override = {"emily pereira": "Professor"}
+
+    def role_of(title, key, name):
+        ov = role_override.get((name or "").strip().lower())
+        if ov:
+            return ov
+        t = (title or "").lower()
+        if key == "assistant":
+            return "Assistant Professor"
+        if key == "instructors":
+            return "Lecturer" if "lecturer" in t else "Instructor"
+        if key == "staff":
+            return (title or "Staff").split(",")[0].strip() or "Staff"
+        # faculty section
+        if "emerit" in t:
+            return "Emeritus Professor"
+        if "associate professor" in t:
+            return "Associate Professor"
+        if "assistant professor" in t:
+            return "Assistant Professor"
+        if "lecturer" in t:
+            return "Lecturer"
+        if "instructor" in t:
+            return "Instructor"
+        if "professor of practice" in t:
+            return "Professor of Practice"
+        if "adjunct" in t:
+            return "Adjunct Professor"
+        if "research professor" in t:
+            return "Research Professor"
+        if any(k in t for k in ("professor", "chair", "dean", "distinguished", "fellow")):
+            return "Professor"
+        return "Faculty"
+
     # Manual section overrides for people whose raw title lands them in the wrong bucket.
-    force = {"derek johnston": "faculty", "ben esser": "assistant"}
+    force = {"derek johnston": "faculty", "ben esser": "assistant", "emily pereira": "faculty"}
     faculty, instructors, assistant = [], [], []
     for p in db.query(models.Professor).all():
         t = (getattr(p, "title", "") or "").lower()
@@ -114,12 +152,17 @@ def directory(db: Session = Depends(get_db)):
     key = lambda m: m["name"].split()[-1].lower()  # sort each section by last name
     # `doctor` prefixes "Dr." to each name. Assistant Professors: the section title already
     # states the rank, so no per-name "Dr." prefix (keeps Ben Esser without one, per the owner).
-    return {"sections": [
+    sections = [
         {"key": "faculty", "title": "Faculty Directory", "subtitle": "Ph.D. Faculty", "office": True, "doctor": True, "members": sorted(faculty, key=key)},
         {"key": "instructors", "title": "Instructors", "subtitle": "Teaching Faculty", "office": True, "doctor": False, "members": sorted(instructors, key=key)},
         {"key": "assistant", "title": "Assistant Professors", "subtitle": "Faculty", "office": True, "doctor": False, "members": sorted(assistant, key=key)},
         {"key": "staff", "title": "Staff Directory", "subtitle": "Department Staff", "office": True, "doctor": False, "members": sorted(staff, key=key)},
-    ]}
+    ]
+    # Attach the short rank shown under each name (Professor / Assistant Professor / Instructor / job title).
+    for sec in sections:
+        for m in sec["members"]:
+            m["role"] = role_of(m["title"], sec["key"], m["name"])
+    return {"sections": sections}
 
 
 def _crud(name: str, model, schema_in, schema_out, search_fields):

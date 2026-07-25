@@ -74,8 +74,9 @@ def faculty_graph(db: Session = Depends(get_db)):
 @router.get("/directory")
 def directory(db: Session = Depends(get_db)):
     """Public directory for the kiosk screensaver, split into sections: Faculty (Ph.D.
-    professors), Instructors (other teaching faculty), Staff, and Emeritus. Big-photo grid,
-    name + office (emeritus: name only). Read-only public directory data."""
+    professors), Instructors (other teaching faculty), Assistant Professors, and Staff.
+    Big-photo grid with name + office. Emeritus (retired) faculty are not featured here.
+    Read-only public directory data."""
     from .. import models
 
     def office_of(x):
@@ -86,8 +87,8 @@ def directory(db: Session = Depends(get_db)):
                 "title": getattr(x, "title", "") or "", "office": office_of(x)}
 
     # Manual section overrides for people whose raw title lands them in the wrong bucket.
-    force = {"derek johnston": "faculty", "ben esser": "instructors"}
-    faculty, instructors, emeritus = [], [], []
+    force = {"derek johnston": "faculty", "ben esser": "assistant"}
+    faculty, instructors, assistant = [], [], []
     for p in db.query(models.Professor).all():
         t = (getattr(p, "title", "") or "").lower()
         forced = force.get((p.name or "").strip().lower())
@@ -95,8 +96,12 @@ def directory(db: Session = Depends(get_db)):
             faculty.append(person(p))
         elif forced == "instructors":
             instructors.append(person(p))
+        elif forced == "assistant":
+            assistant.append(person(p))
         elif "emerit" in t:
-            emeritus.append(person(p))
+            continue  # emeritus (retired) professors are not featured in the rotation
+        elif "assistant professor" in t:
+            assistant.append(person(p))
         elif ("instructor" in t or "lecturer" in t) and "professor" not in t:
             instructors.append(person(p))
         elif any(k in t for k in ("professor", "dean", "endowed chair", "distinguished",
@@ -107,11 +112,12 @@ def directory(db: Session = Depends(get_db)):
     staff = [person(s) for s in db.query(models.Staff).all()]
 
     key = lambda m: m["name"].split()[-1].lower()  # sort each section by last name
-    # `doctor`: these are Ph.D. professors, so the UI prefixes "Dr." to the name.
+    # `doctor` prefixes "Dr." to each name. Assistant Professors: the section title already
+    # states the rank, so no per-name "Dr." prefix (keeps Ben Esser without one, per the owner).
     return {"sections": [
         {"key": "faculty", "title": "Faculty Directory", "subtitle": "Ph.D. Faculty", "office": True, "doctor": True, "members": sorted(faculty, key=key)},
         {"key": "instructors", "title": "Instructors", "subtitle": "Teaching Faculty", "office": True, "doctor": False, "members": sorted(instructors, key=key)},
-        {"key": "emeritus", "title": "Emeritus Professors", "subtitle": "", "office": False, "doctor": True, "members": sorted(emeritus, key=key)},
+        {"key": "assistant", "title": "Assistant Professors", "subtitle": "Faculty", "office": True, "doctor": False, "members": sorted(assistant, key=key)},
         {"key": "staff", "title": "Staff Directory", "subtitle": "Department Staff", "office": True, "doctor": False, "members": sorted(staff, key=key)},
     ]}
 

@@ -4,11 +4,11 @@ import FacultyGraph3D from "@/components/FacultyGraph3D"
 
 /**
  * Kiosk sleep-mode attract loop: a directory slideshow. It pages through the department's
- * sections — Faculty (Ph.D.), Instructors, Staff, Emeritus — 18 people per page (hiding the
- * rest), a few seconds each. Each card is a big square photo with the name (Ph.D. faculty and
- * emeritus get a "Dr." prefix) and office number beneath (emeritus: name only). Card size is
- * capped near the photos' native ~150px so they stay sharp, and auto-fits so all 18 show
- * without scrolling. Mounted only while the kiosk is dormant; unmounts the instant Summer wakes.
+ * sections — Faculty (Ph.D.), Instructors, Assistant Professors, Staff — Faculty at 12/page and
+ * the rest on one page, a few seconds each. Each card is a big square photo with the name (Ph.D.
+ * faculty get a "Dr." prefix) and office number beneath. Card size is capped near the photos'
+ * native ~150px so they stay sharp, and auto-fits so the whole page shows without scrolling.
+ * Mounted only while the kiosk is dormant; unmounts the instant Summer wakes.
  * Source: depts.ttu.edu/ece/faculty.
  */
 interface Member { id: string; name: string; photo?: string; office?: string }
@@ -16,7 +16,7 @@ interface Section { key: string; title: string; subtitle?: string; office: boole
 interface Dir { sections: Section[] }
 interface Page { key: string; title: string; subtitle?: string; office: boolean; doctor?: boolean; members: Member[]; page: number; pages: number; total: number }
 
-const ACCENT: Record<string, string> = { faculty: "#38bdf8", instructors: "#22d3ee", staff: "#f59e0b", emeritus: "#a78bfa" }
+const ACCENT: Record<string, string> = { faculty: "#38bdf8", instructors: "#22d3ee", assistant: "#a78bfa", staff: "#f59e0b" }
 const PAGE_SIZE = 18
 const PAGE_MS = 12000
 const GRAPH_MS = 15000   // the 3D "second brain" finale after Staff

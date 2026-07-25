@@ -94,17 +94,30 @@ export default function FacultyGraph3D() {
     function build(data: Any) {
       if (cancelled || !elRef.current || !data?.profs?.length) return
       const profs: Any[] = data.profs
-      const firstArea = (p: Any) => (p.areas && p.areas[0]) || "ECE Faculty"
+      // A professor's bio can match several research areas. Rather than showing them only under
+      // the first-listed area (which left Computing/Bio/Circuits nearly empty), assign each to
+      // their LEAST-loaded genuinely-matching area — so every area is populated by people whose
+      // own bio places them there, and the clusters come out balanced.
+      const matches = (p: Any): string[] => ((p.areas || []) as string[]).filter((a) => a !== "ECE Faculty")
       const byArea = new Map<string, Any[]>()
-      profs.forEach((p) => { const a = firstArea(p); if (!byArea.has(a)) byArea.set(a, []); byArea.get(a)!.push(p) })
-      const areas = [...byArea.keys()].sort((a, b) => byArea.get(b)!.length - byArea.get(a)!.length)
+      const counts: Record<string, number> = {}
+      profs.forEach((p) => matches(p).forEach((a) => { if (!byArea.has(a)) { byArea.set(a, []); counts[a] = 0 } }))
+      const ordered = [...profs].sort((a, b) => matches(a).length - matches(b).length || (a.name < b.name ? -1 : 1))
+      ordered.forEach((p) => {
+        const ms = matches(p)
+        if (!ms.length) return
+        let a = ms[0]
+        ms.forEach((x) => { if (counts[x] < counts[a]) a = x })
+        counts[a]++; byArea.get(a)!.push(p)
+      })
+      const areas = [...byArea.keys()].filter((a) => byArea.get(a)!.length).sort((a, b) => byArea.get(b)!.length - byArea.get(a)!.length)
       if (!cancelled) setLegend(areas.map((a) => ({ name: a, color: areaColor(a), count: byArea.get(a)!.length })))
 
       const nodes: Any[] = [], links: Any[] = []
       // Hubs sit evenly on a ring; each hub's faculty are packed onto concentric arcs within its
       // slice, centres SP apart. Face sprites (below) render a bit smaller than SP, so nothing
       // overlaps while the faces stay large. FACE here is the spacing unit, not the render size.
-      const R_RING = 640, FACE = 150, HALF = 0.52, SP = 1.2 * FACE
+      const R_RING = 600, FACE = 150, HALF = 0.52, SP = 1.2 * FACE
       const put = (n: Any, ang: number, r: number, y = 0) => {
         n.x = n.fx = Math.cos(ang) * r; n.y = n.fy = y; n.z = n.fz = Math.sin(ang) * r
       }
@@ -152,7 +165,7 @@ export default function FacultyGraph3D() {
           }
           const pre = n.photo ? imgCache.get(n.photo) : undefined
           const mat = new THREE.SpriteMaterial({ map: faceTexture(pre || null, n.name, n.color), depthWrite: false, transparent: true })
-          const sprite = new THREE.Sprite(mat); sprite.scale.set(170 * (600 / 740), 170, 1)
+          const sprite = new THREE.Sprite(mat); sprite.scale.set(180 * (600 / 740), 180, 1)
           if (n.photo && !pre) {
             const im = new Image(); im.crossOrigin = "anonymous"
             im.onload = () => { mat.map = faceTexture(im, n.name, n.color); mat.needsUpdate = true }
@@ -175,7 +188,7 @@ export default function FacultyGraph3D() {
         if (cancelled) return
         // Deterministic framing tuned offline: readable faces, whole ring in view. SHIFT lifts
         // the whole graph up so the dense clusters clear the bottom wake-prompt band.
-        const dist = 2200, SHIFT = -110
+        const dist = 1950, SHIFT = -90
         const ELEV = 0.72, H = Math.sin(ELEV) * dist, Rr = Math.cos(ELEV) * dist
         let a = Math.PI * 0.1
         const orbit = () => {

@@ -94,8 +94,8 @@ function glowSprite(color: string, size: number) {
   const x = c.getContext("2d")!
   const r = parseInt(color.slice(1, 3), 16), g = parseInt(color.slice(3, 5), 16), b = parseInt(color.slice(5, 7), 16)
   const grad = x.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2)
-  grad.addColorStop(0, `rgba(${r},${g},${b},0.8)`)
-  grad.addColorStop(0.4, `rgba(${r},${g},${b},0.32)`)
+  grad.addColorStop(0, `rgba(${r},${g},${b},0.4)`)
+  grad.addColorStop(0.4, `rgba(${r},${g},${b},0.12)`)
   grad.addColorStop(1, `rgba(${r},${g},${b},0)`)
   x.fillStyle = grad; x.fillRect(0, 0, s, s)
   const tex = new THREE.CanvasTexture(c)
@@ -184,9 +184,9 @@ export default function FacultyGraph3D() {
         .nodeThreeObject((n: Any) => {
           if (n.kind === "hub") {
             const g = new THREE.Group()
-            g.add(glowSprite(n.color, 230))
+            g.add(glowSprite(n.color, 150))
             g.add(new THREE.Mesh(new THREE.SphereGeometry(42, 24, 24),
-              new THREE.MeshStandardMaterial({ color: n.color, emissive: n.color, emissiveIntensity: 0.45, roughness: 0.5 })))
+              new THREE.MeshStandardMaterial({ color: n.color, emissive: n.color, emissiveIntensity: 0.2, roughness: 0.6 })))
             const lab = hubLabel(n.name, "#f2f6ff", n.count); lab.position.set(0, 96, 0); g.add(lab)
             return g
           }
@@ -200,15 +200,15 @@ export default function FacultyGraph3D() {
           }
           return sprite
         })
-        .linkColor((l: Any) => hexA(l.color || "#5b6b8c", 0.92))
-        .linkWidth(5)
+        .linkColor((l: Any) => hexA(l.color || "#5b6b8c", 1))
+        .linkWidth(7)
         .linkDirectionalParticles(3)
-        .linkDirectionalParticleWidth(3.4)
+        .linkDirectionalParticleWidth(4)
         .linkDirectionalParticleSpeed(0.005)
       gRef.current = G
       try { const ctl = G.controls(); if (ctl) ctl.enabled = false } catch { /* ignore */ }
       // Fog fades distant faces into the background for depth.
-      try { G.scene().fog = new THREE.Fog(0x060a12, 1650, 3700) } catch { /* ignore */ }
+      try { G.scene().fog = new THREE.Fog(0x060a12, 2400, 5200) } catch { /* ignore */ }
 
       const fit = () => { if (elRef.current) { const r = elRef.current.getBoundingClientRect(); G.width(r.width).height(r.height) } }
       fitRef.current = fit; fit(); window.addEventListener("resize", fit)

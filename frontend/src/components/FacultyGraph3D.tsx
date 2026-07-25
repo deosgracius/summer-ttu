@@ -89,6 +89,7 @@ export default function FacultyGraph3D() {
 
   useEffect(() => {
     let cancelled = false
+    const imgCache = new Map<string, HTMLImageElement>()  // preloaded faces, so they all appear at once
     function build(data: Any) {
       if (cancelled || !elRef.current || !data?.profs?.length) return
       const profs: Any[] = data.profs
@@ -141,9 +142,10 @@ export default function FacultyGraph3D() {
             const lab = labelSprite(n.name, "#f2f6ff"); lab.position.set(0, 66, 0); g.add(lab)
             return g
           }
-          const mat = new THREE.SpriteMaterial({ map: faceTexture(null, n.name, n.color), depthWrite: false, transparent: true })
+          const pre = n.photo ? imgCache.get(n.photo) : undefined
+          const mat = new THREE.SpriteMaterial({ map: faceTexture(pre || null, n.name, n.color), depthWrite: false, transparent: true })
           const sprite = new THREE.Sprite(mat); sprite.scale.set(132 * (600 / 740), 132, 1)
-          if (n.photo) {
+          if (n.photo && !pre) {
             const im = new Image(); im.crossOrigin = "anonymous"
             im.onload = () => { mat.map = faceTexture(im, n.name, n.color); mat.needsUpdate = true }
             im.src = n.photo
@@ -180,8 +182,23 @@ export default function FacultyGraph3D() {
       }, 60)
     }
 
-    if (CACHE) build(CACHE)
-    else api.get<Any>("/campus/faculty-graph").then((d) => { CACHE = d; build(d) }).catch(() => {})
+    // Preload every face first, then build — so the graph appears with all photos at once
+    // instead of blank sprites that pop in one by one.
+    const startBuild = (d: Any) => {
+      const urls: string[] = [...new Set((d?.profs || []).map((p: Any) => p.photo).filter(Boolean))] as string[]
+      if (!urls.length) { build(d); return }
+      let settled = 0, built = false
+      const go = () => { if (built || cancelled) return; built = true; build(d) }
+      urls.forEach((u) => {
+        const im = new Image(); im.crossOrigin = "anonymous"
+        im.onload = () => { imgCache.set(u, im); if (++settled >= urls.length) go() }
+        im.onerror = () => { if (++settled >= urls.length) go() }
+        im.src = u
+      })
+      window.setTimeout(go, 4000)  // cap the wait so one slow image never blocks the finale
+    }
+    if (CACHE) startBuild(CACHE)
+    else api.get<Any>("/campus/faculty-graph").then((d) => { CACHE = d; startBuild(d) }).catch(() => {})
 
     return () => {
       cancelled = true

@@ -11,7 +11,7 @@ import FacultyGraph3D from "@/components/FacultyGraph3D"
  * Mounted only while the kiosk is dormant; unmounts the instant Summer wakes.
  * Source: depts.ttu.edu/ece/faculty.
  */
-interface Member { id: string; name: string; photo?: string; office?: string }
+interface Member { id: string; name: string; photo?: string; office?: string; role?: string }
 interface Section { key: string; title: string; subtitle?: string; office: boolean; doctor?: boolean; members: Member[] }
 interface Dir { sections: Section[] }
 interface Page { key: string; title: string; subtitle?: string; office: boolean; doctor?: boolean; members: Member[]; page: number; pages: number; total: number }
@@ -27,9 +27,10 @@ function initials(n: string) {
   return ((p[0]?.[0] || "") + (p.length > 1 ? p[p.length - 1][0] : "")).toUpperCase() || "?"
 }
 
-function Card({ m, w, showOffice, doctor }: { m: Member; w: number; showOffice: boolean; doctor?: boolean }) {
+function Card({ m, w, showOffice, doctor, accent }: { m: Member; w: number; showOffice: boolean; doctor?: boolean; accent: string }) {
   const [broken, setBroken] = useState(false)
   const nameFs = w < 130 ? 13 : w < 190 ? 15 : 18
+  const subFs = nameFs - 4
   const display = doctor ? `Dr. ${m.name}` : m.name
   return (
     <div style={{ width: w }} className="flex flex-col items-center">
@@ -40,9 +41,10 @@ function Card({ m, w, showOffice, doctor }: { m: Member; w: number; showOffice: 
           <div className="grid h-full w-full place-items-center font-semibold text-white/70" style={{ fontSize: w * 0.28 }}>{initials(m.name)}</div>
         )}
       </div>
-      <div className="mt-2 w-full px-1 text-center">
+      <div className="mt-2 w-full px-1 text-center leading-tight">
         <div className="truncate font-semibold text-white" style={{ fontSize: nameFs }} title={display}>{display}</div>
-        {showOffice && m.office ? <div className="truncate text-white/55" style={{ fontSize: nameFs - 3 }}>{m.office}</div> : null}
+        {m.role ? <div className="truncate font-medium" style={{ fontSize: subFs, color: accent }} title={m.role}>{m.role}</div> : null}
+        {showOffice && m.office ? <div className="truncate text-white/50" style={{ fontSize: subFs }}>{m.office}</div> : null}
       </div>
     </div>
   )
@@ -104,7 +106,7 @@ export default function KioskScreensaver() {
       const el = wrapRef.current; if (!el) return
       // Reserve = pt-4 (16) + pb-40 (160): keep the card block clear of the bottom prompt band.
       const W = el.clientWidth - 48, H = el.clientHeight - 176, n = page.members.length
-      const textH = 56, gapX = 16, gapY = 12
+      const textH = 74, gapX = 16, gapY = 12   // name + role + office beneath each photo
       let best = 84
       for (let w = 190; w >= 84; w -= 4) {
         const cols = Math.max(1, Math.floor((W + gapX) / (w + gapX)))
@@ -155,7 +157,7 @@ export default function KioskScreensaver() {
       <div ref={wrapRef} className="relative z-10 flex-1 px-6 pb-40 pt-4">
         <div key={step} className="flex h-full flex-wrap content-center items-start justify-center gap-x-4 gap-y-3"
           style={{ animation: "ssSpinIn 0.45s ease-out both" }}>
-          {page.members.map((m) => <Card key={m.id} m={m} w={cardW} showOffice={page.office} doctor={page.doctor} />)}
+          {page.members.map((m) => <Card key={m.id} m={m} w={cardW} showOffice={page.office} doctor={page.doctor} accent={accent} />)}
         </div>
       </div>
 

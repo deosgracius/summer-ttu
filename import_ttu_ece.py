@@ -26,7 +26,7 @@ import time
 import httpx
 
 from app.database import SessionLocal
-from app import models, docs_rag
+from app import models, docs_rag, facecrop
 
 UA = {"User-Agent": "Summer-TTU/1.0 (https://summer-ttu.fly.dev; deosgracius17@gmail.com)"}
 BASE = "https://www.depts.ttu.edu"
@@ -174,13 +174,20 @@ def _cache_photo(db, client, url):
         if r.status_code >= 400 or "image" not in r.headers.get("content-type", ""):
             return _fallback()
         ct = r.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+        # Bake a consistent, face-centred square crop into the stored photo so the kiosk
+        # directory cards are uniform and stay framed across re-imports. Falls back to the
+        # raw bytes if Pillow/OpenCV aren't installed or the image can't be decoded.
+        data = r.content
+        cropped = facecrop.crop_square(data)
+        if cropped:
+            data, ct = cropped, "image/jpeg"
         existing = db.query(models.CampusPhoto).filter(models.CampusPhoto.source_url == url).first()
         if existing:
             existing.content_type = ct
-            existing.data = r.content
+            existing.data = data
             db.flush()
             return f"/campus/photo/{existing.id}"
-        ph = models.CampusPhoto(source_url=url, content_type=ct, data=r.content)
+        ph = models.CampusPhoto(source_url=url, content_type=ct, data=data)
         db.add(ph)
         db.flush()
         return f"/campus/photo/{ph.id}"

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { api } from "@/lib/api"
 import FacultyGraph3D from "@/components/FacultyGraph3D"
 import SummerOrb from "@/components/SummerOrb"
+import { officeHoursStatus } from "@/lib/officeHours"
 
 /**
  * Kiosk sleep-mode attract loop: a directory slideshow. It pages through the department's
@@ -12,7 +13,7 @@ import SummerOrb from "@/components/SummerOrb"
  * Mounted only while the kiosk is dormant; unmounts the instant Summer wakes.
  * Source: depts.ttu.edu/ece/faculty.
  */
-interface Member { id: string; name: string; photo?: string; office?: string; role?: string }
+interface Member { id: string; name: string; photo?: string; office?: string; role?: string; office_hours?: string }
 interface Section { key: string; title: string; subtitle?: string; office: boolean; doctor?: boolean; members: Member[] }
 interface Dir { sections: Section[] }
 interface Page { key: string; title: string; subtitle?: string; office: boolean; doctor?: boolean; members: Member[]; page: number; pages: number; total: number }
@@ -44,6 +45,14 @@ function Card({ m, w, showOffice, doctor, accent }: { m: Member; w: number; show
   const nameFs = w < 130 ? 13 : w < 190 ? 15 : 18
   const subFs = nameFs - 4
   const display = doctor ? `Dr. ${m.name}` : m.name
+  // Live office-hours indicator: recompute every 30s so it goes green the moment hours start.
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    if (!m.office_hours) return
+    const id = window.setInterval(() => setTick((t) => t + 1), 30000)
+    return () => window.clearInterval(id)
+  }, [m.office_hours])
+  const oh = officeHoursStatus(m.office_hours)
   return (
     <div style={{ width: w }} className="flex flex-col items-center">
       <div style={{ width: w, height: w }} className="overflow-hidden rounded-2xl bg-[#0f1626] shadow-lg shadow-black/40 ring-1 ring-white/10">
@@ -58,6 +67,13 @@ function Card({ m, w, showOffice, doctor, accent }: { m: Member; w: number; show
           style={{ fontSize: nameFs, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{display}</div>
         {m.role ? <div className="truncate font-medium" style={{ fontSize: subFs, color: accent }} title={m.role}>{m.role}</div> : null}
         {showOffice && m.office ? <div className="truncate text-white/50" style={{ fontSize: subFs }}>{m.office}</div> : null}
+        {oh !== null ? (
+          <div className="mt-1 inline-flex items-center gap-1.5" style={{ fontSize: subFs }} title={m.office_hours}>
+            <span className={`inline-block rounded-full ${oh ? "bg-emerald-400 animate-pulse" : "bg-red-500"}`}
+              style={{ width: subFs * 0.62, height: subFs * 0.62, boxShadow: oh ? "0 0 8px 1px rgba(52,211,153,0.85)" : undefined }} />
+            <span className={oh ? "font-medium text-emerald-300" : "text-white/45"}>{oh ? "In office hours" : "Office hours"}</span>
+          </div>
+        ) : null}
       </div>
     </div>
   )
@@ -119,7 +135,7 @@ export default function KioskScreensaver() {
       const el = wrapRef.current; if (!el) return
       // Reserve = pt-4 (16) + pb-40 (160): keep the card block clear of the bottom prompt band.
       const W = el.clientWidth - 48, H = el.clientHeight - 176, n = page.members.length
-      const textH = 92, gapX = 16, gapY = 12   // 2-line name + role + office beneath each photo
+      const textH = 110, gapX = 16, gapY = 12   // 2-line name + role + office + office-hours line
       let best = 84
       for (let w = 190; w >= 84; w -= 4) {
         const cols = Math.max(1, Math.floor((W + gapX) / (w + gapX)))

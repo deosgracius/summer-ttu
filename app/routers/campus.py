@@ -88,7 +88,8 @@ def directory(db: Session = Depends(get_db)):
 
     def person(x):
         return {"id": "p:" + x.name, "name": x.name, "photo": getattr(x, "photo_url", "") or "",
-                "title": getattr(x, "title", "") or "", "office": office_of(x)}
+                "title": getattr(x, "title", "") or "", "office": office_of(x),
+                "office_hours": (getattr(x, "office_hours", "") or "").strip()}
 
     # Short rank shown under each name. Owner overrides win (e.g. Emily Pereira is a
     # professor, not the "Assistant Professor" the website still lists).

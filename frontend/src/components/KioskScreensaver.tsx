@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { api } from "@/lib/api"
 import FacultyGraph3D from "@/components/FacultyGraph3D"
+import SummerOrb from "@/components/SummerOrb"
 
 /**
  * Kiosk sleep-mode attract loop: a directory slideshow. It pages through the department's
@@ -18,13 +19,24 @@ interface Page { key: string; title: string; subtitle?: string; office: boolean;
 
 const ACCENT: Record<string, string> = { faculty: "#38bdf8", instructors: "#22d3ee", assistant: "#a78bfa", staff: "#f59e0b" }
 const PAGE_SIZE = 18
-const PAGE_MS = 12000
-const GRAPH_MS = 25000   // the 3D "second brain" finale after Staff
+const PAGE_MS = 20000
+const GRAPH_MS = 35000   // the 3D "second brain" finale after Staff
 let CACHE: Dir | null = null
 
 function initials(n: string) {
   const p = (n || "").trim().split(/\s+/)
   return ((p[0]?.[0] || "") + (p.length > 1 ? p[p.length - 1][0] : "")).toUpperCase() || "?"
+}
+
+// Department wordmark shown above each heading — Texas Tech red on the university name.
+function Eyebrow() {
+  return (
+    <div className="flex items-center justify-center gap-2.5 text-[11px] font-semibold uppercase tracking-[0.3em]">
+      <span style={{ color: "#e01e2b" }}>Texas Tech University</span>
+      <span className="text-white/25">/</span>
+      <span className="text-white/50">Electrical &amp; Computer Engineering</span>
+    </div>
+  )
 }
 
 function Card({ m, w, showOffice, doctor, accent }: { m: Member; w: number; showOffice: boolean; doctor?: boolean; accent: string }) {
@@ -127,10 +139,14 @@ export default function KioskScreensaver() {
     return (
       <div className="absolute inset-0 bg-[#060a12]">
         <FacultyGraph3D />
+        {/* Summer sits at the heart of the research network */}
+        <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center">
+          <div style={{ transform: "translateY(-5%)" }}><SummerOrb size={210} state="idle" /></div>
+        </div>
         <div className="pointer-events-none absolute inset-x-0 top-12 z-10 text-center">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.34em] text-white/35">Texas Tech University · Electrical &amp; Computer Engineering</div>
-          <h2 className="mt-2 text-4xl font-semibold tracking-tight text-sky-300 md:text-5xl">Research Network</h2>
-          <div className="mt-1.5 text-sm text-white/45">Faculty grouped by research area</div>
+          <Eyebrow />
+          <h2 className="mt-2.5 text-4xl font-semibold tracking-tight text-sky-300 md:text-5xl">Research Network</h2>
+          <div className="mt-1.5 text-sm text-white/50">Faculty grouped by research area</div>
         </div>
       </div>
     )
@@ -149,9 +165,9 @@ export default function KioskScreensaver() {
 
       {/* Section heading (rotates through the pages of each category) */}
       <div className="z-10 pt-14 text-center">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.34em] text-white/35">Texas Tech University · Electrical &amp; Computer Engineering</div>
-        <h2 key={page.key} className="mt-2 text-4xl font-semibold tracking-tight md:text-5xl" style={{ color: accent }}>{page.title}</h2>
-        <div className="mt-1.5 text-sm text-white/45">{sub}</div>
+        <Eyebrow />
+        <h2 key={page.key} className="mt-2.5 text-4xl font-semibold tracking-tight md:text-5xl" style={{ color: accent }}>{page.title}</h2>
+        <div className="mt-1.5 text-sm text-white/50">{sub}</div>
       </div>
 
       {/* Grid — up to 18 people (pb clears the bottom prompt band) */}

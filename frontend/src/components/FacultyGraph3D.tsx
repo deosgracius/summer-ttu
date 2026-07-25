@@ -173,11 +173,11 @@ export default function FacultyGraph3D() {
           }
           return sprite
         })
-        .linkColor((l: Any) => hexA(l.color || "#5b6b8c", 0.72))
-        .linkWidth(3)
-        .linkDirectionalParticles(2)
-        .linkDirectionalParticleWidth(2.6)
-        .linkDirectionalParticleSpeed(0.004)
+        .linkColor((l: Any) => hexA(l.color || "#5b6b8c", 0.92))
+        .linkWidth(5)
+        .linkDirectionalParticles(3)
+        .linkDirectionalParticleWidth(3.4)
+        .linkDirectionalParticleSpeed(0.005)
       gRef.current = G
       try { const ctl = G.controls(); if (ctl) ctl.enabled = false } catch { /* ignore */ }
 

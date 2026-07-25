@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import CampusSearch from "@/components/CampusSearch"
 import KioskScreensaver from "@/components/KioskScreensaver"
+import PersonAnswerCard from "@/components/PersonAnswerCard"
 
 interface Person {
   name: string
@@ -180,32 +181,13 @@ export default function KioskPage() {
                   {t.q}
                 </span>
               </div>
-              <div className="rounded-2xl border bg-muted/40 px-5 py-4 text-base leading-relaxed">
-                {t.person?.photo && /^(https?:\/\/|\/)/.test(t.person.photo) && (
-                  <div className="flex items-center gap-4 mb-4 pb-4 border-b text-left">
-                    <img
-                      src={t.person.photo}
-                      alt={t.person.name}
-                      loading="lazy"
-                      className="size-20 rounded-2xl object-cover shrink-0 ring-1 ring-border"
-                    />
-                    <div className="min-w-0">
-                      <div className="text-lg font-semibold leading-tight">{t.person.name}</div>
-                      {t.person.title && (
-                        <div className="text-sm text-muted-foreground mt-0.5">{t.person.title}</div>
-                      )}
-                      {(t.person.office || t.person.email) && (
-                        <div className="text-sm text-muted-foreground mt-1 truncate">
-                          {[t.person.office && `Office ${t.person.office}`, t.person.email]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-                <div className="whitespace-pre-wrap">{linkify(t.a)}</div>
-              </div>
+              {t.person ? (
+                <PersonAnswerCard person={t.person} answer={t.a} />
+              ) : (
+                <div className="whitespace-pre-wrap rounded-2xl border bg-muted/40 px-5 py-4 text-base leading-relaxed">
+                  {linkify(t.a)}
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -34,7 +34,7 @@ function Card({ m, w, showOffice, doctor, accent }: { m: Member; w: number; show
   const display = doctor ? `Dr. ${m.name}` : m.name
   return (
     <div style={{ width: w }} className="flex flex-col items-center">
-      <div style={{ width: w, height: w }} className="overflow-hidden rounded-2xl border border-white/10 bg-[#141a28] shadow-lg">
+      <div style={{ width: w, height: w }} className="overflow-hidden rounded-2xl bg-[#0f1626] shadow-lg shadow-black/40 ring-1 ring-white/10">
         {m.photo && !broken ? (
           <img src={m.photo} alt={display} onError={() => setBroken(true)} className="h-full w-full object-cover" style={{ objectPosition: "center" }} />
         ) : (
@@ -127,10 +127,10 @@ export default function KioskScreensaver() {
     return (
       <div className="absolute inset-0 bg-[#060a12]">
         <FacultyGraph3D />
-        <div className="pointer-events-none absolute inset-x-0 top-14 z-10 text-center">
-          <div className="text-[11px] uppercase tracking-[0.3em] text-white/40">TTU · Electrical &amp; Computer Engineering</div>
-          <h2 className="mt-1.5 text-4xl font-bold tracking-tight text-sky-300 md:text-5xl">Research Network</h2>
-          <div className="mt-1 text-sm text-white/55">Faculty &amp; their research areas</div>
+        <div className="pointer-events-none absolute inset-x-0 top-12 z-10 text-center">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.34em] text-white/35">Texas Tech University · Electrical &amp; Computer Engineering</div>
+          <h2 className="mt-2 text-4xl font-semibold tracking-tight text-sky-300 md:text-5xl">Research Network</h2>
+          <div className="mt-1.5 text-sm text-white/45">Faculty grouped by research area</div>
         </div>
       </div>
     )
@@ -148,10 +148,10 @@ export default function KioskScreensaver() {
         style={{ background: `radial-gradient(55% 45% at 50% 28%, ${accent}22, transparent 70%)` }} />
 
       {/* Section heading (rotates through the pages of each category) */}
-      <div className="z-10 pt-16 text-center">
-        <div className="text-[11px] uppercase tracking-[0.3em] text-white/40">TTU · Electrical &amp; Computer Engineering</div>
-        <h2 key={page.key} className="mt-1.5 text-4xl font-bold tracking-tight md:text-5xl" style={{ color: accent }}>{page.title}</h2>
-        <div className="mt-1 text-sm text-white/55">{sub}</div>
+      <div className="z-10 pt-14 text-center">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.34em] text-white/35">Texas Tech University · Electrical &amp; Computer Engineering</div>
+        <h2 key={page.key} className="mt-2 text-4xl font-semibold tracking-tight md:text-5xl" style={{ color: accent }}>{page.title}</h2>
+        <div className="mt-1.5 text-sm text-white/45">{sub}</div>
       </div>
 
       {/* Grid — up to 18 people (pb clears the bottom prompt band) */}

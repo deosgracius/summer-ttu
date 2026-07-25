@@ -75,11 +75,11 @@ def crop_square(data: bytes, size: int = _SIZE) -> Optional[bytes]:
     box = _largest_face(pil)
     if box is not None:
         fx, fy, fw, fh = box
-        # A head-and-shoulders square: ~2.8x the face height, never tighter than 72% of the
+        # A head-and-shoulders square: ~3.2x the face height, never tighter than 72% of the
         # short side (avoids over-zooming an already-tight headshot) nor bigger than the image.
-        side = int(min(max(fh * 2.8, min(w, h) * 0.72), w, h))
+        side = int(min(max(fh * 3.2, min(w, h) * 0.72), w, h))
         left = int(round(fx + fw / 2 - side / 2))
-        top = int(round(fy + fh / 2 - side * 0.42))  # face sits ~42% down the crop
+        top = int(round((fy - 0.42 * fh) - 0.06 * side))  # anchor above the hairline so the whole head fits
     else:
         side = min(w, h)
         left = (w - side) // 2

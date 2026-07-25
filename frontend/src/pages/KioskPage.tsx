@@ -169,7 +169,7 @@ export default function KioskPage() {
         {/* Only the current answer is shown. When answering it sits near the top so it's fully
             visible; while idle the examples stay centered. Earlier turns are kept in state for
             follow-up context (sent to the backend) but not displayed. */}
-        <div className={`flex flex-1 flex-col overflow-auto ${turns.length || loading ? "justify-start pt-4" : "justify-center py-2"}`}>
+        <div className={`flex flex-1 flex-col overflow-auto ${turns.length || loading ? "justify-center pb-24" : "justify-center py-2"}`}>
           {turns.length === 0 && !loading && (
             <div className="flex flex-wrap justify-center gap-2">
               {EXAMPLES.map((e) => (

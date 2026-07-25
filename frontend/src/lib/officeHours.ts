@@ -52,6 +52,8 @@ function toMinutes(h: number, m: number, ap?: string, fallbackAp?: string): numb
 export function officeHoursStatus(text: string | undefined, now: Date = new Date()): boolean | null {
   if (!text) return null
   const s = text.toLowerCase().replace(/[–—]/g, "-").replace(/\bto\b/g, "-").replace(/\s+/g, " ").trim()
+  // Open-door / always-available policies read as live all the time.
+  if (/\b(always open|open all day|open door|24 ?\/? ?7|walk-?ins? (welcome|anytime))\b/.test(s)) return true
   if (!s || !/\d/.test(s)) return null // no times (e.g. "by appointment") — nothing to light up
   const TIME = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*-\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/g
   const nowDay = now.getDay()

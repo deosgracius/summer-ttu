@@ -147,18 +147,22 @@ export default function KioskPage() {
           </div>
         </div>
       )}
-      <div className="relative z-10 flex flex-col items-center text-center mb-6">
-        <SummerOrb size={380} state={loading ? "thinking" : "idle"} />
-        <h1 className="mt-3 text-4xl font-semibold tracking-tight">Hi, I'm Summer.</h1>
-        <p className="mt-2 text-base text-muted-foreground max-w-xl leading-relaxed">
-          Ask me about this department — classes, rooms, schedules, professors' office hours,
-          advisors, buildings, and services like the stockroom.
-        </p>
-      </div>
+      {/* Greeting/orb only while idle — once Summer answers, it's hidden so the answer
+          sits at the top and gets the full space. */}
+      {turns.length === 0 && !loading && (
+        <div className="relative z-10 flex flex-col items-center text-center mb-6">
+          <SummerOrb size={380} state="idle" />
+          <h1 className="mt-3 text-4xl font-semibold tracking-tight">Hi, I'm Summer.</h1>
+          <p className="mt-2 text-base text-muted-foreground max-w-xl leading-relaxed">
+            Ask me about this department — classes, rooms, schedules, professors' office hours,
+            advisors, buildings, and services like the stockroom.
+          </p>
+        </div>
+      )}
 
       <div className="relative z-10 w-full max-w-2xl flex-1 flex flex-col">
         {/* Conversation */}
-        <div ref={scrollRef} className="flex-1 overflow-auto space-y-4 mb-4 max-h-[55svh]">
+        <div ref={scrollRef} className={`flex-1 overflow-auto space-y-4 mb-4 ${turns.length || loading ? "max-h-[76svh] pt-4" : "max-h-[55svh]"}`}>
           {turns.length === 0 && (
             <div className="flex flex-wrap gap-2 justify-center pt-4">
               {EXAMPLES.map((e) => (

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore — 3d-force-graph ships loose types
 import ForceGraph3D from "3d-force-graph"
@@ -86,6 +86,7 @@ export default function FacultyGraph3D() {
   const gRef = useRef<Any>(null)
   const rafRef = useRef<number | undefined>(undefined)
   const fitRef = useRef<() => void>(() => {})
+  const [legend, setLegend] = useState<{ name: string; color: string; count: number }[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -97,6 +98,7 @@ export default function FacultyGraph3D() {
       const byArea = new Map<string, Any[]>()
       profs.forEach((p) => { const a = firstArea(p); if (!byArea.has(a)) byArea.set(a, []); byArea.get(a)!.push(p) })
       const areas = [...byArea.keys()].sort((a, b) => byArea.get(b)!.length - byArea.get(a)!.length)
+      if (!cancelled) setLegend(areas.map((a) => ({ name: a, color: areaColor(a), count: byArea.get(a)!.length })))
 
       const nodes: Any[] = [], links: Any[] = []
       const R_HUB = 380, R_MEM = 720, ROW = 215, BASE = 3, GAP = 0.05
@@ -209,5 +211,23 @@ export default function FacultyGraph3D() {
     }
   }, [])
 
-  return <div ref={elRef} className="absolute inset-0" />
+  return (
+    <div className="absolute inset-0">
+      <div ref={elRef} className="absolute inset-0" />
+      {/* Legend: research areas with their colour and faculty count — so a viewer can read
+          which cluster is which and how many faculty work in each area. */}
+      {legend.length > 0 && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-6 z-10 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 px-8">
+          {legend.map((a) => (
+            <div key={a.name}
+              className="inline-flex items-center gap-2 rounded-full bg-black/40 px-3 py-1 text-[13px] text-white/85 ring-1 ring-white/10 backdrop-blur-sm">
+              <span className="size-2.5 rounded-full" style={{ background: a.color }} />
+              <span className="font-medium">{a.name}</span>
+              <span className="tabular-nums text-white/45">{a.count}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }

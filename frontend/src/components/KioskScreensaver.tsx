@@ -20,7 +20,7 @@ interface Page { key: string; title: string; subtitle?: string; office: boolean;
 const ACCENT: Record<string, string> = { faculty: "#38bdf8", instructors: "#22d3ee", assistant: "#a78bfa", staff: "#f59e0b" }
 const PAGE_SIZE = 18
 const PAGE_MS = 15000
-const GRAPH_MS = 35000   // the 3D "second brain" finale after Staff
+const GRAPH_MS = 45000   // the 3D "second brain" finale after Staff
 let CACHE: Dir | null = null
 
 function initials(n: string) {
@@ -141,7 +141,7 @@ export default function KioskScreensaver() {
         <FacultyGraph3D />
         {/* Summer sits at the heart of the research network */}
         <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center">
-          <div style={{ transform: "translateY(-5%)" }}><SummerOrb size={210} state="idle" /></div>
+          <div style={{ transform: "translateY(-5%)" }}><SummerOrb size={270} state="idle" /></div>
         </div>
         <div className="pointer-events-none absolute inset-x-0 top-12 z-10 text-center">
           <Eyebrow />

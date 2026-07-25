@@ -147,24 +147,26 @@ export default function KioskPage() {
           </div>
         </div>
       )}
-      {/* Greeting/orb only while idle — once Summer answers, it's hidden so the answer
-          sits at the top and gets the full space. */}
-      {turns.length === 0 && !loading && (
-        <div className="relative z-10 flex flex-col items-center text-center mb-6">
-          <SummerOrb size={380} state="idle" />
-          <h1 className="mt-3 text-4xl font-semibold tracking-tight">Hi, I'm Summer.</h1>
-          <p className="mt-2 text-base text-muted-foreground max-w-xl leading-relaxed">
-            Ask me about this department — classes, rooms, schedules, professors' office hours,
-            advisors, buildings, and services like the stockroom.
-          </p>
-        </div>
-      )}
+      {/* Orb stays at the top in its place; the greeting text shows only while idle. */}
+      <div className="relative z-10 mb-4 flex flex-col items-center text-center">
+        <SummerOrb size={turns.length || loading ? 200 : 380} state={loading ? "thinking" : "idle"} />
+        {turns.length === 0 && !loading && (
+          <>
+            <h1 className="mt-3 text-4xl font-semibold tracking-tight">Hi, I'm Summer.</h1>
+            <p className="mt-2 text-base text-muted-foreground max-w-xl leading-relaxed">
+              Ask me about this department — classes, rooms, schedules, professors' office hours,
+              advisors, buildings, and services like the stockroom.
+            </p>
+          </>
+        )}
+      </div>
 
       <div className="relative z-10 w-full max-w-2xl flex-1 flex flex-col">
-        {/* Conversation */}
-        <div ref={scrollRef} className={`flex-1 overflow-auto space-y-4 mb-4 ${turns.length || loading ? "max-h-[76svh] pt-4" : "max-h-[55svh]"}`}>
-          {turns.length === 0 && (
-            <div className="flex flex-wrap gap-2 justify-center pt-4">
+        {/* Only the current answer is shown, centered. Earlier turns stay in state for
+            follow-up context (sent to the backend) but are not displayed. */}
+        <div className="flex flex-1 flex-col justify-center overflow-auto py-2">
+          {turns.length === 0 && !loading && (
+            <div className="flex flex-wrap justify-center gap-2">
               {EXAMPLES.map((e) => (
                 <Button key={e} variant="secondary" size="sm" onClick={() => ask(e)}>
                   {e}
@@ -173,27 +175,19 @@ export default function KioskPage() {
             </div>
           )}
           {loading && (
-            <div className="rounded-2xl border bg-muted/40 px-5 py-4 text-base text-muted-foreground">
+            <div className="mx-auto rounded-2xl border bg-muted/40 px-5 py-4 text-base text-muted-foreground">
               Summer is looking that up…
             </div>
           )}
-          {/* Newest first: the latest answer sits at the top so it's never buried. */}
-          {turns.slice().reverse().map((t, i) => (
-            <div key={turns.length - 1 - i} className="space-y-2">
-              <div className="text-right">
-                <span className="inline-block rounded-2xl bg-primary/15 px-4 py-2 text-base">
-                  {t.q}
-                </span>
+          {!loading && turns.length > 0 && (
+            turns[turns.length - 1].person ? (
+              <PersonAnswerCard person={turns[turns.length - 1].person!} answer={turns[turns.length - 1].a} />
+            ) : (
+              <div className="whitespace-pre-wrap rounded-2xl border bg-muted/40 px-5 py-4 text-base leading-relaxed">
+                {linkify(turns[turns.length - 1].a)}
               </div>
-              {t.person ? (
-                <PersonAnswerCard person={t.person} answer={t.a} />
-              ) : (
-                <div className="whitespace-pre-wrap rounded-2xl border bg-muted/40 px-5 py-4 text-base leading-relaxed">
-                  {linkify(t.a)}
-                </div>
-              )}
-            </div>
-          ))}
+            )
+          )}
         </div>
 
         {voiceIn && wakeActive && (

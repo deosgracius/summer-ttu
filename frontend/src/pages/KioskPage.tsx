@@ -149,7 +149,7 @@ export default function KioskPage() {
       )}
       {/* Orb stays at the top in its place; the greeting text shows only while idle. */}
       <div className="relative z-10 mb-4 flex flex-col items-center text-center">
-        <SummerOrb size={turns.length || loading ? 200 : 380} state={loading ? "thinking" : "idle"} />
+        <SummerOrb size={380} state={loading ? "thinking" : "idle"} />
         {turns.length === 0 && !loading && (
           <>
             <h1 className="mt-3 text-4xl font-semibold tracking-tight">Hi, I'm Summer.</h1>

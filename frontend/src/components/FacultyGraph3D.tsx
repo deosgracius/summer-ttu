@@ -146,7 +146,7 @@ export default function FacultyGraph3D() {
           }
           const pre = n.photo ? imgCache.get(n.photo) : undefined
           const mat = new THREE.SpriteMaterial({ map: faceTexture(pre || null, n.name, n.color), depthWrite: false, transparent: true })
-          const sprite = new THREE.Sprite(mat); sprite.scale.set(132 * (600 / 740), 132, 1)
+          const sprite = new THREE.Sprite(mat); sprite.scale.set(150 * (600 / 740), 150, 1)
           if (n.photo && !pre) {
             const im = new Image(); im.crossOrigin = "anonymous"
             im.onload = () => { mat.map = faceTexture(im, n.name, n.color); mat.needsUpdate = true }
@@ -171,7 +171,7 @@ export default function FacultyGraph3D() {
         const p = G.camera().position
         let dist = Math.hypot(p.x, p.y, p.z)
         if (!isFinite(dist) || dist < 900) dist = 2600
-        dist *= 1.12
+        dist *= 0.82   // zoom in a bit so faces and names are readable
         const ELEV = 0.6, H = Math.sin(ELEV) * dist, Rr = Math.cos(ELEV) * dist
         let a = Math.PI * 0.1
         const orbit = () => {

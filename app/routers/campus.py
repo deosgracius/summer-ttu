@@ -56,7 +56,9 @@ def faculty_graph(db: Session = Depends(get_db)):
             continue  # Research Network shows active faculty only
         ar = [a for a in campus_service._areas_for(
             f"{getattr(p, 'bio', '') or ''} {getattr(p, 'title', '') or ''}")
-            if a not in ("Staff", "Advising")] or ["ECE Faculty"]
+            if a not in ("Staff", "Advising")]
+        if not ar:
+            continue  # only faculty linked to a real research area appear in the network
         profs.append({
             "id": "p:" + p.name, "name": p.name,
             "photo": getattr(p, "photo_url", "") or "",

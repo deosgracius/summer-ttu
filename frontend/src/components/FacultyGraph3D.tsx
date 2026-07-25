@@ -101,32 +101,31 @@ export default function FacultyGraph3D() {
       if (!cancelled) setLegend(areas.map((a) => ({ name: a, color: areaColor(a), count: byArea.get(a)!.length })))
 
       const nodes: Any[] = [], links: Any[] = []
-      const R_HUB = 380, R_MEM = 720, ROW = 215, BASE = 3, GAP = 0.05
+      // Each research area is a hub sitting evenly on a big ring; its faculty fan OUTWARD from
+      // that hub in short arcs — so areas read as distinct clusters spaced evenly around a circle.
+      const R_RING = 520, R_LOCAL = 210, LOCAL_STEP = 175, PER = 6
       const put = (n: Any, ang: number, r: number, y = 0) => {
         n.x = n.fx = Math.cos(ang) * r; n.y = n.fy = y; n.z = n.fz = Math.sin(ang) * r
       }
-      const sectors = areas.map((a) => ({ a, list: byArea.get(a)! }))
-      const totalW = sectors.reduce((n, s) => n + s.list.length + BASE, 0) || 1
-      const usable = Math.PI * 2 - GAP * sectors.length
-      let cur = 0
-      sectors.forEach((s, si) => {
-        const span = usable * ((s.list.length + BASE) / totalW)
-        const start = cur + GAP / 2, mid = start + span / 2
-        const col = areaColor(s.a)
-        const hub: Any = { id: "a:" + s.a, name: s.a, kind: "hub", color: col }
-        put(hub, mid, R_HUB, si % 2 ? 70 : -70); nodes.push(hub)
-        const perRow = Math.ceil(s.list.length / 2)
-        s.list.forEach((p, i) => {
-          const row = i % 2, colr = Math.floor(i / 2)
-          const frac = perRow <= 1 ? 0.5 : colr / (perRow - 1)
-          const t = start + span * (0.1 + 0.8 * frac)
-          const r = R_MEM + row * ROW
-          const y = (row === 0 ? 55 : -55) + (((i * 29) % 5) - 2) * 22
+      const nA = areas.length || 1
+      areas.forEach((a, si) => {
+        const list = byArea.get(a)!
+        const col = areaColor(a)
+        const ang = (si * 2 * Math.PI) / nA
+        const hub: Any = { id: "a:" + a, name: a, kind: "hub", color: col }
+        put(hub, ang, R_RING, 0); nodes.push(hub)
+        const N = list.length
+        list.forEach((p, i) => {
+          const ring = Math.floor(i / PER), k = i % PER
+          const cnt = Math.min(PER, N - ring * PER)
+          const spread = Math.min(1.7, 0.45 + 0.2 * cnt)   // wider fan for bigger clusters
+          const off = cnt === 1 ? 0 : (k / (cnt - 1) - 0.5) * spread
+          const r = R_RING + R_LOCAL + ring * LOCAL_STEP
+          const y = (k % 2 ? 45 : -45) + (((i * 29) % 5) - 2) * 16
           const node: Any = { ...p, kind: "faculty", color: col }
-          put(node, t, r, y); nodes.push(node)
-          links.push({ source: p.id, target: "a:" + s.a, color: col })
+          put(node, ang + off, r, y); nodes.push(node)
+          links.push({ source: p.id, target: "a:" + a, color: col })
         })
-        cur += GAP + span
       })
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -146,7 +145,7 @@ export default function FacultyGraph3D() {
           }
           const pre = n.photo ? imgCache.get(n.photo) : undefined
           const mat = new THREE.SpriteMaterial({ map: faceTexture(pre || null, n.name, n.color), depthWrite: false, transparent: true })
-          const sprite = new THREE.Sprite(mat); sprite.scale.set(175 * (600 / 740), 175, 1)
+          const sprite = new THREE.Sprite(mat); sprite.scale.set(185 * (600 / 740), 185, 1)
           if (n.photo && !pre) {
             const im = new Image(); im.crossOrigin = "anonymous"
             im.onload = () => { mat.map = faceTexture(im, n.name, n.color); mat.needsUpdate = true }
@@ -154,10 +153,10 @@ export default function FacultyGraph3D() {
           }
           return sprite
         })
-        .linkColor((l: Any) => hexA(l.color || "#5b6b8c", 0.6))
-        .linkWidth(2.5)
+        .linkColor((l: Any) => hexA(l.color || "#5b6b8c", 0.72))
+        .linkWidth(3)
         .linkDirectionalParticles(2)
-        .linkDirectionalParticleWidth(2.4)
+        .linkDirectionalParticleWidth(2.6)
         .linkDirectionalParticleSpeed(0.004)
       gRef.current = G
       try { const ctl = G.controls(); if (ctl) ctl.enabled = false } catch { /* ignore */ }
@@ -167,15 +166,15 @@ export default function FacultyGraph3D() {
 
       window.setTimeout(() => {
         if (cancelled) return
-        // Deterministic framing tuned offline: close enough that faces and names read clearly,
-        // while the orbit brings the disc's edges through view.
-        const dist = (R_MEM + ROW) * 1.6
-        const ELEV = 0.6, H = Math.sin(ELEV) * dist, Rr = Math.cos(ELEV) * dist
+        // Deterministic framing tuned offline: readable faces, whole ring in view. SHIFT lifts
+        // the whole graph up so the dense clusters clear the bottom wake-prompt band.
+        const dist = 2200, SHIFT = -140
+        const ELEV = 0.72, H = Math.sin(ELEV) * dist, Rr = Math.cos(ELEV) * dist
         let a = Math.PI * 0.1
         const orbit = () => {
           if (cancelled) return
           a += 0.0009   // slow, readable orbit
-          G.cameraPosition({ x: Math.sin(a) * Rr, y: H, z: Math.cos(a) * Rr }, { x: 0, y: 0, z: 0 })
+          G.cameraPosition({ x: Math.sin(a) * Rr, y: H + SHIFT, z: Math.cos(a) * Rr }, { x: 0, y: SHIFT, z: 0 })
           rafRef.current = requestAnimationFrame(orbit)
         }
         orbit()

@@ -194,6 +194,11 @@ export function useSpeech() {
   // the recognizer's lagged tail of Summer's OWN voice is dropped, not answered. The
   // clear is unconditional (guarded only by "text unchanged") — it can never stick.
   const ECHO_TAIL_MS = 4000
+  // Hard cooldown right after Summer finishes speaking: her lagged/garbled tail can slip past
+  // isEcho, so for a beat any transcript WITHOUT a wake word is dropped — she can't answer
+  // herself. Only set on a natural end (not when the user barges in), so a real reply still lands.
+  const ECHO_COOLDOWN_MS = 900
+  const spokeEndAt = useRef(0)
   const engaged = useRef(false)
   const convoTimer = useRef<number | undefined>(undefined)
 
@@ -380,6 +385,7 @@ export function useSpeech() {
       if (!cancelled()) {
         speaking.current = false
         voiceEnd()
+        spokeEndAt.current = Date.now() // start the self-echo cooldown on a natural end
         scheduleEchoClear()
         afterSpeak()
       }
@@ -452,7 +458,7 @@ export function useSpeech() {
     const w = txt.toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter((x) => x.length > 2)
     if (!w.length) return false
     const hit = w.filter((x) => cs.includes(x)).length
-    const bar = speaking.current || VOICE.speaking ? 0.45 : 0.55
+    const bar = speaking.current || VOICE.speaking ? 0.4 : 0.5
     return hit / w.length >= bar
   }
   function clearFollow() {
@@ -528,11 +534,13 @@ export function useSpeech() {
       if (recording.current) return // tap-to-talk (Whisper) is capturing — don't double-handle
       if (isEcho(txt)) return // Summer's own voice (during speech or its short tail)
       const hasWake = WAKE.test(txt)
+      // Self-echo cooldown: just after Summer stops, her recognizer tail can slip past isEcho.
+      // Drop anything without a wake word during the cooldown so she never answers herself.
+      if (!hasWake && Date.now() - spokeEndAt.current < ECHO_COOLDOWN_MS) return
       if (speaking.current || VOICE.speaking) {
-        // Barge-in, original style: real speech (already echo-filtered above) with a
-        // wake word — or anything at all mid-conversation — cuts Summer off. Ambient
-        // background chatter while she talks to someone else is ignored.
-        if (!(hasWake || engaged.current)) return
+        // While Summer is speaking, ONLY a wake word ("Summer") barges in — so her own audio
+        // leaking into the mic can't be treated as a command and answered. Say "Summer" to cut in.
+        if (!hasWake) return
         stopSpeaking()
       }
       setHeard(txt)
@@ -686,6 +694,7 @@ export function useSpeech() {
   function handleTranscript(raw: string) {
     if (!raw) return
     if (VOICE.muted) return // briefing is reading — Summer is off, ignore everything
+    if (!WAKE.test(raw) && Date.now() - spokeEndAt.current < ECHO_COOLDOWN_MS) return // self-echo cooldown
     if (PENDING_YESNO) {
       if (YES_RE.test(raw)) { const h = PENDING_YESNO; PENDING_YESNO = null; h.onYes(); return }
       if (NO_RE.test(raw)) { const h = PENDING_YESNO; PENDING_YESNO = null; h.onNo(); return }

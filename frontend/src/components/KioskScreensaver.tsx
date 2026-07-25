@@ -53,6 +53,12 @@ function Card({ m, w, showOffice, doctor, accent }: { m: Member; w: number; show
     return () => window.clearInterval(id)
   }, [m.office_hours])
   const oh = officeHoursStatus(m.office_hours)
+  const OH = oh ? {
+    open:        { dot: "bg-emerald-400 animate-pulse", txt: "font-medium text-emerald-300", label: "In office hours", glow: "0 0 8px 1px rgba(52,211,153,0.85)" },
+    closed:      { dot: "bg-rose-500",                   txt: "text-white/45",                label: "Office hours",     glow: undefined },
+    away:        { dot: "bg-rose-500",                   txt: "text-white/45",                label: "Out of office",    glow: undefined },
+    appointment: { dot: "bg-amber-400",                  txt: "font-medium text-amber-300",   label: "By appointment",   glow: "0 0 8px 1px rgba(251,191,36,0.6)" },
+  }[oh] : null
   return (
     <div style={{ width: w }} className="flex flex-col items-center">
       <div style={{ width: w, height: w }} className="overflow-hidden rounded-2xl bg-[#0f1626] shadow-lg shadow-black/40 ring-1 ring-white/10">
@@ -67,11 +73,11 @@ function Card({ m, w, showOffice, doctor, accent }: { m: Member; w: number; show
           style={{ fontSize: nameFs, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{display}</div>
         {m.role ? <div className="truncate font-medium" style={{ fontSize: subFs, color: accent }} title={m.role}>{m.role}</div> : null}
         {showOffice && m.office ? <div className="truncate text-white/50" style={{ fontSize: subFs }}>{m.office}</div> : null}
-        {oh !== null ? (
+        {OH ? (
           <div className="mt-1 inline-flex items-center gap-1.5" style={{ fontSize: subFs }} title={m.office_hours}>
-            <span className={`inline-block rounded-full ${oh ? "bg-emerald-400 animate-pulse" : "bg-red-500"}`}
-              style={{ width: subFs * 0.62, height: subFs * 0.62, boxShadow: oh ? "0 0 8px 1px rgba(52,211,153,0.85)" : undefined }} />
-            <span className={oh ? "font-medium text-emerald-300" : "text-white/45"}>{oh ? "In office hours" : "Office hours"}</span>
+            <span className={`inline-block rounded-full ${OH.dot}`}
+              style={{ width: subFs * 0.62, height: subFs * 0.62, boxShadow: OH.glow }} />
+            <span className={OH.txt}>{OH.label}</span>
           </div>
         ) : null}
       </div>

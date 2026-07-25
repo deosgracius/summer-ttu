@@ -1,7 +1,9 @@
-// Decide whether "now" falls within a professor's posted office hours.
-//   true  -> open right now (show a live green dot)
-//   false -> has posted hours, but closed right now (red dot)
-//   null  -> no hours posted, or unparseable / "by appointment" (no dot)
+// Decide a professor's office-hours state right now, for the directory dot.
+//   "open"        -> in office hours right now, or an open-door policy (green)
+//   "closed"      -> has posted hours, but closed right now (red)
+//   "away"        -> out of office / on leave (red)
+//   "appointment" -> by appointment only (amber)
+//   null          -> nothing posted or unparseable (no dot)
 // Uses the browser's local time. The kiosk is on-campus (US Central), so local time is the
 // same clock the hours are posted in.
 //
@@ -49,12 +51,17 @@ function toMinutes(h: number, m: number, ap?: string, fallbackAp?: string): numb
   return hh * 60 + m
 }
 
-export function officeHoursStatus(text: string | undefined, now: Date = new Date()): boolean | null {
+export type OfficeHoursStatus = "open" | "closed" | "away" | "appointment" | null
+
+export function officeHoursStatus(text: string | undefined, now: Date = new Date()): OfficeHoursStatus {
   if (!text) return null
   const s = text.toLowerCase().replace(/[–—]/g, "-").replace(/\bto\b/g, "-").replace(/\s+/g, " ").trim()
-  // Open-door / always-available policies read as live all the time.
-  if (/\b(always open|open all day|open door|24 ?\/? ?7|walk-?ins? (welcome|anytime))\b/.test(s)) return true
-  if (!s || !/\d/.test(s)) return null // no times (e.g. "by appointment") — nothing to light up
+  if (!s) return null
+  // Policy phrases map straight to a state.
+  if (/\b(always open|open all day|open door|24 ?\/? ?7|walk-?ins? (welcome|anytime))\b/.test(s)) return "open"
+  if (/\b(out of office|on leave|sabbatical|unavailable|not available|away)\b/.test(s)) return "away"
+  if (/\b(appointment|appt|by arrangement|email (me )?to schedule|schedule online|request)\b/.test(s)) return "appointment"
+  if (!/\d/.test(s)) return null // no times and no known phrase — nothing to show
   const TIME = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*-\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/g
   const nowDay = now.getDay()
   const nowMin = now.getHours() * 60 + now.getMinutes()

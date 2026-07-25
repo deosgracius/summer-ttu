@@ -141,9 +141,12 @@ export default function KioskPage() {
           <KioskScreensaver />
           {/* Wake prompt sits in its own gradient "footer" band, so the directory grid fades
               out above it instead of colliding with the names, offices, and progress dots. */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col items-center gap-1 px-4 pb-8 pt-24 text-center bg-gradient-to-t from-[#060a12] via-[#060a12]/95 to-transparent">
-            <div className="text-2xl font-semibold text-white drop-shadow">Say <span className="text-sky-400">“Hey Summer”</span></div>
-            <div className="text-sm text-white/50">or tap anywhere to begin</div>
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col items-center gap-2.5 px-4 pb-9 pt-28 text-center bg-gradient-to-t from-[#060a12] via-[#060a12]/95 to-transparent">
+            <div className="flex items-center gap-3 text-3xl font-semibold tracking-tight text-white md:text-4xl">
+              <span className="inline-block size-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_2px_rgba(52,211,153,0.7)] animate-pulse" />
+              Say <span className="text-sky-300">“Hey Summer”</span>
+            </div>
+            <div className="text-xs font-medium uppercase tracking-[0.28em] text-white/45">or tap anywhere to begin</div>
           </div>
         </div>
       )}

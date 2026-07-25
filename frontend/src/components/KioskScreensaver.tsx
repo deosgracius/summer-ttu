@@ -42,7 +42,8 @@ function Card({ m, w, showOffice, doctor, accent }: { m: Member; w: number; show
         )}
       </div>
       <div className="mt-2 w-full px-1 text-center leading-tight">
-        <div className="truncate font-semibold text-white" style={{ fontSize: nameFs }} title={display}>{display}</div>
+        <div className="font-semibold text-white break-words" title={display}
+          style={{ fontSize: nameFs, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{display}</div>
         {m.role ? <div className="truncate font-medium" style={{ fontSize: subFs, color: accent }} title={m.role}>{m.role}</div> : null}
         {showOffice && m.office ? <div className="truncate text-white/50" style={{ fontSize: subFs }}>{m.office}</div> : null}
       </div>
@@ -106,7 +107,7 @@ export default function KioskScreensaver() {
       const el = wrapRef.current; if (!el) return
       // Reserve = pt-4 (16) + pb-40 (160): keep the card block clear of the bottom prompt band.
       const W = el.clientWidth - 48, H = el.clientHeight - 176, n = page.members.length
-      const textH = 74, gapX = 16, gapY = 12   // name + role + office beneath each photo
+      const textH = 92, gapX = 16, gapY = 12   // 2-line name + role + office beneath each photo
       let best = 84
       for (let w = 190; w >= 84; w -= 4) {
         const cols = Math.max(1, Math.floor((W + gapX) / (w + gapX)))

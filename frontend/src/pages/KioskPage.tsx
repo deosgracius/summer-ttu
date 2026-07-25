@@ -54,6 +54,7 @@ export default function KioskPage() {
       setTurns([])
       setQuestion("")
       stopSpeaking()
+      setDismissed(false) // conversation went idle → return to the sleep-mode screensaver
     }, IDLE_RESET_MS)
   }
   useEffect(() => {
@@ -83,6 +84,7 @@ export default function KioskPage() {
     if (!awake) {
       setTurns([])
       setQuestion("")
+      setDismissed(false) // voice conversation ended → return to the sleep-mode screensaver
     }
   }, [awake])
   // Re-arm the sleep-mode screensaver once someone engages, so it returns after the next idle.
@@ -137,7 +139,7 @@ export default function KioskPage() {
       {/* Sleep-mode attract loop: an auto-orbiting 3D showcase of the ECE faculty, shown while
           the kiosk is dormant. Say "Hey Summer" (mic keeps listening beneath it) or tap to begin. */}
       {sleeping && (
-        <div className="fixed inset-0 z-40 bg-[#060a12]" onClick={() => { primeAudio(); setDismissed(true) }}>
+        <div className="fixed inset-0 z-40 bg-[#060a12]" onClick={() => { primeAudio(); setDismissed(true); resetIdle() }}>
           <KioskScreensaver />
           {/* Wake prompt sits in its own gradient "footer" band, so the directory grid fades
               out above it instead of colliding with the names, offices, and progress dots. */}

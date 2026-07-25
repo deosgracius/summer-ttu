@@ -656,8 +656,11 @@ _RESEARCH_AREAS = {
 
 
 def _areas_for(text: str):
+    """Research areas whose keywords appear in the text, strongest first (most keyword hits),
+    so callers can treat the first entry as the professor's primary CV research area."""
     t = (text or "").lower()
-    return [a for a, kws in _RESEARCH_AREAS.items() if any(k in t for k in kws)]
+    scored = [(a, sum(1 for k in kws if k in t)) for a, kws in _RESEARCH_AREAS.items()]
+    return [a for a, n in sorted(scored, key=lambda x: -x[1]) if n > 0]
 
 
 def _graph_key(name: str):

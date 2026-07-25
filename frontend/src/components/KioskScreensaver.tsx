@@ -21,7 +21,7 @@ interface Page { key: string; title: string; subtitle?: string; office: boolean;
 const ACCENT: Record<string, string> = { faculty: "#38bdf8", instructors: "#22d3ee", assistant: "#a78bfa", staff: "#f59e0b" }
 const PAGE_SIZE = 18
 const PAGE_MS = 15000
-const GRAPH_MS = 55000   // the 3D "second brain" finale after Staff
+const GRAPH_MS = 72000   // the 3D "second brain" finale after Staff (1.2 min)
 let CACHE: Dir | null = null
 
 function initials(n: string) {

@@ -80,5 +80,5 @@ export function officeHoursStatus(text: string | undefined, now: Date = new Date
     found = true
     if (days.includes(nowDay) && nowMin >= start && nowMin < end) live = true
   }
-  return found ? live : null
+  return found ? (live ? "open" : "closed") : null
 }

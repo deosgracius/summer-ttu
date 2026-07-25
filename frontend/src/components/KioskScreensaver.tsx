@@ -102,7 +102,8 @@ export default function KioskScreensaver() {
     if (!page) return
     const measure = () => {
       const el = wrapRef.current; if (!el) return
-      const W = el.clientWidth - 48, H = el.clientHeight - 128, n = page.members.length
+      // Reserve = pt-4 (16) + pb-40 (160): keep the card block clear of the bottom prompt band.
+      const W = el.clientWidth - 48, H = el.clientHeight - 176, n = page.members.length
       const textH = 56, gapX = 16, gapY = 12
       let best = 84
       for (let w = 190; w >= 84; w -= 4) {
@@ -150,22 +151,22 @@ export default function KioskScreensaver() {
         <div className="mt-1 text-sm text-white/55">{sub}</div>
       </div>
 
-      {/* Grid — up to 18 people */}
-      <div ref={wrapRef} className="relative z-10 flex-1 px-6 pb-28 pt-4">
+      {/* Grid — up to 18 people (pb clears the bottom prompt band) */}
+      <div ref={wrapRef} className="relative z-10 flex-1 px-6 pb-40 pt-4">
         <div key={step} className="flex h-full flex-wrap content-center items-start justify-center gap-x-4 gap-y-3"
           style={{ animation: "ssSpinIn 0.45s ease-out both" }}>
           {page.members.map((m) => <Card key={m.id} m={m} w={cardW} showOffice={page.office} doctor={page.doctor} />)}
         </div>
       </div>
 
-      {/* Page progress — one dot per page, colored by its section */}
-      <div className="absolute bottom-24 left-0 right-0 z-10 flex items-center justify-center gap-2">
+      {/* Page progress — a quiet row of dots tucked just above the wake-prompt band */}
+      <div className="absolute bottom-32 left-0 right-0 z-10 flex items-center justify-center gap-2">
         {pages.map((p, i) => {
           const active = i === step
           return <span key={i} className="h-1.5 rounded-full transition-all duration-500"
-            style={{ width: active ? 22 : 8, background: ACCENT[p.key] || "#38bdf8", opacity: active ? 1 : 0.35 }} />
+            style={{ width: active ? 18 : 6, background: ACCENT[p.key] || "#38bdf8", opacity: active ? 0.9 : 0.28 }} />
         })}
-        <span className="h-1.5 w-2 rounded-full" style={{ background: "#cbd5e1", opacity: 0.3 }} />
+        <span className="h-1.5 w-1.5 rounded-full" style={{ background: "#cbd5e1", opacity: 0.25 }} />
       </div>
     </div>
   )

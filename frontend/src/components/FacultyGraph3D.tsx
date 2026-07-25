@@ -101,9 +101,9 @@ export default function FacultyGraph3D() {
       if (!cancelled) setLegend(areas.map((a) => ({ name: a, color: areaColor(a), count: byArea.get(a)!.length })))
 
       const nodes: Any[] = [], links: Any[] = []
-      // Each research area is a hub sitting evenly on a big ring; its faculty fan OUTWARD from
-      // that hub in short arcs — so areas read as distinct clusters spaced evenly around a circle.
-      const R_RING = 520, R_LOCAL = 210, LOCAL_STEP = 175, PER = 6
+      // Hubs sit evenly on a ring; each hub's faculty are packed onto concentric arcs within
+      // its slice with >=1.2*FACE spacing, so clusters are distinct and nothing overlaps.
+      const R_RING = 720, FACE = 125, HALF = 0.52, SP = 1.2 * FACE
       const put = (n: Any, ang: number, r: number, y = 0) => {
         n.x = n.fx = Math.cos(ang) * r; n.y = n.fy = y; n.z = n.fz = Math.sin(ang) * r
       }
@@ -115,17 +115,23 @@ export default function FacultyGraph3D() {
         const hub: Any = { id: "a:" + a, name: a, kind: "hub", color: col }
         put(hub, ang, R_RING, 0); nodes.push(hub)
         const N = list.length
-        list.forEach((p, i) => {
-          const ring = Math.floor(i / PER), k = i % PER
-          const cnt = Math.min(PER, N - ring * PER)
-          const spread = Math.min(1.7, 0.45 + 0.2 * cnt)   // wider fan for bigger clusters
-          const off = cnt === 1 ? 0 : (k / (cnt - 1) - 0.5) * spread
-          const r = R_RING + R_LOCAL + ring * LOCAL_STEP
-          const y = (k % 2 ? 45 : -45) + (((i * 29) % 5) - 2) * 16
-          const node: Any = { ...p, kind: "faculty", color: col }
-          put(node, ang + off, r, y); nodes.push(node)
-          links.push({ source: p.id, target: "a:" + a, color: col })
-        })
+        let placed = 0, ring = 0
+        const r0 = R_RING + 0.75 * FACE + SP * 0.5
+        while (placed < N) {
+          const r = r0 + ring * SP
+          const dth = SP / r
+          const cap = Math.max(1, Math.floor((2 * HALF) / dth))
+          const cnt = Math.min(cap, N - placed)
+          for (let k = 0; k < cnt; k++) {
+            const th = ang + (k - (cnt - 1) / 2) * dth
+            const y = (placed + k) % 2 ? 22 : -22
+            const p = list[placed + k]
+            const node: Any = { ...p, kind: "faculty", color: col }
+            put(node, th, r, y); nodes.push(node)
+            links.push({ source: p.id, target: "a:" + a, color: col })
+          }
+          placed += cnt; ring += 1
+        }
       })
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -145,7 +151,7 @@ export default function FacultyGraph3D() {
           }
           const pre = n.photo ? imgCache.get(n.photo) : undefined
           const mat = new THREE.SpriteMaterial({ map: faceTexture(pre || null, n.name, n.color), depthWrite: false, transparent: true })
-          const sprite = new THREE.Sprite(mat); sprite.scale.set(185 * (600 / 740), 185, 1)
+          const sprite = new THREE.Sprite(mat); sprite.scale.set(125 * (600 / 740), 125, 1)
           if (n.photo && !pre) {
             const im = new Image(); im.crossOrigin = "anonymous"
             im.onload = () => { mat.map = faceTexture(im, n.name, n.color); mat.needsUpdate = true }
@@ -168,7 +174,7 @@ export default function FacultyGraph3D() {
         if (cancelled) return
         // Deterministic framing tuned offline: readable faces, whole ring in view. SHIFT lifts
         // the whole graph up so the dense clusters clear the bottom wake-prompt band.
-        const dist = 2200, SHIFT = -140
+        const dist = 2700, SHIFT = -120
         const ELEV = 0.72, H = Math.sin(ELEV) * dist, Rr = Math.cos(ELEV) * dist
         let a = Math.PI * 0.1
         const orbit = () => {

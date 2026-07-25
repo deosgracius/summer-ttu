@@ -150,24 +150,24 @@ export default function KioskPage() {
           </div>
         </div>
       )}
-      {/* Orb stays at the top in its place; the greeting text shows only while idle. */}
-      <div className="relative z-10 mb-4 flex flex-col items-center text-center">
-        <SummerOrb size={380} state={loading ? "thinking" : "idle"} />
-        {turns.length === 0 && !loading && (
-          <>
-            <h1 className="mt-3 text-4xl font-semibold tracking-tight">Hi, I'm Summer.</h1>
-            <p className="mt-2 text-base text-muted-foreground max-w-xl leading-relaxed">
-              Ask me about this department — classes, rooms, schedules, professors' office hours,
-              advisors, buildings, and services like the stockroom.
-            </p>
-          </>
-        )}
-      </div>
+      {/* Orb + greeting show only while idle — once Summer answers they're removed so the
+          answer sits higher and is fully visible. */}
+      {turns.length === 0 && !loading && (
+        <div className="relative z-10 mb-4 flex flex-col items-center text-center">
+          <SummerOrb size={380} state="idle" />
+          <h1 className="mt-3 text-4xl font-semibold tracking-tight">Hi, I'm Summer.</h1>
+          <p className="mt-2 text-base text-muted-foreground max-w-xl leading-relaxed">
+            Ask me about this department — classes, rooms, schedules, professors' office hours,
+            advisors, buildings, and services like the stockroom.
+          </p>
+        </div>
+      )}
 
       <div className="relative z-10 w-full max-w-2xl flex-1 flex flex-col">
-        {/* Only the current answer is shown, centered. Earlier turns stay in state for
-            follow-up context (sent to the backend) but are not displayed. */}
-        <div className="flex flex-1 flex-col justify-center overflow-auto py-2">
+        {/* Only the current answer is shown. When answering it sits near the top so it's fully
+            visible; while idle the examples stay centered. Earlier turns are kept in state for
+            follow-up context (sent to the backend) but not displayed. */}
+        <div className={`flex flex-1 flex-col overflow-auto ${turns.length || loading ? "justify-start pt-4" : "justify-center py-2"}`}>
           {turns.length === 0 && !loading && (
             <div className="flex flex-wrap justify-center gap-2">
               {EXAMPLES.map((e) => (

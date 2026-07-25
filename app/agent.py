@@ -487,7 +487,7 @@ async def _run_anthropic(goal, db, user, avail, system, hist, model):
     actions = []
     in_tok = 0; out_tok = 0
     for _ in range(MAX_STEPS):
-        resp = await client.messages.create(model=model, max_tokens=1024, system=system, tools=tools, messages=messages)
+        resp = await client.messages.create(model=model, max_tokens=1024, temperature=0, system=system, tools=tools, messages=messages)
         try:
             in_tok += resp.usage.input_tokens; out_tok += resp.usage.output_tokens
         except Exception:
@@ -518,7 +518,7 @@ async def _run_openai(goal, db, user, avail, system, hist, model):
     actions = []
     in_tok = 0; out_tok = 0
     for _ in range(MAX_STEPS):
-        resp = await client.chat.completions.create(model=model, messages=messages, tools=tools)
+        resp = await client.chat.completions.create(model=model, messages=messages, tools=tools, temperature=0)
         try:
             in_tok += resp.usage.prompt_tokens; out_tok += resp.usage.completion_tokens
         except Exception:
@@ -573,7 +573,7 @@ async def _run_gemini(goal, db, user, avail, system, hist, model):
             d["parameters"] = schema
         decls.append(d)
     tools = [types.Tool(function_declarations=decls)]
-    config = types.GenerateContentConfig(system_instruction=system, tools=tools, max_output_tokens=1024)
+    config = types.GenerateContentConfig(system_instruction=system, tools=tools, max_output_tokens=1024, temperature=0)
 
     contents = []
     for m in hist:

@@ -34,7 +34,7 @@ const EXAMPLES = [
 ]
 
 const IDLE_RESET_MS = 60_000 // clear the screen for the next person after a minute idle
-const ORB = 270 // answering-orb size, matched to the Research Network orb
+const ORB = 330 // answering-orb size (a touch smaller than the 380 idle hero)
 
 export default function KioskPage() {
   const [question, setQuestion] = useState("")

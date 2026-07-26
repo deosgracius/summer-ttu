@@ -134,7 +134,7 @@ export default function KioskPage() {
   return (
     <div className="summer-bg min-h-svh bg-background text-foreground flex flex-col items-center px-4 py-8">
       <SpaceBackground />
-      <SplineRobot ambient anchor="right" />
+      <SplineRobot ambient anchor="left" />
 
       {/* Sleep-mode attract loop: an auto-orbiting 3D showcase of the ECE faculty, shown while
           the kiosk is dormant. Say "Hey Summer" (mic keeps listening beneath it) or tap to begin. */}

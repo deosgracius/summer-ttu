@@ -79,6 +79,19 @@ export default function SplineRobot({ ambient = false, anchor = "center", scrim 
         k.dispatchEvent(new MouseEvent("mousemove", o))
       } catch { /* ignore */ }
     }
+    // Broadcast a position into EVERY robot on the page, not just this one. On the kiosk's
+    // Research Network there are two robots (the hidden main-view robot that owns the digital
+    // mouse, plus the visible backdrop robot), so the single digital mouse can drive them both.
+    const feedAll = (x, y) => {
+      const o = { clientX: x, clientY: y, bubbles: true, cancelable: true, view: window }
+      document.querySelectorAll("spline-viewer").forEach((sv2) => {
+        let k = null
+        try { k = sv2.shadowRoot ? sv2.shadowRoot.querySelector("canvas") : null } catch { k = null }
+        if (!k) return
+        try { k.dispatchEvent(new PointerEvent("pointermove", { pointerType: "mouse", isPrimary: true, ...o })) } catch { /* ignore */ }
+        try { k.dispatchEvent(new MouseEvent("mousemove", o)) } catch { /* ignore */ }
+      })
+    }
 
     let lastReal = -1e9            // far in the past → start in digital mode (kiosk)
     let digital = false
@@ -127,7 +140,7 @@ export default function SplineRobot({ ambient = false, anchor = "center", scrim 
           vy += (ty - vy) * 0.022
           if (Math.hypot(tx - vx, ty - vy) < 26) pickTarget()
           dot.style.transform = `translate(${vx}px, ${vy}px)`
-          feed(vx, vy)
+          feedAll(vx, vy)   // drive every robot on the page, so the backdrop robot follows too
         }
         raf = requestAnimationFrame(tick)
       }
@@ -156,7 +169,7 @@ export default function SplineRobot({ ambient = false, anchor = "center", scrim 
           zIndex: z,
           pointerEvents: "none",
           opacity: dim,
-          transform: anchor === "right" ? "translateX(30vw)" : undefined,
+          transform: anchor === "right" ? "translateX(30vw)" : anchor === "left" ? "translateX(-30vw)" : undefined,
         }}
       />
       {/* readability scrim over the robot */}
@@ -169,7 +182,7 @@ export default function SplineRobot({ ambient = false, anchor = "center", scrim 
             zIndex: z + 1,
             pointerEvents: "none",
             background:
-              "radial-gradient(1100px 760px at 60% 0%, transparent 0%, transparent 38%, rgba(7,15,30,0.55) 72%, rgba(7,15,30,0.82) 100%)",
+              `radial-gradient(1100px 760px at ${anchor === "left" ? "40%" : "60%"} 0%, transparent 0%, transparent 38%, rgba(7,15,30,0.55) 72%, rgba(7,15,30,0.82) 100%)`,
           }}
         />
       )}

@@ -90,15 +90,25 @@ def _seed_campus():
 
 def _seed_central_admin():
     """Ensure one root central_admin exists (the top of the delegation chain).
-    Credentials come from env (CENTRAL_ADMIN_EMAIL / CENTRAL_ADMIN_PASSWORD) with
-    safe dev defaults. If that email already exists, it's promoted instead."""
+    Credentials come from env (CENTRAL_ADMIN_EMAIL / CENTRAL_ADMIN_PASSWORD). In DEV a
+    throwaway default password is used; in PRODUCTION we FAIL CLOSED — never seed a known
+    default. A production deploy must set CENTRAL_ADMIN_PASSWORD to provision the root admin.
+    If the email already exists, it's promoted instead."""
     import os
     from .auth import hash_password
+    # WEB_DIST (baked React build) / RENDER / FLY_APP_NAME are only set on a real deploy.
+    prod = bool(os.getenv("WEB_DIST") or os.getenv("RENDER") or os.getenv("FLY_APP_NAME"))
+    pw = os.getenv("CENTRAL_ADMIN_PASSWORD")
+    if prod and not pw:
+        logging.warning("central_admin NOT seeded: set CENTRAL_ADMIN_PASSWORD in the "
+                        "environment to provision the root admin — refusing to create an "
+                        "account with a known default password in production.")
+        return
+    pw = pw or "changeme123"  # dev-only fallback; never reached in production (guarded above)
     db = SessionLocal()
     try:
         if db.query(models.User).filter_by(role="central_admin").count() == 0:
             email = os.getenv("CENTRAL_ADMIN_EMAIL", "center@ttu.edu")
-            pw = os.getenv("CENTRAL_ADMIN_PASSWORD", "changeme123")
             existing = db.query(models.User).filter_by(email=email).first()
             if existing:
                 existing.role = "central_admin"

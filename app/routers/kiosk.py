@@ -9,12 +9,13 @@ import os
 import time
 from collections import defaultdict
 from fastapi import APIRouter, Depends, HTTPException, Response, Request, UploadFile, File
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import re
 from ..database import get_db
 from ..agent import run_kiosk_agent
-from .. import voice, appsettings, campus_service, models
+from .. import voice, appsettings, campus_service, models, ratelimit
 
 router = APIRouter(prefix="/kiosk", tags=["kiosk"])
 
@@ -28,22 +29,18 @@ TTS_MAX = int(os.getenv("KIOSK_TTS_PER_MIN", "80"))   # one answer = several chu
 
 
 def _client_ip(request: Request) -> str:
-    # Fly-Client-IP is set by Fly's edge and cannot be spoofed by the caller (Fly
-    # overwrites it), so it's the trustworthy key for the per-IP cost guard. A
-    # client-supplied X-Forwarded-For could otherwise be rotated to evade the limit;
-    # fall back to it (then the peer) only for non-Fly/local runs.
-    fly = request.headers.get("fly-client-ip")
-    if fly:
-        return fly.strip()
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    # Delegate to the shared, spoof-resistant resolver (trusts only the proxy-appended
+    # rightmost X-Forwarded-For hop, not the caller-supplied leftmost one).
+    return ratelimit.client_ip(request)
 
 
 def _rate_limit(request: Request, bucket: str, limit: int):
     key = f"{bucket}:{_client_ip(request)}"
     now = time.time()
+    # Evict stale buckets so a burst of distinct source IPs can't grow _HITS without bound.
+    if len(_HITS) > 20000:
+        for k in [k for k, ts in _HITS.items() if not ts or now - ts[-1] >= RATE_WINDOW]:
+            _HITS.pop(k, None)
     hits = [t for t in _HITS[key] if now - t < RATE_WINDOW]
     if len(hits) >= limit:
         raise HTTPException(429, "Too many requests — please wait a moment and try again.")
@@ -52,7 +49,8 @@ def _rate_limit(request: Request, bucket: str, limit: int):
 
 
 class Ask(BaseModel):
-    question: str = ""
+    # Bounded so a multi-megabyte body can't drive the CPU-bound fuzzy person lookup.
+    question: str = Field("", max_length=2000)
     # The current conversation's recent turns ([{q, a}, ...]) so Summer can follow the
     # thread (resolve "his", "that one", build on the last answer). Never stored.
     history: list = []
@@ -70,8 +68,10 @@ async def ask(data: Ask, request: Request, db: Session = Depends(get_db)):
     # Graceful degradation: never 500 at a passer-by. If the agent or a DB read throws (e.g.
     # the database is unreachable), return a friendly message instead of an error page.
     try:
-        result = await run_kiosk_agent(data.question, db, history=data.history)
-        card = _person_card(db, data.question)
+        result = await run_kiosk_agent(data.question, db, history=data.history[:20])
+        # Cap the fuzzy-match input and run it off the event loop so a long question can't
+        # block all concurrent kiosk users on CPU-bound difflib.
+        card = await run_in_threadpool(_person_card, db, data.question[:200])
     except Exception as e:  # noqa
         import logging
         logging.getLogger("summer").warning("kiosk ask failed: %s", e)

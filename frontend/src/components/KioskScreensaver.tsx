@@ -160,10 +160,12 @@ export default function KioskScreensaver() {
   // Finale: the 3D "second brain" graph of all faculty + research areas.
   if (onGraph) {
     return (
-      <div className="absolute inset-0 bg-[#060a12]">
+      <div className="absolute inset-0 isolate bg-[#060a12]">
+        {/* Robot sits deepest: z=-1 puts it behind the (now transparent) graph but above the
+            dark base, so it's a faint left-side backdrop. `isolate` makes this div the stacking
+            context so the base stays behind the robot. It follows the ambient digital mouse. */}
+        <SplineRobot anchor="left" scrim={false} dim={0.55} z={-1} />
         <FacultyGraph3D />
-        {/* Ambient robot on the far left, dimmed, behind the orb/heading; follows the digital mouse */}
-        <SplineRobot anchor="left" scrim={false} dim={0.55} z={3} />
         {/* Vignette: darken the edges for depth */}
         <div className="pointer-events-none absolute inset-0 z-[1]" aria-hidden
           style={{ background: "radial-gradient(125% 95% at 50% 40%, transparent 58%, rgba(0,0,0,0.5) 100%)" }} />

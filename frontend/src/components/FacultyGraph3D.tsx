@@ -175,7 +175,9 @@ export default function FacultyGraph3D() {
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const G = (new ForceGraph3D(elRef.current) as any)
-        .backgroundColor("#060a12")
+        // Transparent canvas so a backdrop (the robot) shows through behind the graph; the
+        // dark base is painted by the finale container's bg-[#060a12].
+        .backgroundColor("rgba(6,10,18,0)")
         .graphData({ nodes, links })
         .cooldownTicks(0)
         .showNavInfo(false)

@@ -24,6 +24,9 @@ const PAGE_SIZE = 18
 const PAGE_MS = 15000
 const GRAPH_MS = 72000   // the 3D "second brain" finale after Staff (1.2 min)
 let CACHE: Dir | null = null
+// Photos that have finished decoding, kept across screensaver mounts so a page's whole grid can be
+// revealed at once (all photos live at the same time) instead of popping in one by one.
+const DECODED = new Set<string>()
 
 function initials(n: string) {
   const p = (n || "").trim().split(/\s+/)
@@ -91,16 +94,29 @@ export default function KioskScreensaver() {
   const [idx, setIdx] = useState(0)
   const wrapRef = useRef<HTMLDivElement>(null)
   const [cardW, setCardW] = useState(160)
+  const [decoded, setDecoded] = useState<Set<string>>(() => new Set(DECODED))
 
   useEffect(() => {
     if (CACHE) return
     api.get<Dir>("/campus/directory").then((d) => { CACHE = d; setData(d) }).catch(() => {})
   }, [])
 
-  // Preload every photo up front so each section's whole grid shows at once (no pop-in).
+  // Preload AND decode every photo up front, tracking which are ready, so a page's whole grid can
+  // be revealed at once (all photos live at the same time) instead of popping in one by one.
   useEffect(() => {
     if (!data?.sections) return
-    for (const s of data.sections) for (const m of s.members) if (m.photo) { const im = new Image(); im.src = m.photo }
+    let alive = true
+    const mark = (u: string) => { DECODED.add(u); if (alive) setDecoded((prev) => (prev.has(u) ? prev : new Set(prev).add(u))) }
+    for (const s of data.sections) for (const m of s.members) if (m.photo) {
+      const u = m.photo
+      if (DECODED.has(u)) continue
+      const im = new Image()
+      im.src = u
+      const settle = () => mark(u) // mark on success OR error, so one bad photo never blocks a page
+      if (im.decode) im.decode().then(settle).catch(settle)
+      else { im.onload = settle; im.onerror = settle }
+    }
+    return () => { alive = false }
   }, [data])
 
   // Flatten the sections into pages of at most PAGE_SIZE members each.
@@ -182,6 +198,8 @@ export default function KioskScreensaver() {
     )
   }
   if (!page) return <div className="absolute inset-0 bg-[#060a12]" />
+  // Reveal the grid only once EVERY photo on this page has decoded, so they all appear together.
+  const pageReady = page.members.every((m) => !m.photo || decoded.has(m.photo))
   const accent = ACCENT[page.key] || "#38bdf8"
   const sub = page.pages > 1
     ? `${page.subtitle ? page.subtitle + " · " : ""}Page ${page.page} of ${page.pages}`
@@ -202,8 +220,8 @@ export default function KioskScreensaver() {
 
       {/* Grid — up to 18 people (pb clears the bottom prompt band) */}
       <div ref={wrapRef} className="relative z-10 flex-1 px-6 pb-40 pt-4">
-        <div key={step} className="flex h-full flex-wrap content-center items-start justify-center gap-x-4 gap-y-3"
-          style={{ animation: "ssSpinIn 0.45s ease-out both" }}>
+        <div key={`${step}:${pageReady}`} className="flex h-full flex-wrap content-center items-start justify-center gap-x-4 gap-y-3"
+          style={pageReady ? { animation: "ssSpinIn 0.45s ease-out both" } : { opacity: 0 }}>
           {page.members.map((m) => <Card key={m.id} m={m} w={cardW} showOffice={page.office} doctor={page.doctor} accent={accent} />)}
         </div>
       </div>

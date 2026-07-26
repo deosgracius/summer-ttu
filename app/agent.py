@@ -247,6 +247,7 @@ async def run_agent(goal, db, user, provider=None, voice=False):
                    "natural and conversational — no markdown, no bullet lists. Answer exactly what was asked.")
     hist = list(_HISTORY[user.id])
     t0 = time.perf_counter()
+    llm_used = False
     try:
         if provider == "anthropic":
             result = await _run_anthropic(goal, db, user, avail, system, hist, model)
@@ -256,6 +257,7 @@ async def run_agent(goal, db, user, provider=None, voice=False):
             result = await _run_gemini(goal, db, user, avail, system, hist, model)
         else:
             result = {"reply": f"Unknown provider '{provider}'. Use 'anthropic', 'openai', or 'gemini'.", "actions": []}
+        llm_used = True
         from . import insights
         insights.log(db, "dashboard", "llm", goal, route="llm", provider=provider)
     except Exception as e:
@@ -265,6 +267,19 @@ async def run_agent(goal, db, user, provider=None, voice=False):
         insights.log(db, "dashboard", "fallback", goal, route="fallback")
         failures.record("llm", f"AI brain unavailable ({provider}) — dashboard used the DB fallback", detail=str(e))
         result = {"reply": _deterministic_fallback(db, goal), "actions": []}
+    # PROVENANCE GATE (campus questions only): a plain campus question that fell through the
+    # deterministic chain to the LLM is held to the same provenance bar as the kiosk. The DB
+    # fallback above is already source-grounded (and carries no `actions`), so only gate the
+    # LLM's own reply; person-actions and non-English turns are left to the model.
+    if llm_used and not _PERSON_ACTION.search(goal or "") and not campus_service.looks_non_english(goal):
+        from . import grounding
+        _pre = result.get("reply", "") or ""
+        result["reply"] = grounding.enforce(_pre, grounding.evidence_from_actions(result.get("actions", [])))
+        if _pre.strip() and result["reply"] != _pre and result["reply"] == grounding.FALLBACK:
+            from . import failures
+            failures.record("hallucination",
+                            "Provenance gate blocked an ungrounded fact (dashboard)",
+                            detail=_pre, severity="warning")
     tracing.record("agent", goal, result, (time.perf_counter() - t0) * 1000)
     _HISTORY[user.id].append({"role": "user", "content": goal})
     _HISTORY[user.id].append({"role": "assistant", "content": result.get("reply", "")})
@@ -419,17 +434,16 @@ async def run_kiosk_traced(goal, db, provider=None, history=None):
         failures.record("llm", f"AI brain unavailable ({provider}) — kiosk used the DB fallback", detail=str(e))
         return {"reply": _deterministic_fallback(db, goal), "actions": [],
                 "latency_ms": (time.perf_counter() - t0) * 1000}
-    # PROVENANCE GATE: an LLM reply may only state facts it RETRIEVED this turn OR that
-    # were already established (and grounded) earlier in this same conversation — so a
-    # follow-up like "his email?" can repeat a fact Summer just gave, while a brand-new
-    # ungrounded name/email/room is still replaced with a safe referral.
+    # PROVENANCE GATE: an LLM reply may only state facts it RETRIEVED via a tool THIS turn.
+    # The client-supplied `history` is deliberately NOT part of the evidence — a crafted
+    # history (the client controls it) could otherwise smuggle a fabricated name/office/email
+    # past the gate. History still gives the model conversational context (via `hist` above);
+    # it just can't vouch for facts. A follow-up that needs an earlier fact re-triggers the
+    # lookup tool, which re-grounds it; anything ungrounded becomes the safe referral.
     from . import grounding
-    hist_text = " ".join(f"{t.get('q', '')} {t.get('a', '')}"
-                         for t in (history or []) if isinstance(t, dict))
     _pre = result.get("reply", "") or ""
     result["reply"] = grounding.enforce(
-        _pre,
-        grounding.evidence_from_actions(result.get("actions", [])) + " " + hist_text)
+        _pre, grounding.evidence_from_actions(result.get("actions", [])))
     # If the gate replaced the reply with the safe referral, the model asserted a fact
     # nobody retrieved — a caught hallucination. Record it so the central admin sees a live
     # hallucination rate under System failures, and tag this turn for the rate math.

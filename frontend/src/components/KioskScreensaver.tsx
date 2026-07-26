@@ -166,7 +166,7 @@ export default function KioskScreensaver() {
           style={{ background: "radial-gradient(125% 95% at 50% 40%, transparent 58%, rgba(0,0,0,0.5) 100%)" }} />
         {/* Summer sits at the heart of the research network */}
         <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center">
-          <div style={{ transform: "translateY(-5%)" }}><SummerOrb size={270} state="idle" /></div>
+          <div style={{ transform: "translateY(-5%)" }}><SummerOrb size={330} state="idle" /></div>
         </div>
         <div className="pointer-events-none absolute inset-x-0 top-12 z-10 text-center">
           <Eyebrow />

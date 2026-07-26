@@ -67,14 +67,27 @@ def _person_card(db, question: str):
 @router.post("/ask")
 async def ask(data: Ask, request: Request, db: Session = Depends(get_db)):
     _rate_limit(request, "ask", ASK_MAX)
-    result = await run_kiosk_agent(data.question, db, history=data.history)
-    card = _person_card(db, data.question)
-    # Don't show a face if the written answer says the person isn't on file — that
-    # contradiction (photo of X while text says "no record") is confusing.
-    reply_low = (result.get("reply") or "").lower()
+    # Graceful degradation: never 500 at a passer-by. If the agent or a DB read throws (e.g.
+    # the database is unreachable), return a friendly message instead of an error page.
+    try:
+        result = await run_kiosk_agent(data.question, db, history=data.history)
+        card = _person_card(db, data.question)
+    except Exception as e:  # noqa
+        import logging
+        logging.getLogger("summer").warning("kiosk ask failed: %s", e)
+        from .. import failures
+        failures.record("kiosk_ask", "Kiosk answer failed (database or agent error)", detail=str(e))
+        return {"reply": ("Summer is having trouble reaching the campus system right now. "
+                          "Please try again in a moment, or contact the TTU ECE front office.")}
+    # Don't show a face if the written answer says the person isn't on file, or if the
+    # provenance gate replaced the reply with its safe referral — a photo beside "I don't have
+    # that confirmed in our directory" is a confusing contradiction.
+    from ..grounding import FALLBACK
+    reply_raw = result.get("reply") or ""
+    reply_low = reply_raw.lower()
     # Only treat the answer as "person not found" on phrases that can't appear in a
     # normal found answer — avoid false positives like "office hours not listed".
-    not_found = any(s in reply_low for s in (
+    not_found = reply_raw == FALLBACK or any(s in reply_low for s in (
         "no record", "any record of", "couldn't find", "could not find",
         "couldn't locate", "could not locate", "no one named", "no one by that",
         "not in our directory", "not in the directory", "isn't in our directory"))

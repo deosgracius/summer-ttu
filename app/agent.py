@@ -482,7 +482,9 @@ def _deterministic_fallback(db, goal):
     answer straight from the campus database so Summer DEGRADES to a useful lookup
     instead of throwing an error at the user."""
     from . import campus_service
-    ans = campus_service.fast_answer(db, goal) or campus_service.best_answer(db, goal)
+    # min_score=2 (matching confident_lookup) so the outage fallback only returns a CONFIDENT
+    # match — a single shared word must not surface an unrelated building/service record.
+    ans = campus_service.fast_answer(db, goal) or campus_service.best_answer(db, goal, min_score=2)
     if ans:
         return ans
     return ("My conversational brain is temporarily unavailable right now. You can still ask about "

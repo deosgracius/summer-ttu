@@ -87,7 +87,8 @@ def directory(db: Session = Depends(get_db)):
         return f"{(getattr(x, 'office_building', '') or '').strip()} {(getattr(x, 'office_number', '') or '').strip()}".strip()
 
     def person(x):
-        return {"id": "p:" + x.name, "name": x.name, "photo": getattr(x, "photo_url", "") or "",
+        nm = (x.name or "").strip()  # tolerate a NULL/blank name row without crashing
+        return {"id": "p:" + nm, "name": nm, "photo": getattr(x, "photo_url", "") or "",
                 "title": getattr(x, "title", "") or "", "office": office_of(x),
                 "office_hours": (getattr(x, "office_hours", "") or "").strip()}
 
@@ -152,7 +153,8 @@ def directory(db: Session = Depends(get_db)):
             instructors.append(person(p))
     staff = [person(s) for s in db.query(models.Staff).all()]
 
-    key = lambda m: m["name"].split()[-1].lower()  # sort each section by last name
+    # sort each section by last name; the [-1:] guard keeps a blank name from raising IndexError.
+    key = lambda m: (m["name"].split()[-1:] or [m["name"]])[0].lower()
     # `doctor` prefixes "Dr." to each name. Assistant Professors: the section title already
     # states the rank, so no per-name "Dr." prefix (keeps Ben Esser without one, per the owner).
     sections = [

@@ -12,6 +12,14 @@ from app.main import app
 from app.research import web_research
 from app.extra_service import music_link
 
+# app.main builds the schema + seeds in a background daemon thread (so a cold cloud DB can
+# never block boot). Wait for it before issuing any request, else the first query can race
+# an unmigrated DB and hit "no such table".
+import threading
+for _t in threading.enumerate():
+    if _t.name == "db-init":
+        _t.join(timeout=30)
+
 client = TestClient(app)
 
 
@@ -32,6 +40,12 @@ def auth_headers(email="a@b.com", role="customer"):
         db.commit()
     db.close()
     r = client.post("/auth/login", data={"username": email, "password": "pw12345"})
+    # Login sets an httpOnly session cookie that the shared TestClient would persist and
+    # resend on every later request; get_current_user prefers the cookie over the Bearer
+    # header, so a subsequent login would silently override an earlier user's identity
+    # (breaking per-user isolation checks). Drop it so identity comes solely from the
+    # Authorization header we return.
+    client.cookies.clear()
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 

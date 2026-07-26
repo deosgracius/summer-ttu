@@ -23,6 +23,12 @@ _PHONE = re.compile(r"\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b")
 _CODE = re.compile(r"\b[A-Z]{2,5}\s?\d{2,4}[A-Z]?\b")
 # Person-name candidate: two or three consecutive Title-case words.
 _NAME = re.compile(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})\b")
+# "Dr. Surname" / "Professor Surname" — the period / lone-surname form the two-word _NAME misses
+# (the department's most common spelling). The captured surname is checked like any other name.
+_TITLE_NAME = re.compile(r"\b(?:Dr|Drs|Prof|Professor|Mr|Mrs|Ms|Dean|Chair)\.?\s+([A-Z][a-z]+)\b")
+# A standalone 3-4 digit integer: a room / office / course number stated on its own (e.g. "Room
+# 314", "office 216"). The lookarounds exclude digits that belong to a phone or a longer number.
+_NUM = re.compile(r"(?<![\d-])(\d{3,4})(?![\d-])")
 
 # Title-case phrases that are NOT people (buildings, departments, roles) so they
 # don't trip the name check when they happen to be absent from the evidence.
@@ -91,6 +97,21 @@ def _candidates(reply: str):
         if toks[-1] in _PLACE_SUFFIX:  # a building/place, not a person — don't gate it
             continue
         claims.add(cand)
+    # "Dr. Surname" — a fabricated professor named only by surname must still be grounded.
+    for m in _TITLE_NAME.finditer(reply or ""):
+        sur = m.group(1)
+        low = sur.lower()
+        if low in _GENERIC or low in _PLACE_SUFFIX or low in _NOT_NAMES:
+            continue
+        claims.add(sur)
+    # Bare room / office / course numbers stated on their own — the biggest fabrication vector
+    # (an invented "Room 314" carried no letters, so the code check never saw it). A 4-digit
+    # number in the calendar-year range is prose ("as of 2026"), not a room/course, so skip it.
+    for m in _NUM.finditer(reply or ""):
+        n = m.group(1)
+        if len(n) == 4 and 1900 <= int(n) <= 2099:
+            continue
+        claims.add(n)
     return claims
 
 
@@ -117,8 +138,20 @@ def enforce(reply: str, evidence: str) -> str:
                     and re.search(r"(?<![\d-])0*" + re.escape(digits) + r"(?![\d-])", ev)):
                 continue
             return FALLBACK
-        # Email / phone / person name: grounded if it appears verbatim (spacing-insensitive).
-        if nc in ev or nc.replace(" ", "") in ev_nospace:
+        # Bare room / office / course number: must appear as a STANDALONE token in evidence
+        # (leading zeros tolerated, so a room stored '00118' grounds a claimed '118').
+        if re.fullmatch(r"\d{3,4}", nc):
+            if re.search(r"(?<![\d-])0*" + nc + r"(?![\d-])", ev):
+                continue
+            return FALLBACK
+        # Email / phone (no internal words): grounded if it appears verbatim (spacing-insensitive).
+        if "@" in nc or re.fullmatch(r"[\d\s.\-()]+", nc):
+            if nc in ev or nc.replace(" ", "") in ev_nospace:
+                continue
+            return FALLBACK
+        # Person name: require a WHOLE-WORD match, so a name isn't falsely grounded as a
+        # substring of a longer concatenated token ('John Smith' inside 'Johnsmithson').
+        if re.search(r"(?<!\w)" + re.escape(nc) + r"(?!\w)", ev):
             continue
         return FALLBACK  # an ungrounded fact slipped in — replace the whole reply
     return reply or ""

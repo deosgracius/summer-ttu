@@ -77,6 +77,51 @@ def test_building_suffix_name_not_gated(monkeypatch):
         == "It meets in Holden Hall."
 
 
+def test_fabricated_room_number_is_replaced(monkeypatch):
+    # A bare invented room/office number (no letters, so the code check never saw it) must be
+    # caught — the biggest fabrication hole the audit found.
+    monkeypatch.setenv("KIOSK_GROUNDING", "1")
+    ev = _ev(STAFF)  # office_number 216
+    out = grounding.enforce("The office is Room 314.", ev)
+    assert out == grounding.FALLBACK
+
+
+def test_grounded_room_number_passes(monkeypatch):
+    monkeypatch.setenv("KIOSK_GROUNDING", "1")
+    ev = _ev(STAFF)  # office_number 216
+    reply = "The office is room 216."
+    assert grounding.enforce(reply, ev) == reply
+
+
+def test_dr_surname_fabricated_is_replaced(monkeypatch):
+    # "Dr. <Surname>" — the period/lone-surname form that previously bypassed the name check.
+    monkeypatch.setenv("KIOSK_GROUNDING", "1")
+    out = grounding.enforce("Please contact Dr. Hendrickson at the office.", _ev(STAFF))
+    assert out == grounding.FALLBACK
+
+
+def test_dr_surname_grounded_passes(monkeypatch):
+    monkeypatch.setenv("KIOSK_GROUNDING", "1")
+    reply = "You can reach Dr. Vanderpool at andrew.vanderpool@ttu.edu."
+    assert grounding.enforce(reply, _ev(STAFF)) == reply
+
+
+def test_name_not_grounded_as_substring_of_concatenated_fields(monkeypatch):
+    # 'John Smith' must NOT be grounded by evidence that only contains 'John' beside 'Smithson'.
+    monkeypatch.setenv("KIOSK_GROUNDING", "1")
+    ev = _ev({"first": "John", "last": "Smithson"})
+    out = grounding.enforce("John Smith is the advisor.", ev)
+    assert out == grounding.FALLBACK
+
+
+def test_year_in_reply_is_not_gated_as_a_room(monkeypatch):
+    # A calendar year is prose, not a room/course number — it must not trigger the referral.
+    monkeypatch.setenv("KIOSK_GROUNDING", "1")
+    ev = _ev(STAFF)
+    reply = "Andrew Vanderpool is the Chief Academic Advisor as of 2026."
+    assert grounding.enforce(reply, ev) == reply
+
+
 def test_disabled_flag_is_passthrough(monkeypatch):
     monkeypatch.setenv("KIOSK_GROUNDING", "0")
     out = grounding.enforce("Hendrick Vanderpool teaches everything.", _ev(STAFF))

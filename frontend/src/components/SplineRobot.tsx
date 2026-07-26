@@ -20,7 +20,9 @@ function ensureViewerLoaded() {
   document.head.appendChild(s)
 }
 
-export default function SplineRobot({ ambient = false }) {
+// anchor="right" slides the whole scene toward the right edge (the robot rides along);
+// scrim toggles the readability vignette; dim sets opacity; z sets the stacking layer.
+export default function SplineRobot({ ambient = false, anchor = "center", scrim = true, dim = 1, z = 1 }) {
   const ref = useRef(null)
 
   useEffect(() => {
@@ -151,22 +153,26 @@ export default function SplineRobot({ ambient = false }) {
           inset: 0,
           width: "100vw",
           height: "100vh",
-          zIndex: 1,
+          zIndex: z,
           pointerEvents: "none",
+          opacity: dim,
+          transform: anchor === "right" ? "translateX(30vw)" : undefined,
         }}
       />
       {/* readability scrim over the robot */}
-      <div
-        aria-hidden
-        style={{
-          position: "fixed",
-          inset: 0,
-          zIndex: 2,
-          pointerEvents: "none",
-          background:
-            "radial-gradient(1100px 760px at 60% 0%, transparent 0%, transparent 38%, rgba(7,15,30,0.55) 72%, rgba(7,15,30,0.82) 100%)",
-        }}
-      />
+      {scrim && (
+        <div
+          aria-hidden
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: z + 1,
+            pointerEvents: "none",
+            background:
+              "radial-gradient(1100px 760px at 60% 0%, transparent 0%, transparent 38%, rgba(7,15,30,0.55) 72%, rgba(7,15,30,0.82) 100%)",
+          }}
+        />
+      )}
     </>
   )
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { api } from "@/lib/api"
 import FacultyGraph3D from "@/components/FacultyGraph3D"
 import SummerOrb from "@/components/SummerOrb"
+import SplineRobot from "@/components/SplineRobot"
 import { officeHoursStatus } from "@/lib/officeHours"
 
 /**
@@ -161,6 +162,8 @@ export default function KioskScreensaver() {
     return (
       <div className="absolute inset-0 bg-[#060a12]">
         <FacultyGraph3D />
+        {/* Ambient robot on the far right, dimmed, behind the orb/heading */}
+        <SplineRobot anchor="right" scrim={false} dim={0.55} z={3} />
         {/* Vignette: darken the edges for depth */}
         <div className="pointer-events-none absolute inset-0 z-[1]" aria-hidden
           style={{ background: "radial-gradient(125% 95% at 50% 40%, transparent 58%, rgba(0,0,0,0.5) 100%)" }} />

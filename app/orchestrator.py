@@ -111,7 +111,18 @@ def synthesize_node(state: dict, generate: Callable) -> dict:
 
 
 def validate_node(state: dict) -> dict:
-    grounded = bool(state.get("answer")) and bool(state.get("contexts"))
+    # "Grounded" must mean the answer's checkable facts actually appear in the retrieved
+    # sources — not merely that some answer and some context exist. Run the answer through the
+    # same provenance gate the kiosk uses (against the contexts as evidence); if a fabricated
+    # name/email/room/number/code slipped in, enforce() rewrites the answer, so it's NOT
+    # grounded and the pipeline retries/broadens instead of stamping grounded=True.
+    answer = state.get("answer") or ""
+    contexts = state.get("contexts") or []
+    grounded = False
+    if answer and contexts:
+        from . import grounding
+        ev = grounding.evidence_from_actions([{"result": c} for c in contexts])
+        grounded = grounding.enforce(answer, ev) == answer
     return {"grounded": grounded, "attempts": state.get("attempts", 0) + 1}
 
 
@@ -147,21 +158,24 @@ def llm_generate(question: str, contexts: list) -> str:
             client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
             r = client.chat.completions.create(
                 model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
-                messages=[{"role": "user", "content": prompt}])
+                messages=[{"role": "user", "content": prompt}], temperature=0)
             return (r.choices[0].message.content or "").strip() or extractive_generate(question, contexts)
         if provider == "gemini" and (os.getenv("GOOGLE_API_KEY") or os.getenv("GOOGLE_GENAI_USE_VERTEXAI")):
             # google-genai SDK: one client for both the Gemini API (GOOGLE_API_KEY) and
             # Vertex AI (GOOGLE_GENAI_USE_VERTEXAI=true + GOOGLE_CLOUD_PROJECT/LOCATION).
             from google import genai
+            from google.genai import types
             client = genai.Client()
             r = client.models.generate_content(
-                model=os.getenv("LLM_MODEL", "gemini-flash-lite-latest"), contents=prompt)
+                model=os.getenv("LLM_MODEL", "gemini-flash-lite-latest"), contents=prompt,
+                config=types.GenerateContentConfig(temperature=0))
             return (getattr(r, "text", "") or "").strip() or extractive_generate(question, contexts)
         if os.getenv("ANTHROPIC_API_KEY"):
             import anthropic
             client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
             r = client.messages.create(model=os.getenv("LLM_MODEL", "claude-haiku-4-5"),
-                                       max_tokens=600, messages=[{"role": "user", "content": prompt}])
+                                       max_tokens=600, temperature=0,
+                                       messages=[{"role": "user", "content": prompt}])
             parts = [b.text for b in r.content if getattr(b, "type", "") == "text"]
             return ("".join(parts)).strip() or extractive_generate(question, contexts)
     except Exception:

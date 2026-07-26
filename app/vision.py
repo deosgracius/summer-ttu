@@ -17,7 +17,7 @@ async def analyze_image(image_b64, media_type, question, provider=None):
             if model not in VISION_OPENAI:
                 model = "gpt-4o-mini"
             client = openai.AsyncOpenAI(api_key=key)
-            resp = await client.chat.completions.create(model=model, max_tokens=700, messages=[{
+            resp = await client.chat.completions.create(model=model, max_tokens=700, temperature=0, messages=[{
                 "role": "user", "content": [
                     {"type": "text", "text": q},
                     {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{image_b64}"}}]}])
@@ -31,7 +31,7 @@ async def analyze_image(image_b64, media_type, question, provider=None):
             if not model.startswith("claude"):
                 model = "claude-haiku-4-5"
             client = anthropic.AsyncAnthropic(api_key=key)
-            resp = await client.messages.create(model=model, max_tokens=700, messages=[{
+            resp = await client.messages.create(model=model, max_tokens=700, temperature=0, messages=[{
                 "role": "user", "content": [
                     {"type": "text", "text": q},
                     {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": image_b64}}]}])

@@ -34,7 +34,6 @@ const EXAMPLES = [
 ]
 
 const IDLE_RESET_MS = 60_000 // clear the screen for the next person after a minute idle
-const ORB = 330 // answering-orb size (a touch smaller than the 380 idle hero)
 
 export default function KioskPage() {
   const [question, setQuestion] = useState("")
@@ -166,7 +165,7 @@ export default function KioskPage() {
         </div>
       )}
 
-      <div className={`relative z-10 w-full flex-1 flex flex-col ${turns.length || loading ? "max-w-5xl" : "max-w-2xl"}`}>
+      <div className={`relative z-10 w-full flex-1 flex flex-col ${turns.length || loading ? "max-w-3xl" : "max-w-2xl"}`}>
         {/* Only the current answer is shown. While answering, Summer's orb sits beside the
             answer (animated as she speaks) with closed captions beneath it; while idle the
             examples stay centered. Earlier turns are kept in state for follow-up context
@@ -182,25 +181,18 @@ export default function KioskPage() {
             </div>
           )}
           {(loading || turns.length > 0) && (
-            <div className="flex w-full flex-col items-center gap-5 md:flex-row md:items-center md:justify-center md:gap-8">
-              {/* Summer's orb, beside the answer: thinking while she looks it up, then a green
-                  speaking animation while she talks, so it's clear when the voice is active. */}
-              <div className="shrink-0">
-                <SummerOrb size={ORB} state={loading ? "thinking" : isSpeaking ? "speaking" : "idle"} />
-              </div>
-              {/* The answer box + closed captions of what Summer says aloud. */}
-              <div className="flex w-full min-w-0 flex-col gap-4 md:max-w-3xl md:flex-1">
-                {loading ? (
-                  <div className="rounded-2xl border bg-muted/40 px-5 py-4 text-base text-muted-foreground">
-                    Summer is looking that up…
-                  </div>
-                ) : (
-                  <>
-                    {turns[turns.length - 1].person && <PersonAnswerCard person={turns[turns.length - 1].person!} />}
-                    <AnswerCaptions text={turns[turns.length - 1].a} speaking={isSpeaking} />
-                  </>
-                )}
-              </div>
+            <div className="mx-auto flex w-full flex-col gap-4">
+              {/* The answer box (centered) + closed captions of what Summer says aloud. */}
+              {loading ? (
+                <div className="mx-auto w-fit rounded-2xl border bg-muted/40 px-5 py-4 text-base text-muted-foreground">
+                  Summer is looking that up…
+                </div>
+              ) : (
+                <>
+                  {turns[turns.length - 1].person && <PersonAnswerCard person={turns[turns.length - 1].person!} />}
+                  <AnswerCaptions text={turns[turns.length - 1].a} speaking={isSpeaking} />
+                </>
+              )}
             </div>
           )}
         </div>

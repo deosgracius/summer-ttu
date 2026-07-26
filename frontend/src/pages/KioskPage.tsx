@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { Mic, Radio, Volume2, VolumeX } from "lucide-react"
 import { api } from "@/lib/api"
-import { linkify } from "@/lib/linkify"
 import { useSpeech } from "@/lib/useSpeech"
 import SummerOrb from "@/components/SummerOrb"
 import SplineRobot from "@/components/SplineRobot"
@@ -11,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import CampusSearch from "@/components/CampusSearch"
 import KioskScreensaver from "@/components/KioskScreensaver"
 import PersonAnswerCard from "@/components/PersonAnswerCard"
+import AnswerCaptions from "@/components/AnswerCaptions"
 
 interface Person {
   name: string
@@ -34,6 +34,7 @@ const EXAMPLES = [
 ]
 
 const IDLE_RESET_MS = 60_000 // clear the screen for the next person after a minute idle
+const ORB = 270 // answering-orb size, matched to the Research Network orb
 
 export default function KioskPage() {
   const [question, setQuestion] = useState("")
@@ -42,7 +43,7 @@ export default function KioskPage() {
   const [muted, setMuted] = useState(false)
   // Sleep-mode screensaver: a tap dismisses it until the next idle cycle.
   const [dismissed, setDismissed] = useState(false)
-  const { supported: voiceIn, canSpeak, listening, wakeActive, awake, wakeBlocked, serverWake, heard, listen, speak, stopSpeaking, startWakeWord, stopWakeWord, startServerWake, stopServerWake, primeAudio } =
+  const { supported: voiceIn, canSpeak, listening, wakeActive, awake, wakeBlocked, serverWake, heard, isSpeaking, listen, speak, stopSpeaking, startWakeWord, stopWakeWord, startServerWake, stopServerWake, primeAudio } =
     useSpeech()
   const idleTimer = useRef<number | undefined>(undefined)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -165,10 +166,11 @@ export default function KioskPage() {
         </div>
       )}
 
-      <div className="relative z-10 w-full max-w-2xl flex-1 flex flex-col">
-        {/* Only the current answer is shown. When answering it sits near the top so it's fully
-            visible; while idle the examples stay centered. Earlier turns are kept in state for
-            follow-up context (sent to the backend) but not displayed. */}
+      <div className={`relative z-10 w-full flex-1 flex flex-col ${turns.length || loading ? "max-w-5xl" : "max-w-2xl"}`}>
+        {/* Only the current answer is shown. While answering, Summer's orb sits beside the
+            answer (animated as she speaks) with closed captions beneath it; while idle the
+            examples stay centered. Earlier turns are kept in state for follow-up context
+            (sent to the backend) but not displayed. */}
         <div className={`flex flex-1 flex-col overflow-auto ${turns.length || loading ? "justify-center pb-24" : "justify-center py-2"}`}>
           {turns.length === 0 && !loading && (
             <div className="flex flex-wrap justify-center gap-2">
@@ -179,19 +181,27 @@ export default function KioskPage() {
               ))}
             </div>
           )}
-          {loading && (
-            <div className="mx-auto rounded-2xl border bg-muted/40 px-5 py-4 text-base text-muted-foreground">
-              Summer is looking that up…
-            </div>
-          )}
-          {!loading && turns.length > 0 && (
-            turns[turns.length - 1].person ? (
-              <PersonAnswerCard person={turns[turns.length - 1].person!} answer={turns[turns.length - 1].a} />
-            ) : (
-              <div className="whitespace-pre-wrap rounded-2xl border bg-muted/40 px-5 py-4 text-base leading-relaxed">
-                {linkify(turns[turns.length - 1].a)}
+          {(loading || turns.length > 0) && (
+            <div className="flex w-full flex-col items-center gap-5 md:flex-row md:items-center md:justify-center md:gap-8">
+              {/* Summer's orb, beside the answer: thinking while she looks it up, then a green
+                  speaking animation while she talks, so it's clear when the voice is active. */}
+              <div className="shrink-0">
+                <SummerOrb size={ORB} state={loading ? "thinking" : isSpeaking ? "speaking" : "idle"} />
               </div>
-            )
+              {/* The answer box + closed captions of what Summer says aloud. */}
+              <div className="flex w-full min-w-0 flex-col gap-4 md:max-w-3xl md:flex-1">
+                {loading ? (
+                  <div className="rounded-2xl border bg-muted/40 px-5 py-4 text-base text-muted-foreground">
+                    Summer is looking that up…
+                  </div>
+                ) : (
+                  <>
+                    {turns[turns.length - 1].person && <PersonAnswerCard person={turns[turns.length - 1].person!} />}
+                    <AnswerCaptions text={turns[turns.length - 1].a} speaking={isSpeaking} />
+                  </>
+                )}
+              </div>
+            </div>
           )}
         </div>
 

@@ -164,6 +164,9 @@ export function useSpeech() {
   const [wakeBlocked, setWakeBlocked] = useState(false)
   const [serverWake, setServerWake] = useState(false)
   const [heard, setHeard] = useState("") // live transcript for on-screen feedback
+  // Reactive mirror of speaking.current, so the UI can animate the orb + captions while
+  // Summer talks (the ref alone doesn't trigger re-renders).
+  const [isSpeaking, setIsSpeaking] = useState(false)
 
   const recRef = useRef<AnyRec | null>(null)
   const micOn = useRef(false)
@@ -347,6 +350,7 @@ export function useSpeech() {
     }
     const myTurn = ++speakSeq.current
     speaking.current = true
+    setIsSpeaking(true)
     clearConvoTimer() // don't let the idle countdown fire while Summer is talking
     currentSpeech.current = clean.toLowerCase()
     voiceStart(clean.toLowerCase())
@@ -384,6 +388,7 @@ export function useSpeech() {
       // dropped everything while she was "talking" forever.
       if (!cancelled()) {
         speaking.current = false
+        setIsSpeaking(false)
         voiceEnd()
         spokeEndAt.current = Date.now() // start the self-echo cooldown on a natural end
         scheduleEchoClear()
@@ -441,6 +446,7 @@ export function useSpeech() {
       }
     }
     speaking.current = false
+    setIsSpeaking(false)
     VOICE.speaking = false
     // Keep the echo text for a short tail so the just-played audio isn't transcribed
     // back into a command, then clear it unconditionally.
@@ -1027,6 +1033,7 @@ export function useSpeech() {
     wakeBlocked,
     serverWake,
     heard,
+    isSpeaking,
     listen,
     stopListening,
     startWakeWord,

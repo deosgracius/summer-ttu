@@ -1,5 +1,4 @@
 import { MapPin, Mail } from "lucide-react"
-import { linkify } from "@/lib/linkify"
 
 export interface AnswerPerson {
   name: string
@@ -11,11 +10,11 @@ export interface AnswerPerson {
 
 /**
  * The professional profile card Summer shows when an answer is about a specific person.
- * A large headshot beside the department wordmark, name, title, office and email, with the
- * answer text below a divider — so a "who is / where is Dr. X" answer reads like a polished
- * directory entry rather than a chat line.
+ * A large headshot beside the department wordmark, name, title, office and email — so a
+ * "who is / where is Dr. X" answer reads like a polished directory entry rather than a chat
+ * line. Summer's spoken answer is shown beneath it in the captions band (AnswerCaptions).
  */
-export default function PersonAnswerCard({ person, answer }: { person: AnswerPerson; answer: string }) {
+export default function PersonAnswerCard({ person }: { person: AnswerPerson }) {
   const hasPhoto = !!person.photo && /^(https?:\/\/|\/)/.test(person.photo)
   const initials = (person.name || "")
     .trim()
@@ -76,10 +75,6 @@ export default function PersonAnswerCard({ person, answer }: { person: AnswerPer
               )}
             </div>
           )}
-
-          <div className="mt-6 whitespace-pre-wrap border-t pt-5 text-base leading-relaxed sm:text-lg">
-            {linkify(answer)}
-          </div>
         </div>
       </div>
     </div>

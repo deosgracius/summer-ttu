@@ -27,6 +27,16 @@ function dayFromWord(w: string): number | null {
 
 function parseDays(txt: string): number[] {
   const out = new Set<number>()
+  // Day RANGE like "Mon-Fri" / "Monday - Friday" / "M-F" (the caller turned " to " into "-"):
+  // add every weekday from the first to the last, inclusive (wrapping through the weekend).
+  const range = txt.match(/([a-z]+)\s*-\s*([a-z]+)/)
+  if (range) {
+    const a = dayFromWord(range[1]); const b = dayFromWord(range[2])
+    if (a != null && b != null) {
+      for (let i = 0; i < 7; i++) { const d = (a + i) % 7; out.add(d); if (d === b) break }
+      return [...out]
+    }
+  }
   const tokens = txt.split(/[^a-z]+/).filter(Boolean)
   let anyWord = false
   for (const t of tokens) {
@@ -55,13 +65,16 @@ export type OfficeHoursStatus = "open" | "closed" | "away" | "appointment" | nul
 
 export function officeHoursStatus(text: string | undefined, now: Date = new Date()): OfficeHoursStatus {
   if (!text) return null
-  const s = text.toLowerCase().replace(/[–—]/g, "-").replace(/\bto\b/g, "-").replace(/\s+/g, " ").trim()
-  if (!s) return null
+  // raw: normalized but WITHOUT the "to"->"-" swap, so policy phrases like "email me to
+  // schedule" survive. s (below): the "to"->"-" form used for time-range parsing ("9 to 10am").
+  const raw = text.toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, " ").trim()
+  if (!raw) return null
   // Policy phrases map straight to a state.
-  if (/\b(always open|open all day|open door|24 ?\/? ?7|walk-?ins? (welcome|anytime))\b/.test(s)) return "open"
-  if (/\b(out of office|on leave|sabbatical|unavailable|not available|away)\b/.test(s)) return "away"
-  if (/\b(appointment|appt|by arrangement|email (me )?to schedule|schedule online|request)\b/.test(s)) return "appointment"
-  if (!/\d/.test(s)) return null // no times and no known phrase — nothing to show
+  if (/\b(always open|open all day|open door|24 ?\/? ?7|walk-?ins? (welcome|anytime))\b/.test(raw)) return "open"
+  if (/\b(out of office|on leave|sabbatical|unavailable|not available|away)\b/.test(raw)) return "away"
+  if (/\b(appointment|appt|by arrangement|email (me )?to schedule|schedule online|request)\b/.test(raw)) return "appointment"
+  if (!/\d/.test(raw)) return null // no times and no known phrase — nothing to show
+  const s = raw.replace(/\bto\b/g, "-")
   const TIME = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*-\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/g
   const nowDay = now.getDay()
   const nowMin = now.getHours() * 60 + now.getMinutes()
@@ -74,9 +87,22 @@ export function officeHoursStatus(text: string | undefined, now: Date = new Date
     if (days.length) prevDays = days
     else days = prevDays // a bare second range inherits the previous range's days
     if (!days.length) continue
-    const start = toMinutes(+m[1], m[2] ? +m[2] : 0, m[3], m[6])
-    const end = toMinutes(+m[4], m[5] ? +m[5] : 0, m[6], m[6])
-    if (start == null || end == null || end <= start) continue
+    let start = toMinutes(+m[1], m[2] ? +m[2] : 0, m[3], m[6])
+    let end = toMinutes(+m[4], m[5] ? +m[5] : 0, m[6], m[6])
+    if (start == null || end == null) continue
+    // "10-2pm": with no explicit start meridiem the start wrongly inherited PM and overshot the
+    // end, so the whole range was dropped. Re-read the start as AM when that yields start < end.
+    if (end <= start && !m[3]) {
+      const am = toMinutes(+m[1], m[2] ? +m[2] : 0, "am", "am")
+      if (am != null && am < end) start = am
+    }
+    // "9-5" (no meridiem at all): an end earlier than the start means a normal daytime range
+    // running backwards, so the end is really PM (9am-5pm) — read it as afternoon.
+    if (end <= start && !m[3] && !m[6]) {
+      const pm = toMinutes(+m[4], m[5] ? +m[5] : 0, "pm", "pm")
+      if (pm != null && pm > start) end = pm
+    }
+    if (end <= start) continue
     found = true
     if (days.includes(nowDay) && nowMin >= start && nowMin < end) live = true
   }

@@ -942,7 +942,7 @@ requestAnimationFrame(draw);
 
 function md(t){ if(!t)return""; let h=t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   h=h.replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/\*([^*]+)\*/g,"<i>$1</i>")
-     .replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g,'<a href="$2" target="_blank">$1</a>');
+     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s"'<>]+)\)/g,'<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
   const L=h.split(/\r?\n/),o=[];let ul=0,ol=0;const cl=()=>{if(ul){o.push("</ul>");ul=0}if(ol){o.push("</ol>");ol=0}};
   for(const ln of L){const x=ln.trim();
     if(/^#{1,6}\s+/.test(x)){cl();o.push("<p><b>"+x.replace(/^#{1,6}\s+/,"")+"</b></p>")}
@@ -1232,7 +1232,7 @@ async function loadUsageSeries(){
 
 async function loadAll(){await loadTasks();await loadEvents();await loadReminders();await loadDrafts();await loadMemories();}
 async function loadTasks(){const l=await(await fetch("/tasks",{headers:headers()})).json();tasks.innerHTML="";
-  for(const t of l){const li=document.createElement("li");li.innerHTML='<input type="checkbox" '+(t.done?"checked":"")+' onchange="toggleTask('+t.id+',this.checked)"/><span class="grow"'+(t.done?' style="text-decoration:line-through;color:#7c8db0"':'')+'>'+t.title+'</span><button class="ghost" onclick="delTask('+t.id+')">×</button>';tasks.appendChild(li);}}
+  for(const t of l){const li=document.createElement("li");li.innerHTML='<input type="checkbox" '+(t.done?"checked":"")+' onchange="toggleTask('+t.id+',this.checked)"/><span class="grow"'+(t.done?' style="text-decoration:line-through;color:#7c8db0"':'')+'>'+esc(t.title)+'</span><button class="ghost" onclick="delTask('+t.id+')">×</button>';tasks.appendChild(li);}}
 async function addTask(){if(!newTask.value.trim())return;await fetch("/tasks",{method:"POST",headers:headers(),body:JSON.stringify({title:newTask.value})});newTask.value="";loadTasks();}
 async function toggleTask(id,d){await fetch("/tasks/"+id,{method:"PATCH",headers:headers(),body:JSON.stringify({done:d})});}
 async function delTask(id){await fetch("/tasks/"+id,{method:"DELETE",headers:headers()});loadTasks();}
@@ -1276,23 +1276,23 @@ async function createEventFull(){
   evTitle.value="";evWhen.value="";evLoc.value="";evSpeaker.value="";evImg.value="";evCats.innerHTML="";addCatRow("VIP");addCatRow("Standard");loadEvents();}
 async function loadPending(){if(!meData||meData.role!=="admin")return;const l=await(await fetch("/events/pending",{headers:headers()})).json();const ul=$("pendingList");ul.innerHTML="";
   if(!l.length){ul.innerHTML='<li class="mut">Nothing pending</li>';return;}
-  for(const e of l){const li=document.createElement("li");li.innerHTML='<span class="grow"><b>'+e.title+'</b> <span class="mut">'+(e.when||"")+' · '+(e.categories||[]).length+' tiers</span></span><button class="ghost" onclick="approveEv('+e.id+')">Approve</button>';ul.appendChild(li);}}
+  for(const e of l){const li=document.createElement("li");li.innerHTML='<span class="grow"><b>'+esc(e.title)+'</b> <span class="mut">'+esc(e.when||"")+' · '+(e.categories||[]).length+' tiers</span></span><button class="ghost" onclick="approveEv('+e.id+')">Approve</button>';ul.appendChild(li);}}
 async function approveEv(id){await fetch("/events/"+id+"/approve",{method:"POST",headers:headers()});loadEvents();loadPending();}
 async function bookCat(catId){const d=await(await fetch("/events/categories/"+catId+"/book",{method:"POST",headers:headers(),body:JSON.stringify({quantity:1})})).json();$("reply").textContent=d.error?d.error:("Booked "+d.category+" · $"+d.amount);loadEvents();}
 async function bookEv(id){const d=await(await fetch("/events/"+id+"/book",{method:"POST",headers:headers()})).json();$("reply").textContent=d.error?d.error:"Booked "+d.title;loadEvents();}
 async function cancelEv(id){await fetch("/events/"+id+"/cancel",{method:"POST",headers:headers()});loadEvents();}
 let shown=new Set();
 async function loadReminders(){const l=await(await fetch("/reminders",{headers:headers()})).json();reminders.innerHTML="";
-  for(const r of l){const li=document.createElement("li");li.innerHTML='<span class="grow">'+r.text+' <span class="mut">'+(r.due?"now":new Date(r.remind_at).toLocaleString())+'</span></span>';reminders.appendChild(li);
+  for(const r of l){const li=document.createElement("li");li.innerHTML='<span class="grow">'+esc(r.text)+' <span class="mut">'+(r.due?"now":new Date(r.remind_at).toLocaleString())+'</span></span>';reminders.appendChild(li);
     if(r.due&&!shown.has(r.id)){shown.add(r.id);if(window.Notification&&Notification.permission==="granted")new Notification("Summer",{body:r.text});$("reply").textContent="⏰ "+r.text;speakReply("Reminder. "+r.text);}}
   if(!l.length)reminders.innerHTML='<li><span class="mut">none yet</span></li>';}
 async function loadDrafts(){const l=await(await fetch("/emails",{headers:headers()})).json();drafts.innerHTML="";
-  for(const d of l){const li=document.createElement("li");li.innerHTML='<span class="grow"><b>'+(d.subject||"(no subject)")+'</b><br><span class="mut">to '+(d.to||"?")+' — '+d.body+'</span></span><button onclick="sendDraft('+d.id+')">Send</button><button class="ghost" onclick="discardDraft('+d.id+')">×</button>';drafts.appendChild(li);}
+  for(const d of l){const li=document.createElement("li");li.innerHTML='<span class="grow"><b>'+esc(d.subject||"(no subject)")+'</b><br><span class="mut">to '+esc(d.to||"?")+' — '+esc(d.body)+'</span></span><button onclick="sendDraft('+d.id+')">Send</button><button class="ghost" onclick="discardDraft('+d.id+')">×</button>';drafts.appendChild(li);}
   if(!l.length)drafts.innerHTML='<li><span class="mut">none</span></li>';}
 async function sendDraft(id){const d=await(await fetch("/emails/"+id+"/send",{method:"POST",headers:headers()})).json();$("reply").textContent=d.sent?("Email "+(d.real?"sent":"sent (simulated)")+" to "+d.to):(d.error||"");loadDrafts();}
 async function discardDraft(id){await fetch("/emails/"+id+"/discard",{method:"POST",headers:headers()});loadDrafts();}
 async function loadMemories(){const l=await(await fetch("/memories",{headers:headers()})).json();mems.innerHTML="";
-  for(const m of l){const li=document.createElement("li");li.innerHTML='<span class="grow">'+m.text+'</span><button class="ghost" onclick="forgetMem('+m.id+')">forget</button>';mems.appendChild(li);}
+  for(const m of l){const li=document.createElement("li");li.innerHTML='<span class="grow">'+esc(m.text)+'</span><button class="ghost" onclick="forgetMem('+m.id+')">forget</button>';mems.appendChild(li);}
   if(!l.length)mems.innerHTML='<li><span class="mut">Tell Summer to “remember” something.</span></li>';}
 async function forgetMem(id){await fetch("/memories/"+id,{method:"DELETE",headers:headers()});loadMemories();}
 async function saveLoc(){const me=await(await fetch("/auth/me",{method:"PATCH",headers:headers(),body:JSON.stringify({location:loc.value})})).json();$("reply").textContent="Saved location: "+(me.location||"none");}

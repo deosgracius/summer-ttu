@@ -206,7 +206,7 @@ export default function FacultyGraph3D() {
         if (cancelled) return
         // Deterministic framing tuned offline: readable faces, whole ring in view. SHIFT lifts
         // the whole graph up so the dense clusters clear the bottom wake-prompt band.
-        const dist = 2200, SHIFT = -110
+        const dist = 2200, SHIFT = -260   // lifts the whole graph up in view (fills the top space)
         const ELEV = 0.72, H = Math.sin(ELEV) * dist, Rr = Math.cos(ELEV) * dist
         let a = Math.PI * 0.1
         const orbit = () => {

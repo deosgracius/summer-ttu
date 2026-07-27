@@ -17,7 +17,7 @@ import { officeHoursStatus } from "@/lib/officeHours"
 interface Member { id: string; name: string; photo?: string; office?: string; role?: string; office_hours?: string }
 interface Section { key: string; title: string; subtitle?: string; office: boolean; doctor?: boolean; members: Member[] }
 interface Dir { sections: Section[] }
-interface Page { key: string; title: string; subtitle?: string; office: boolean; doctor?: boolean; members: Member[]; page: number; pages: number; total: number }
+interface Page { key: string; title: string; subtitle?: string; office: boolean; doctor?: boolean; members: Member[]; page: number; pages: number; total: number; cols: number }
 
 const ACCENT: Record<string, string> = { faculty: "#38bdf8", instructors: "#22d3ee", assistant: "#a78bfa", staff: "#f59e0b" }
 const PAGE_MS = 15000
@@ -27,11 +27,12 @@ let CACHE: Dir | null = null
 // revealed at once (all photos live at the same time) instead of popping in one by one.
 const DECODED = new Set<string>()
 
-// Cards per row for a page, chosen to BALANCE the rows: faculty & staff use two rows, everyone
-// else one. e.g. 15 faculty -> 8 (8+7); 14 -> 7 (7+7); 7 instructors -> 7 (one row); 13 staff -> 7 (7+6).
-function colsOf(key: string, count: number): number {
-  const rows = key === "faculty" || key === "staff" ? 2 : 1
-  return Math.max(1, Math.ceil(count / rows))
+// Cards per row for a section, from its per-page SIZE so every page of a section matches (faculty
+// page 1 and page 2 get the same card size). Assistants sit on ONE row; everyone else on two.
+// e.g. faculty 15/page -> 8 (8+7 / 8+6); instructors 7 -> 4 (4+3); staff 13 -> 7 (7+6); assistants 4 -> 4.
+function colsOf(key: string, size: number): number {
+  const rows = key === "assistant" ? 1 : 2
+  return Math.max(1, Math.ceil(size / rows))
 }
 
 function initials(n: string) {
@@ -134,12 +135,13 @@ export default function KioskScreensaver() {
       const size = s.key === "faculty"
         ? Math.ceil(s.members.length / Math.ceil(s.members.length / 18))
         : s.members.length
+      const cols = colsOf(s.key, size)   // from SIZE so all pages of a section share the card size
       const n = Math.ceil(s.members.length / size)
       for (let c = 0; c < n; c++) {
         out.push({
           key: s.key, title: s.title, subtitle: s.subtitle, office: s.office, doctor: s.doctor,
           members: s.members.slice(c * size, (c + 1) * size),
-          page: c + 1, pages: n, total: s.members.length,
+          page: c + 1, pages: n, total: s.members.length, cols,
         })
       }
     }
@@ -166,14 +168,14 @@ export default function KioskScreensaver() {
     if (!page) return
     const measure = () => {
       const el = wrapRef.current; if (!el) return
-      const COLS = colsOf(page.key, page.members.length)
+      const COLS = page.cols
       // Reserve = pt-4 (16) + pb-48 (192): keep the card block WELL clear of the bottom prompt band.
       const W = el.clientWidth - 48, H = el.clientHeight - 208
       const textH = 150, gapX = 16, gapY = 12   // 2-line name + role + office + office-hours line
       const rows = Math.min(3, Math.ceil(page.members.length / COLS)) || 1
       const byW = Math.floor((W - (COLS - 1) * gapX) / COLS)
       const byH = Math.floor((H - (rows - 1) * gapY) / rows) - textH
-      setCardW(Math.max(84, Math.min(230, byW, byH)))
+      setCardW(Math.max(84, Math.min(280, byW, byH)))
     }
     measure()
     window.addEventListener("resize", measure)
@@ -195,9 +197,9 @@ export default function KioskScreensaver() {
           style={{ background: "radial-gradient(125% 95% at 50% 40%, transparent 58%, rgba(0,0,0,0.5) 100%)" }} />
         {/* Summer sits at the heart of the research network */}
         <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center">
-          <div style={{ transform: "translateY(-5%)" }}><SummerOrb size={330} state="idle" /></div>
+          <div style={{ transform: "translateY(-18%)" }}><SummerOrb size={330} state="idle" /></div>
         </div>
-        <div className="pointer-events-none absolute inset-x-0 top-12 z-10 text-center">
+        <div className="pointer-events-none absolute inset-x-0 top-6 z-10 text-center">
           <Eyebrow />
           <h2 className="mt-2.5 text-4xl font-semibold tracking-tight text-sky-300 md:text-5xl">Research Network</h2>
         </div>
@@ -208,7 +210,7 @@ export default function KioskScreensaver() {
   // Reveal the grid only once EVERY photo on this page has decoded, so they all appear together.
   const pageReady = page.members.every((m) => !m.photo || decoded.has(m.photo))
   const accent = ACCENT[page.key] || "#38bdf8"
-  const cols = colsOf(page.key, page.members.length)
+  const cols = page.cols
 
   return (
     <div className="absolute inset-0 flex flex-col overflow-hidden bg-[#060a12]">

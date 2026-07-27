@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Mic, Radio, Volume2, VolumeX } from "lucide-react"
 import { api } from "@/lib/api"
 import { useSpeech } from "@/lib/useSpeech"
@@ -34,6 +34,7 @@ const EXAMPLES = [
 ]
 
 const IDLE_RESET_MS = 60_000 // clear the screen for the next person after a minute idle
+const GREET_MS = 10_000 // after the Research Network finale, hold the idle greeting page this long
 
 // Use the whole screen (hide the browser address/tab bar). Fullscreen needs a user gesture, so
 // this rides on the first tap/keypress. Best-effort — ignored if the browser blocks it. For a
@@ -67,6 +68,15 @@ export default function KioskPage() {
   useEffect(() => {
     resetIdle()
     return () => window.clearTimeout(idleTimer.current)
+  }, [])
+
+  // After the screensaver's Research Network finale, dismiss the screensaver so the idle
+  // "Hi, I'm Summer" page shows for GREET_MS, then re-arm sleep — which restarts the
+  // screensaver at the Faculty pages. Stable identity so it doesn't reset the screensaver timers.
+  const handleCycleEnd = useCallback(() => {
+    window.clearTimeout(idleTimer.current) // don't let the idle reset cut the greeting short
+    setDismissed(true)
+    window.setTimeout(() => setDismissed(false), GREET_MS)
   }, [])
 
   // Keep the free host awake while a kiosk is on screen. Render's free tier spins down after
@@ -147,7 +157,7 @@ export default function KioskPage() {
           the kiosk is dormant. Say "Hey Summer" (mic keeps listening beneath it) or tap to begin. */}
       {sleeping && (
         <div className="fixed inset-0 z-40 bg-[#060a12]" onClick={() => { primeAudio(); goFullscreen(); setDismissed(true); resetIdle() }}>
-          <KioskScreensaver />
+          <KioskScreensaver onCycleEnd={handleCycleEnd} />
           {/* Wake prompt sits in its own gradient "footer" band, so the directory grid fades
               out above it instead of colliding with the names, offices, and progress dots. */}
           <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col items-center gap-2.5 px-4 pb-9 pt-28 text-center bg-gradient-to-t from-[#060a12] via-[#060a12]/95 to-transparent">

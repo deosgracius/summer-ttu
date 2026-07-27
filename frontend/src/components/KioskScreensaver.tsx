@@ -96,7 +96,7 @@ function Card({ m, w, showOffice, doctor, accent }: { m: Member; w: number; show
   )
 }
 
-export default function KioskScreensaver() {
+export default function KioskScreensaver({ onCycleEnd }: { onCycleEnd?: () => void }) {
   const [data, setData] = useState<Dir | null>(CACHE)
   const [idx, setIdx] = useState(0)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -152,12 +152,17 @@ export default function KioskScreensaver() {
   const step = stepCount ? idx % stepCount : 0
   const onGraph = stepCount > 0 && step === pages.length
 
-  // Advance through the steps; the graph finale holds GRAPH_MS, each page PAGE_MS.
+  // Advance through the steps; the graph finale holds GRAPH_MS, each page PAGE_MS. After the graph,
+  // hand control back to the idle "Hi, I'm Summer" page (via onCycleEnd) instead of looping straight
+  // to Faculty — the page shows it for a beat, then re-arms the screensaver at Faculty.
   useEffect(() => {
     if (stepCount <= 1) return
-    const t = window.setTimeout(() => setIdx((i) => (i + 1) % stepCount), onGraph ? GRAPH_MS : PAGE_MS)
+    const t = window.setTimeout(() => {
+      if (onGraph && onCycleEnd) onCycleEnd()
+      else setIdx((i) => (i + 1) % stepCount)
+    }, onGraph ? GRAPH_MS : PAGE_MS)
     return () => window.clearTimeout(t)
-  }, [idx, stepCount, onGraph])
+  }, [idx, stepCount, onGraph, onCycleEnd])
 
   const page = !onGraph && pages.length ? pages[step] : null
 

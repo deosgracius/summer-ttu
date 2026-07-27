@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef } from "react"
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore — 3d-force-graph ships loose types
 import ForceGraph3D from "3d-force-graph"
@@ -103,17 +103,6 @@ function glowSprite(color: string, size: number) {
   sp.scale.set(size, size, 1); return sp
 }
 
-// One-line description of each research area (what the field covers), shown in the legend.
-const AREA_DESC: Record<string, string> = {
-  "Power & Energy": "Pulsed power, high-voltage & power electronics",
-  "Photonics & Nano": "Lasers, optics, nano-materials & semiconductors",
-  "RF & Microwave": "Antennas, radar & electromagnetics",
-  "Comms & DSP": "Communications, signal & information processing",
-  "Circuits & Micro": "Analog, VLSI & integrated-circuit design",
-  "Computing & Security": "AI/ML, networks, systems & cybersecurity",
-  "Bio & Sensors": "Biomedical devices, imaging & sensing",
-}
-
 let CACHE: Any = null
 
 export default function FacultyGraph3D() {
@@ -121,7 +110,6 @@ export default function FacultyGraph3D() {
   const gRef = useRef<Any>(null)
   const rafRef = useRef<number | undefined>(undefined)
   const fitRef = useRef<() => void>(() => {})
-  const [legend, setLegend] = useState<{ name: string; color: string; count: number; desc: string }[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -136,7 +124,6 @@ export default function FacultyGraph3D() {
       const byArea = new Map<string, Any[]>()
       profs.forEach((p) => { const a = firstArea(p); if (!a) return; if (!byArea.has(a)) byArea.set(a, []); byArea.get(a)!.push(p) })
       const areas = [...byArea.keys()].sort((a, b) => byArea.get(b)!.length - byArea.get(a)!.length)
-      if (!cancelled) setLegend(areas.map((a) => ({ name: a, color: areaColor(a), count: byArea.get(a)!.length, desc: AREA_DESC[a] || "" })))
 
       const nodes: Any[] = [], links: Any[] = []
       // Hubs sit evenly on a ring; each hub's faculty are packed onto concentric arcs within its
@@ -263,25 +250,6 @@ export default function FacultyGraph3D() {
     <div className="absolute inset-0" style={{ animation: "rgIn 1.2s ease-out both" }}>
       <style>{`@keyframes rgIn { from { opacity: 0 } to { opacity: 1 } }`}</style>
       <div ref={elRef} className="absolute inset-0" />
-      {/* Legend: each research area's colour, faculty count, and what the field covers —
-          so a viewer can read which cluster is which and what the department works on. */}
-      {legend.length > 0 && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-5 z-10 flex flex-wrap items-stretch justify-center gap-2 px-8">
-          {legend.map((a) => (
-            <div key={a.name}
-              className="flex max-w-[240px] items-start gap-2.5 rounded-xl bg-black/55 px-3.5 py-2 ring-1 ring-white/10 backdrop-blur-md">
-              <span className="mt-1 size-2.5 shrink-0 rounded-full" style={{ background: a.color, boxShadow: `0 0 8px 1px ${a.color}` }} />
-              <div className="min-w-0 text-left">
-                <div className="flex items-baseline gap-1.5">
-                  <span className="text-[13px] font-semibold text-white/90">{a.name}</span>
-                  <span className="text-[11px] font-medium tabular-nums text-white/45">{a.count}</span>
-                </div>
-                {a.desc ? <div className="text-[11px] leading-snug text-white/55">{a.desc}</div> : null}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   )
 }

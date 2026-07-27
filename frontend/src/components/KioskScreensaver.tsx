@@ -124,19 +124,13 @@ export default function KioskScreensaver() {
     const out: Page[] = []
     for (const s of data?.sections || []) {
       if (!s.members?.length) continue
-      const size = s.key === "faculty" ? 12 : PAGE_SIZE   // Faculty: 12/page; others fit in one
-      // Owner preference: lead the Faculty section with what would be page 2 — move the second
-      // block of `size` to the front so it displays as "Page 1 of N" (old page 1 becomes 2/N).
-      let members = s.members
-      if (s.key === "faculty" && members.length > size) {
-        members = [...members.slice(size, size * 2), ...members.slice(0, size), ...members.slice(size * 2)]
-      }
-      const n = Math.ceil(members.length / size)
+      const size = PAGE_SIZE   // 18 per page — two rows of nine
+      const n = Math.ceil(s.members.length / size)
       for (let c = 0; c < n; c++) {
         out.push({
           key: s.key, title: s.title, subtitle: s.subtitle, office: s.office, doctor: s.doctor,
-          members: members.slice(c * size, (c + 1) * size),
-          page: c + 1, pages: n, total: members.length,
+          members: s.members.slice(c * size, (c + 1) * size),
+          page: c + 1, pages: n, total: s.members.length,
         })
       }
     }
@@ -157,21 +151,20 @@ export default function KioskScreensaver() {
 
   const page = !onGraph && pages.length ? pages[step] : null
 
-  // Fit up to 18 square cards to the content box; cap the size so small photos stay sharp.
+  // Fixed 9-column layout: up to two rows of nine. Size each card to fit 9 across AND the
+  // needed rows within the content box, capped so small photos stay sharp.
+  const COLS = 9
   useEffect(() => {
     if (!page) return
     const measure = () => {
       const el = wrapRef.current; if (!el) return
       // Reserve = pt-4 (16) + pb-40 (160): keep the card block clear of the bottom prompt band.
-      const W = el.clientWidth - 48, H = el.clientHeight - 176, n = page.members.length
+      const W = el.clientWidth - 48, H = el.clientHeight - 176
       const textH = 110, gapX = 16, gapY = 12   // 2-line name + role + office + office-hours line
-      let best = 84
-      for (let w = 190; w >= 84; w -= 4) {
-        const cols = Math.max(1, Math.floor((W + gapX) / (w + gapX)))
-        const rows = Math.max(1, Math.floor((H + gapY) / (w + textH + gapY)))
-        if (cols * rows >= n) { best = w; break }
-      }
-      setCardW(best)
+      const rows = Math.min(2, Math.ceil(page.members.length / COLS)) || 1
+      const byW = Math.floor((W - (COLS - 1) * gapX) / COLS)
+      const byH = Math.floor((H - (rows - 1) * gapY) / rows) - textH
+      setCardW(Math.max(84, Math.min(190, byW, byH)))
     }
     measure()
     window.addEventListener("resize", measure)
@@ -226,8 +219,8 @@ export default function KioskScreensaver() {
 
       {/* Grid — up to 18 people (pb clears the bottom prompt band) */}
       <div ref={wrapRef} className="relative z-10 flex-1 px-6 pb-40 pt-4">
-        <div key={`${step}:${pageReady}`} className="flex h-full flex-wrap content-center items-start justify-center gap-x-4 gap-y-3"
-          style={pageReady ? { animation: "ssSpinIn 0.45s ease-out both" } : { opacity: 0 }}>
+        <div key={`${step}:${pageReady}`} className="mx-auto flex h-full flex-wrap content-center items-start justify-center gap-x-4 gap-y-3"
+          style={{ maxWidth: cardW * COLS + 16 * (COLS - 1), ...(pageReady ? { animation: "ssSpinIn 0.45s ease-out both" } : { opacity: 0 }) }}>
           {page.members.map((m) => <Card key={m.id} m={m} w={cardW} showOffice={page.office} doctor={page.doctor} accent={accent} />)}
         </div>
       </div>

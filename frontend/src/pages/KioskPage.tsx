@@ -35,6 +35,13 @@ const EXAMPLES = [
 
 const IDLE_RESET_MS = 60_000 // clear the screen for the next person after a minute idle
 
+// Use the whole screen (hide the browser address/tab bar). Fullscreen needs a user gesture, so
+// this rides on the first tap/keypress. Best-effort — ignored if the browser blocks it. For a
+// guaranteed kiosk display, launch the browser in kiosk/fullscreen mode (e.g. Chrome --kiosk).
+function goFullscreen() {
+  try { document.documentElement.requestFullscreen?.().catch(() => {}) } catch { /* ignore */ }
+}
+
 export default function KioskPage() {
   const [question, setQuestion] = useState("")
   const [turns, setTurns] = useState<Turn[]>([])
@@ -97,7 +104,7 @@ export default function KioskPage() {
   // the first click/keypress anywhere (browser requirement) — no button needed.
   useEffect(() => {
     if (voiceIn) startWakeWord((cmd) => askRef.current(cmd))
-    const prime = () => primeAudio()
+    const prime = () => { primeAudio(); goFullscreen() }
     window.addEventListener("pointerdown", prime, { once: true })
     window.addEventListener("keydown", prime, { once: true })
     return () => {
@@ -139,7 +146,7 @@ export default function KioskPage() {
       {/* Sleep-mode attract loop: an auto-orbiting 3D showcase of the ECE faculty, shown while
           the kiosk is dormant. Say "Hey Summer" (mic keeps listening beneath it) or tap to begin. */}
       {sleeping && (
-        <div className="fixed inset-0 z-40 bg-[#060a12]" onClick={() => { primeAudio(); setDismissed(true); resetIdle() }}>
+        <div className="fixed inset-0 z-40 bg-[#060a12]" onClick={() => { primeAudio(); goFullscreen(); setDismissed(true); resetIdle() }}>
           <KioskScreensaver />
           {/* Wake prompt sits in its own gradient "footer" band, so the directory grid fades
               out above it instead of colliding with the names, offices, and progress dots. */}

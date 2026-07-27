@@ -27,13 +27,11 @@ let CACHE: Dir | null = null
 // revealed at once (all photos live at the same time) instead of popping in one by one.
 const DECODED = new Set<string>()
 
-// Per-section grid shape (cards per row): faculty at 9 across (18/page → two rows of nine),
-// instructors all on ONE row, assistants on one row, staff 7 across (fits all 13 on one page).
+// Cards per row for a page, chosen to BALANCE the rows: faculty & staff use two rows, everyone
+// else one. e.g. 15 faculty -> 8 (8+7); 14 -> 7 (7+7); 7 instructors -> 7 (one row); 13 staff -> 7 (7+6).
 function colsOf(key: string, count: number): number {
-  if (key === "faculty") return 9
-  if (key === "instructors") return Math.max(1, count)      // all instructors in a single row
-  if (key === "staff") return 7                             // 7 across → 13 staff on one page (7 + 6)
-  return Math.min(Math.max(1, count), 9)                    // assistants (and any other): one row
+  const rows = key === "faculty" || key === "staff" ? 2 : 1
+  return Math.max(1, Math.ceil(count / rows))
 }
 
 function initials(n: string) {
@@ -132,7 +130,10 @@ export default function KioskScreensaver() {
     const out: Page[] = []
     for (const s of data?.sections || []) {
       if (!s.members?.length) continue
-      const size = s.key === "faculty" ? 18 : s.members.length   // faculty: 18/page; others: one page
+      // Faculty: split EVENLY across ceil(n/18) pages (29 -> 15 + 14, not 18 + 11). Others: one page.
+      const size = s.key === "faculty"
+        ? Math.ceil(s.members.length / Math.ceil(s.members.length / 18))
+        : s.members.length
       const n = Math.ceil(s.members.length / size)
       for (let c = 0; c < n; c++) {
         out.push({
@@ -168,7 +169,7 @@ export default function KioskScreensaver() {
       const COLS = colsOf(page.key, page.members.length)
       // Reserve = pt-4 (16) + pb-48 (192): keep the card block WELL clear of the bottom prompt band.
       const W = el.clientWidth - 48, H = el.clientHeight - 208
-      const textH = 134, gapX = 16, gapY = 12   // 2-line name + role + office + office-hours line
+      const textH = 150, gapX = 16, gapY = 12   // 2-line name + role + office + office-hours line
       const rows = Math.min(3, Math.ceil(page.members.length / COLS)) || 1
       const byW = Math.floor((W - (COLS - 1) * gapX) / COLS)
       const byH = Math.floor((H - (rows - 1) * gapY) / rows) - textH
@@ -199,7 +200,6 @@ export default function KioskScreensaver() {
         <div className="pointer-events-none absolute inset-x-0 top-12 z-10 text-center">
           <Eyebrow />
           <h2 className="mt-2.5 text-4xl font-semibold tracking-tight text-sky-300 md:text-5xl">Research Network</h2>
-          <div className="mt-1.5 text-sm text-white/50">Faculty grouped by research area</div>
         </div>
       </div>
     )
@@ -209,9 +209,6 @@ export default function KioskScreensaver() {
   const pageReady = page.members.every((m) => !m.photo || decoded.has(m.photo))
   const accent = ACCENT[page.key] || "#38bdf8"
   const cols = colsOf(page.key, page.members.length)
-  const sub = page.pages > 1
-    ? `${page.subtitle ? page.subtitle + " · " : ""}Page ${page.page} of ${page.pages}`
-    : (page.subtitle ? `${page.subtitle} · ${page.total}` : `${page.total}`)
 
   return (
     <div className="absolute inset-0 flex flex-col overflow-hidden bg-[#060a12]">
@@ -223,13 +220,12 @@ export default function KioskScreensaver() {
       <div className="z-10 pt-8 text-center">
         <Eyebrow />
         <h2 key={page.key} className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl" style={{ color: accent }}>{page.title}</h2>
-        <div className="mt-1 text-sm text-white/50">{sub}</div>
       </div>
 
       {/* Grid — up to 18 people (pb clears the bottom prompt band) */}
       <div ref={wrapRef} className="relative z-10 flex-1 px-6 pb-48 pt-4">
         <div key={`${step}:${pageReady}`} className="mx-auto flex h-full flex-wrap content-center items-start justify-center gap-x-4 gap-y-3"
-          style={{ maxWidth: cardW * cols + 16 * (cols - 1), ...(pageReady ? { animation: "ssSpinIn 0.45s ease-out both" } : { opacity: 0 }) }}>
+          style={{ maxWidth: (cardW + 16) * cols, ...(pageReady ? { animation: "ssSpinIn 0.45s ease-out both" } : { opacity: 0 }) }}>
           {page.members.map((m) => <Card key={m.id} m={m} w={cardW} showOffice={page.office} doctor={page.doctor} accent={accent} />)}
         </div>
       </div>

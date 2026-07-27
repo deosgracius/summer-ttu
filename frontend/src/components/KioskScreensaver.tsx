@@ -131,10 +131,9 @@ export default function KioskScreensaver() {
     const out: Page[] = []
     for (const s of data?.sections || []) {
       if (!s.members?.length) continue
-      // Faculty: split EVENLY across ceil(n/18) pages (29 -> 15 + 14, not 18 + 11). Others: one page.
-      const size = s.key === "faculty"
-        ? Math.ceil(s.members.length / Math.ceil(s.members.length / 18))
-        : s.members.length
+      // Faculty photos should be as big as the Staff directory — that means 7 across (two rows of
+      // ~7), so 29 faculty span 3 pages (13 + 13 + 3). 14/page would leave a 1-person orphan page.
+      const size = s.key === "faculty" ? 13 : s.members.length
       const cols = colsOf(s.key, size)   // from SIZE so all pages of a section share the card size
       const n = Math.ceil(s.members.length / size)
       for (let c = 0; c < n; c++) {

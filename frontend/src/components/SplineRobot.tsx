@@ -47,8 +47,17 @@ export default function SplineRobot({ ambient = false, anchor = "center", scrim 
       try {
         const root = sv.shadowRoot
         if (!root) return false
-        const logo = root.querySelector("#logo") || root.querySelector('a[href*="spline.design"]')
-        if (logo) { logo.style.display = "none"; return true }
+        // Inject a style so the "Built with Spline" badge stays hidden even if the viewer
+        // re-renders it later (a one-shot display:none gets undone on re-render).
+        if (!root.querySelector("style[data-hide-logo]")) {
+          const st = document.createElement("style")
+          st.setAttribute("data-hide-logo", "")
+          st.textContent = '#logo,a[href*="spline.design"],a[href*="spline"]{display:none!important;opacity:0!important;pointer-events:none!important}'
+          root.appendChild(st)
+        }
+        const logo = root.querySelector("#logo") || root.querySelector('a[href*="spline"]')
+        if (logo && logo.style) logo.style.display = "none"
+        return true
       } catch { /* ignore */ }
       return false
     }

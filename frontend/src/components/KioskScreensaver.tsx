@@ -20,7 +20,6 @@ interface Dir { sections: Section[] }
 interface Page { key: string; title: string; subtitle?: string; office: boolean; doctor?: boolean; members: Member[]; page: number; pages: number; total: number }
 
 const ACCENT: Record<string, string> = { faculty: "#38bdf8", instructors: "#22d3ee", assistant: "#a78bfa", staff: "#f59e0b" }
-const PAGE_SIZE = 18
 const PAGE_MS = 15000
 const GRAPH_MS = 72000   // the 3D "second brain" finale after Staff (1.2 min)
 let CACHE: Dir | null = null
@@ -124,7 +123,7 @@ export default function KioskScreensaver() {
     const out: Page[] = []
     for (const s of data?.sections || []) {
       if (!s.members?.length) continue
-      const size = PAGE_SIZE   // 18 per page — two rows of nine
+      const size = 12   // 12 per page — two rows of six, roomy enough to read
       const n = Math.ceil(s.members.length / size)
       for (let c = 0; c < n; c++) {
         out.push({
@@ -151,20 +150,20 @@ export default function KioskScreensaver() {
 
   const page = !onGraph && pages.length ? pages[step] : null
 
-  // Fixed 9-column layout: up to two rows of nine. Size each card to fit 9 across AND the
-  // needed rows within the content box, capped so small photos stay sharp.
-  const COLS = 9
+  // Fixed 6-column layout: up to two rows of six (12 per page). Size each card to fit 6 across
+  // AND the needed rows within the content box, capped so photos stay sharp.
+  const COLS = 6
   useEffect(() => {
     if (!page) return
     const measure = () => {
       const el = wrapRef.current; if (!el) return
-      // Reserve = pt-4 (16) + pb-40 (160): keep the card block clear of the bottom prompt band.
-      const W = el.clientWidth - 48, H = el.clientHeight - 176
-      const textH = 110, gapX = 16, gapY = 12   // 2-line name + role + office + office-hours line
+      // Reserve = pt-4 (16) + pb-48 (192): keep the card block WELL clear of the bottom prompt band.
+      const W = el.clientWidth - 48, H = el.clientHeight - 208
+      const textH = 134, gapX = 16, gapY = 12   // 2-line name + role + office + office-hours line
       const rows = Math.min(2, Math.ceil(page.members.length / COLS)) || 1
       const byW = Math.floor((W - (COLS - 1) * gapX) / COLS)
       const byH = Math.floor((H - (rows - 1) * gapY) / rows) - textH
-      setCardW(Math.max(84, Math.min(190, byW, byH)))
+      setCardW(Math.max(84, Math.min(230, byW, byH)))
     }
     measure()
     window.addEventListener("resize", measure)
@@ -211,14 +210,14 @@ export default function KioskScreensaver() {
         style={{ background: `radial-gradient(55% 45% at 50% 28%, ${accent}22, transparent 70%)` }} />
 
       {/* Section heading (rotates through the pages of each category) */}
-      <div className="z-10 pt-14 text-center">
+      <div className="z-10 pt-8 text-center">
         <Eyebrow />
-        <h2 key={page.key} className="mt-2.5 text-4xl font-semibold tracking-tight md:text-5xl" style={{ color: accent }}>{page.title}</h2>
-        <div className="mt-1.5 text-sm text-white/50">{sub}</div>
+        <h2 key={page.key} className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl" style={{ color: accent }}>{page.title}</h2>
+        <div className="mt-1 text-sm text-white/50">{sub}</div>
       </div>
 
       {/* Grid — up to 18 people (pb clears the bottom prompt band) */}
-      <div ref={wrapRef} className="relative z-10 flex-1 px-6 pb-40 pt-4">
+      <div ref={wrapRef} className="relative z-10 flex-1 px-6 pb-48 pt-4">
         <div key={`${step}:${pageReady}`} className="mx-auto flex h-full flex-wrap content-center items-start justify-center gap-x-4 gap-y-3"
           style={{ maxWidth: cardW * COLS + 16 * (COLS - 1), ...(pageReady ? { animation: "ssSpinIn 0.45s ease-out both" } : { opacity: 0 }) }}>
           {page.members.map((m) => <Card key={m.id} m={m} w={cardW} showOffice={page.office} doctor={page.doctor} accent={accent} />)}

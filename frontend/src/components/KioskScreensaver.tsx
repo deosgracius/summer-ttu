@@ -131,9 +131,10 @@ export default function KioskScreensaver({ onCycleEnd }: { onCycleEnd?: () => vo
     const out: Page[] = []
     for (const s of data?.sections || []) {
       if (!s.members?.length) continue
-      // Faculty photos should be as big as the Staff directory — that means 7 across (two rows of
-      // ~7), so 29 faculty span 3 pages (13 + 13 + 3). 14/page would leave a 1-person orphan page.
-      const size = s.key === "faculty" ? 13 : s.members.length
+      // Faculty stays TWO pages: split evenly (29 -> 15 + 14) so both pages are balanced 2 rows.
+      const size = s.key === "faculty"
+        ? Math.ceil(s.members.length / Math.ceil(s.members.length / 18))
+        : s.members.length
       const cols = colsOf(s.key, size)   // from SIZE so all pages of a section share the card size
       const n = Math.ceil(s.members.length / size)
       for (let c = 0; c < n; c++) {
@@ -173,8 +174,9 @@ export default function KioskScreensaver({ onCycleEnd }: { onCycleEnd?: () => vo
     const measure = () => {
       const el = wrapRef.current; if (!el) return
       const COLS = page.cols
-      // Reserve = pt-4 (16) + pb-48 (192): keep the card block WELL clear of the bottom prompt band.
-      const W = el.clientWidth - 48, H = el.clientHeight - 208
+      // Reserve = pt-4 (16) + pb-40 (160): trimmed so the cards grow to fill the height (less
+      // trapped whitespace) while still clearing the bottom prompt band.
+      const W = el.clientWidth - 48, H = el.clientHeight - 176
       const textH = 150, gapX = 16, gapY = 12   // 2-line name + role + office + office-hours line
       const rows = Math.min(3, Math.ceil(page.members.length / COLS)) || 1
       const byW = Math.floor((W - (COLS - 1) * gapX) / COLS)
@@ -229,7 +231,7 @@ export default function KioskScreensaver({ onCycleEnd }: { onCycleEnd?: () => vo
       </div>
 
       {/* Grid — up to 18 people (pb clears the bottom prompt band) */}
-      <div ref={wrapRef} className="relative z-10 flex-1 px-6 pb-48 pt-4">
+      <div ref={wrapRef} className="relative z-10 flex-1 px-6 pb-40 pt-4">
         <div key={`${step}:${pageReady}`} className="mx-auto flex h-full flex-wrap content-center items-start justify-center gap-x-4 gap-y-3"
           style={{ maxWidth: (cardW + 16) * cols, ...(pageReady ? { animation: "ssSpinIn 0.45s ease-out both" } : { opacity: 0 }) }}>
           {page.members.map((m) => <Card key={m.id} m={m} w={cardW} showOffice={page.office} doctor={page.doctor} accent={accent} />)}

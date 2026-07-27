@@ -125,12 +125,18 @@ export default function KioskScreensaver() {
     for (const s of data?.sections || []) {
       if (!s.members?.length) continue
       const size = s.key === "faculty" ? 12 : PAGE_SIZE   // Faculty: 12/page; others fit in one
-      const n = Math.ceil(s.members.length / size)
+      // Owner preference: lead the Faculty section with what would be page 2 — move the second
+      // block of `size` to the front so it displays as "Page 1 of N" (old page 1 becomes 2/N).
+      let members = s.members
+      if (s.key === "faculty" && members.length > size) {
+        members = [...members.slice(size, size * 2), ...members.slice(0, size), ...members.slice(size * 2)]
+      }
+      const n = Math.ceil(members.length / size)
       for (let c = 0; c < n; c++) {
         out.push({
           key: s.key, title: s.title, subtitle: s.subtitle, office: s.office, doctor: s.doctor,
-          members: s.members.slice(c * size, (c + 1) * size),
-          page: c + 1, pages: n, total: s.members.length,
+          members: members.slice(c * size, (c + 1) * size),
+          page: c + 1, pages: n, total: members.length,
         })
       }
     }

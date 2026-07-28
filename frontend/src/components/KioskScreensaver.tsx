@@ -27,13 +27,13 @@ let CACHE: Dir | null = null
 // revealed at once (all photos live at the same time) instead of popping in one by one.
 const DECODED = new Set<string>()
 
-// Cards per row for a PAGE, balancing its rows. Assistants and instructors sit on ONE full row
-// (like the roomy Assistant page); faculty and staff use two. Computed per-page, so faculty page 2
-// (14) balances to 7 + 7 while page 1 (15) is 8 + 7 — and the height-limited fit keeps both the
-// same card size. e.g. instructors 7 -> 7 (one row); staff 13 -> 7 (7 + 6); assistants 4 -> 4.
-function colsOf(key: string, count: number): number {
+// Cards per row for a section, from its per-page SIZE so EVERY page of a section shares the exact
+// card size (faculty page 1 and page 2 are identical — both 8 across). Assistants and instructors
+// sit on ONE full row (like the roomy Assistant page); faculty and staff use two.
+// e.g. faculty 15/page -> 8 (page 1 = 8+7, page 2 = 8+6); instructors 7 -> 7 (one row); staff 13 -> 7.
+function colsOf(key: string, size: number): number {
   const oneRow = key === "assistant" || key === "instructors"
-  return Math.max(1, Math.ceil(count / (oneRow ? 1 : 2)))
+  return Math.max(1, Math.ceil(size / (oneRow ? 1 : 2)))
 }
 
 function initials(n: string) {
@@ -136,13 +136,13 @@ export default function KioskScreensaver({ onCycleEnd }: { onCycleEnd?: () => vo
       const size = s.key === "faculty"
         ? Math.ceil(s.members.length / Math.ceil(s.members.length / 18))
         : s.members.length
+      const cols = colsOf(s.key, size)   // from SIZE → every page of the section is the same size
       const n = Math.ceil(s.members.length / size)
       for (let c = 0; c < n; c++) {
-        const members = s.members.slice(c * size, (c + 1) * size)
         out.push({
           key: s.key, title: s.title, subtitle: s.subtitle, office: s.office, doctor: s.doctor,
-          members, page: c + 1, pages: n, total: s.members.length,
-          cols: colsOf(s.key, members.length),   // per-page → faculty p2 (14) balances to 7 + 7
+          members: s.members.slice(c * size, (c + 1) * size),
+          page: c + 1, pages: n, total: s.members.length, cols,
         })
       }
     }

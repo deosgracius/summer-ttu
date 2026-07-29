@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, type ReactNode } from "react"
-import { MessageSquare, GraduationCap, ListChecks, ShieldCheck, Settings as SettingsIcon, Cpu } from "lucide-react"
+import { MessageSquare, ListChecks, ShieldCheck, Settings as SettingsIcon, Cpu } from "lucide-react"
 import { useAuth } from "@/lib/auth"
 import { Button } from "@/components/ui/button"
 import AgentChat from "@/components/AgentChat"
@@ -30,7 +30,7 @@ const EngineeringBrain = lazy(() => import("@/components/EngineeringBrain"))
 import SplineRobot from "@/components/SplineRobot"
 import SpaceBackground from "@/components/SpaceBackground"
 
-type TabId = "assistant" | "campus" | "brain" | "items" | "admin" | "settings"
+type TabId = "assistant" | "brain" | "items" | "admin" | "settings"
 
 // A labeled group of admin panels — a heading + one-line description over its cards, so the
 // Admin tab reads as clear sections instead of one long undifferentiated stack.
@@ -66,7 +66,6 @@ export default function DashboardPage() {
   // panels render — so the most important things are reachable without scrolling.
   const tabs: { id: TabId; label: string; icon: typeof MessageSquare; show: boolean }[] = [
     { id: "assistant", label: "Assistant", icon: MessageSquare, show: true },
-    { id: "campus", label: "Campus", icon: GraduationCap, show: true },
     { id: "items", label: "My Items", icon: ListChecks, show: true },
     { id: "admin", label: "Admin", icon: ShieldCheck, show: isAdmin },
     { id: "brain", label: "Engineering Brain", icon: Cpu, show: isAdmin },
@@ -141,14 +140,6 @@ export default function DashboardPage() {
             </>
           )}
 
-          {tab === "campus" && (
-            <>
-              <CampusPanel reloadKey={reloadKey} />
-              <PeoplePanel reloadKey={reloadKey} />
-              <QuickLinksPanel />
-            </>
-          )}
-
           {tab === "items" && (
             <>
               <MyAvailabilityPanel reloadKey={reloadKey} />
@@ -168,9 +159,12 @@ export default function DashboardPage() {
                 <UserAccessPanel reloadKey={reloadKey} />
                 <DelegationPanel />
               </AdminSection>
-              <AdminSection title="Campus data" desc="Import and refresh the people, courses, and documents Summer answers from.">
+              <AdminSection title="Campus data" desc="Import, browse and edit the people, courses, offices and documents Summer answers from.">
                 <FileImportPanel />
+                <CampusPanel reloadKey={reloadKey} />
                 <DirectoryPhotosPanel />
+                <PeoplePanel reloadKey={reloadKey} />
+                <QuickLinksPanel />
               </AdminSection>
               <AdminSection title="Insights" desc="See what Summer answers instantly from the database vs. with the LLM.">
                 <QueryInsightsPanel />

@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input"
 import { PanelCard } from "@/components/panels/PanelCard"
 import { toast } from "sonner"
 
-/** Field definitions per campus resource — drives form, table, and search. */
-type Field = { key: string; label: string }
+/** Field definitions per campus resource — drives form, table, and search.
+ *  `hint` overrides the input placeholder; `options` renders a dropdown instead of a text box. */
+type Field = { key: string; label: string; hint?: string; options?: { value: string; label: string }[] }
 type Resource = {
   path: string
   label: string
@@ -47,8 +48,18 @@ const RESOURCES: Resource[] = [
       { key: "email", label: "Email" },
       { key: "office_building", label: "Office building" },
       { key: "office_number", label: "Office #" },
-      { key: "office_hours", label: "Office hours" },
-      { key: "office_hours_policy", label: "Policy" },
+      { key: "office_hours", label: "Office hours", hint: "Office hours slot — e.g. Mon/Wed 1-3pm" },
+      {
+        key: "office_hours_policy",
+        label: "When not in office hours",
+        options: [
+          { value: "", label: "— Infer from the hours text —" },
+          { value: "walk-in", label: "Walk-in / open door" },
+          { value: "by appointment", label: "By appointment" },
+          { value: "closed", label: "Closed outside hours" },
+          { value: "away", label: "Out of office / on leave" },
+        ],
+      },
       { key: "semester", label: "Semester" },
     ],
   },
@@ -371,14 +382,29 @@ export default function CampusPanel({ reloadKey }: { reloadKey?: number }) {
               {editingId != null ? "Edit entry" : "Add new entry"}
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
-              {active.fields.map((f) => (
-                <Input
-                  key={f.key}
-                  value={draft[f.key] ?? ""}
-                  onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
-                  placeholder={f.label}
-                />
-              ))}
+              {active.fields.map((f) =>
+                f.options ? (
+                  <select
+                    key={f.key}
+                    value={draft[f.key] ?? ""}
+                    onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
+                    aria-label={f.label}
+                    title={f.label}
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    {f.options.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <Input
+                    key={f.key}
+                    value={draft[f.key] ?? ""}
+                    onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
+                    placeholder={f.hint || f.label}
+                  />
+                ),
+              )}
             </div>
             <div className="mt-2 flex gap-2">
               <Button size="sm" onClick={save}>

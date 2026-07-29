@@ -34,7 +34,10 @@ const EXAMPLES = [
 ]
 
 const IDLE_RESET_MS = 60_000 // clear the screen for the next person after a minute idle
-const GREET_MS = 10_000 // after the Research Network finale, hold the idle greeting page this long
+// The attract loop OPENS on the idle "Hi, I'm Summer" greeting and holds it this long before
+// dropping into the directory screensaver — and returns to it after the Research Network finale.
+// So each cycle reads: greeting (25s) → directory pages → Research Network → back to the greeting.
+const GREET_MS = 25_000
 
 // Use the whole screen (hide the browser address/tab bar). Fullscreen needs a user gesture, so
 // this rides on the first tap/keypress. Best-effort — ignored if the browser blocks it. For a
@@ -48,13 +51,27 @@ export default function KioskPage() {
   const [turns, setTurns] = useState<Turn[]>([])
   const [loading, setLoading] = useState(false)
   const [muted, setMuted] = useState(false)
-  // Sleep-mode screensaver: a tap dismisses it until the next idle cycle.
-  const [dismissed, setDismissed] = useState(false)
+  // Sleep-mode screensaver: dismissed=true shows the idle greeting page, dismissed=false shows
+  // the directory screensaver. Starts true so the attract loop OPENS on the greeting.
+  const [dismissed, setDismissed] = useState(true)
   const { supported: voiceIn, canSpeak, listening, wakeActive, awake, wakeBlocked, serverWake, heard, isSpeaking, listen, speak, stopSpeaking, startWakeWord, stopWakeWord, startServerWake, stopServerWake, primeAudio } =
     useSpeech()
   const idleTimer = useRef<number | undefined>(undefined)
+  const greetTimer = useRef<number | undefined>(undefined)
   const scrollRef = useRef<HTMLDivElement>(null)
   const askRef = useRef<(q?: string) => void>(() => {})
+
+  // Open the attract loop on the idle "Hi, I'm Summer" greeting: show it for GREET_MS, then
+  // drop into the directory screensaver (Faculty → … → Research Network). The screensaver's
+  // Research Network finale calls this again (onCycleEnd), so the greeting bookends every
+  // cycle: greeting → directory pages → Research Network → greeting. Stable identity so it
+  // doesn't reset the screensaver's own timers.
+  const enterAttract = useCallback(() => {
+    window.clearTimeout(idleTimer.current) // don't let the idle reset cut the greeting short
+    window.clearTimeout(greetTimer.current)
+    setDismissed(true) // greeting page first
+    greetTimer.current = window.setTimeout(() => setDismissed(false), GREET_MS) // then the screensaver
+  }, [])
 
   function resetIdle() {
     window.clearTimeout(idleTimer.current)
@@ -62,22 +79,16 @@ export default function KioskPage() {
       setTurns([])
       setQuestion("")
       stopSpeaking()
-      setDismissed(false) // conversation went idle → return to the sleep-mode screensaver
+      enterAttract() // conversation went idle → reopen the attract loop on the greeting page
     }, IDLE_RESET_MS)
   }
   useEffect(() => {
-    resetIdle()
-    return () => window.clearTimeout(idleTimer.current)
-  }, [])
-
-  // After the screensaver's Research Network finale, dismiss the screensaver so the idle
-  // "Hi, I'm Summer" page shows for GREET_MS, then re-arm sleep — which restarts the
-  // screensaver at the Faculty pages. Stable identity so it doesn't reset the screensaver timers.
-  const handleCycleEnd = useCallback(() => {
-    window.clearTimeout(idleTimer.current) // don't let the idle reset cut the greeting short
-    setDismissed(true)
-    window.setTimeout(() => setDismissed(false), GREET_MS)
-  }, [])
+    enterAttract() // start on the greeting, then roll into the screensaver
+    return () => {
+      window.clearTimeout(idleTimer.current)
+      window.clearTimeout(greetTimer.current)
+    }
+  }, [enterAttract])
 
   // Keep the free host awake while a kiosk is on screen. Render's free tier spins down after
   // ~15 min with no inbound traffic; the screensaver renders locally and makes no requests, so
@@ -101,11 +112,14 @@ export default function KioskPage() {
     if (!awake) {
       setTurns([])
       setQuestion("")
-      setDismissed(false) // voice conversation ended → return to the sleep-mode screensaver
+      enterAttract() // voice conversation ended → reopen the attract loop on the greeting page
     }
-  }, [awake])
-  // Re-arm the sleep-mode screensaver once someone engages, so it returns after the next idle.
-  useEffect(() => { if (awake || turns.length) setDismissed(false) }, [awake, turns.length])
+  }, [awake, enterAttract])
+  // While a conversation is live, keep both idle screens off (the answer sits on top) and cancel
+  // any pending greet→screensaver flip so it can't cut in mid-conversation.
+  useEffect(() => {
+    if (awake || turns.length) { window.clearTimeout(greetTimer.current); setDismissed(false) }
+  }, [awake, turns.length])
 
   // Sleep mode: mic listening, dormant (not awake/answering), nothing on screen, not dismissed.
   const sleeping = wakeActive && !awake && !loading && turns.length === 0 && !dismissed
@@ -156,8 +170,8 @@ export default function KioskPage() {
       {/* Sleep-mode attract loop: an auto-orbiting 3D showcase of the ECE faculty, shown while
           the kiosk is dormant. Say "Hey Summer" (mic keeps listening beneath it) or tap to begin. */}
       {sleeping && (
-        <div className="fixed inset-0 z-40 bg-[#060a12]" onClick={() => { primeAudio(); goFullscreen(); setDismissed(true); resetIdle() }}>
-          <KioskScreensaver onCycleEnd={handleCycleEnd} />
+        <div className="fixed inset-0 z-40 bg-[#060a12]" onClick={() => { primeAudio(); goFullscreen(); window.clearTimeout(greetTimer.current); setDismissed(true); resetIdle() }}>
+          <KioskScreensaver onCycleEnd={enterAttract} />
           {/* Wake prompt sits in its own gradient "footer" band, so the directory grid fades
               out above it instead of colliding with the names, offices, and progress dots. */}
           <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col items-center gap-2.5 px-4 pb-9 pt-28 text-center bg-gradient-to-t from-[#060a12] via-[#060a12]/95 to-transparent">

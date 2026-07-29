@@ -61,50 +61,84 @@ function toMinutes(h: number, m: number, ap?: string, fallbackAp?: string): numb
   return hh * 60 + m
 }
 
-export type OfficeHoursStatus = "open" | "closed" | "away" | "appointment" | null
+export type OfficeHoursStatus = "open" | "closed" | "away" | "appointment" | "walkin" | null
 
-export function officeHoursStatus(text: string | undefined, now: Date = new Date()): OfficeHoursStatus {
-  if (!text) return null
-  // raw: normalized but WITHOUT the "to"->"-" swap, so policy phrases like "email me to
-  // schedule" survive. s (below): the "to"->"-" form used for time-range parsing ("9 to 10am").
-  const raw = text.toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, " ").trim()
-  if (!raw) return null
-  // Policy phrases map straight to a state.
-  if (/\b(always open|open all day|open door|24 ?\/? ?7|walk-?ins? (welcome|anytime))\b/.test(raw)) return "open"
+// The professor's chosen PREFERENCE (a short policy string set on the admin page). This is
+// what shows when they are NOT currently inside a posted time slot: walk-in / by appointment /
+// closed / out of office. Set by the "Office-hours policy" dropdown.
+function policyStatus(policy: string | undefined): OfficeHoursStatus {
+  const p = (policy || "").toLowerCase().trim()
+  if (!p) return null
+  // Substring (not whole-word) matching on distinctive stems, so "appointment" matches
+  // "appoint" and "closed" matches "close".
+  if (/appoint|appt|arrangement|request/.test(p)) return "appointment"
+  if (/walk|drop|open ?door|open-door/.test(p)) return "walkin"
+  if (/away|leave|sabbatical|unavailable|out of office/.test(p)) return "away"
+  if (/close|scheduled|by hours/.test(p)) return "closed"
+  if (/open|available|any ?time/.test(p)) return "walkin"
+  return null
+}
+
+// Policy PHRASES embedded in the free-text hours (back-compat for rows with no explicit policy).
+function textPolicy(raw: string): OfficeHoursStatus {
+  if (/\b(always open|open all day|open ?door|open-door|walk-?ins? (welcome|anytime)|drop-?ins? welcome)\b/.test(raw)) return "walkin"
   if (/\b(out of office|on leave|sabbatical|unavailable|not available|away)\b/.test(raw)) return "away"
   if (/\b(appointment|appt|by arrangement|email (me )?to schedule|schedule online|request)\b/.test(raw)) return "appointment"
-  if (!/\d/.test(raw)) return null // no times and no known phrase — nothing to show
-  const s = raw.replace(/\bto\b/g, "-")
-  const TIME = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*-\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/g
-  const nowDay = now.getDay()
-  const nowMin = now.getHours() * 60 + now.getMinutes()
-  let found = false, live = false, last = 0
-  let prevDays: number[] = []
-  let m: RegExpExecArray | null
-  while ((m = TIME.exec(s))) {
-    let days = parseDays(s.slice(last, m.index))
-    last = TIME.lastIndex
-    if (days.length) prevDays = days
-    else days = prevDays // a bare second range inherits the previous range's days
-    if (!days.length) continue
-    let start = toMinutes(+m[1], m[2] ? +m[2] : 0, m[3], m[6])
-    let end = toMinutes(+m[4], m[5] ? +m[5] : 0, m[6], m[6])
-    if (start == null || end == null) continue
-    // "10-2pm": with no explicit start meridiem the start wrongly inherited PM and overshot the
-    // end, so the whole range was dropped. Re-read the start as AM when that yields start < end.
-    if (end <= start && !m[3]) {
-      const am = toMinutes(+m[1], m[2] ? +m[2] : 0, "am", "am")
-      if (am != null && am < end) start = am
+  return null
+}
+
+// Decide a professor's office-hours status right now: "open" while inside a posted time slot,
+// otherwise the professor's policy preference (walk-in / by appointment / closed / away). The
+// admin sets the slot (office_hours) and the fallback (office_hours_policy) on the admin page.
+export function officeHoursStatus(
+  text: string | undefined,
+  policy?: string,
+  now: Date = new Date(),
+): OfficeHoursStatus {
+  // raw: normalized but WITHOUT the "to"->"-" swap, so phrases like "email me to schedule"
+  // survive. s (below): the "to"->"-" form used for time-range parsing ("9 to 10am").
+  const raw = (text || "").toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, " ").trim()
+  const pol = policyStatus(policy)
+  const txtPol = raw ? textPolicy(raw) : null
+
+  // Parse posted time ranges and see whether we're inside one right now.
+  let found = false, live = false
+  if (raw && /\d/.test(raw)) {
+    const s = raw.replace(/\bto\b/g, "-")
+    const TIME = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*-\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/g
+    const nowDay = now.getDay()
+    const nowMin = now.getHours() * 60 + now.getMinutes()
+    let last = 0
+    let prevDays: number[] = []
+    let m: RegExpExecArray | null
+    while ((m = TIME.exec(s))) {
+      let days = parseDays(s.slice(last, m.index))
+      last = TIME.lastIndex
+      if (days.length) prevDays = days
+      else days = prevDays // a bare second range inherits the previous range's days
+      if (!days.length) continue
+      let start = toMinutes(+m[1], m[2] ? +m[2] : 0, m[3], m[6])
+      let end = toMinutes(+m[4], m[5] ? +m[5] : 0, m[6], m[6])
+      if (start == null || end == null) continue
+      // "10-2pm": with no explicit start meridiem the start wrongly inherited PM and overshot the
+      // end, so the whole range was dropped. Re-read the start as AM when that yields start < end.
+      if (end <= start && !m[3]) {
+        const am = toMinutes(+m[1], m[2] ? +m[2] : 0, "am", "am")
+        if (am != null && am < end) start = am
+      }
+      // "9-5" (no meridiem at all): an end earlier than the start means a normal daytime range
+      // running backwards, so the end is really PM (9am-5pm) — read it as afternoon.
+      if (end <= start && !m[3] && !m[6]) {
+        const pm = toMinutes(+m[4], m[5] ? +m[5] : 0, "pm", "pm")
+        if (pm != null && pm > start) end = pm
+      }
+      if (end <= start) continue
+      found = true
+      if (days.includes(nowDay) && nowMin >= start && nowMin < end) live = true
     }
-    // "9-5" (no meridiem at all): an end earlier than the start means a normal daytime range
-    // running backwards, so the end is really PM (9am-5pm) — read it as afternoon.
-    if (end <= start && !m[3] && !m[6]) {
-      const pm = toMinutes(+m[4], m[5] ? +m[5] : 0, "pm", "pm")
-      if (pm != null && pm > start) end = pm
-    }
-    if (end <= start) continue
-    found = true
-    if (days.includes(nowDay) && nowMin >= start && nowMin < end) live = true
   }
-  return found ? (live ? "open" : "closed") : null
+
+  if (live) return "open"                     // inside a posted slot → open right now
+  if (found) return pol || txtPol || "closed" // has hours but closed now → the fallback preference
+  return pol || txtPol || null                // no slot → policy (or a text phrase), else nothing
 }

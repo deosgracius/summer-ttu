@@ -14,7 +14,7 @@ import { officeHoursStatus } from "@/lib/officeHours"
  * Mounted only while the kiosk is dormant; unmounts the instant Summer wakes.
  * Source: depts.ttu.edu/ece/faculty.
  */
-interface Member { id: string; name: string; photo?: string; office?: string; role?: string; office_hours?: string }
+interface Member { id: string; name: string; photo?: string; office?: string; role?: string; office_hours?: string; office_hours_policy?: string }
 interface Section { key: string; title: string; subtitle?: string; office: boolean; doctor?: boolean; members: Member[] }
 interface Dir { sections: Section[] }
 interface Page { key: string; title: string; subtitle?: string; office: boolean; doctor?: boolean; members: Member[]; page: number; pages: number; total: number; cols: number }
@@ -63,10 +63,11 @@ function Card({ m, w, showOffice, doctor, accent }: { m: Member; w: number; show
     const id = window.setInterval(() => setTick((t) => t + 1), 30000)
     return () => window.clearInterval(id)
   }, [m.office_hours])
-  const oh = officeHoursStatus(m.office_hours)
+  const oh = officeHoursStatus(m.office_hours, m.office_hours_policy)
   const OH = oh ? {
-    open:        { dot: "bg-emerald-400 animate-pulse", txt: "font-medium text-emerald-300", label: "In office hours", glow: "0 0 8px 1px rgba(52,211,153,0.85)" },
-    closed:      { dot: "bg-rose-500",                   txt: "text-white/45",                label: "Office hours",     glow: undefined },
+    open:        { dot: "bg-emerald-400 animate-pulse", txt: "font-medium text-emerald-300", label: "Open now",         glow: "0 0 8px 1px rgba(52,211,153,0.85)" },
+    walkin:      { dot: "bg-teal-300 animate-pulse",     txt: "font-medium text-teal-200",    label: "Walk-ins welcome", glow: "0 0 8px 1px rgba(45,212,191,0.7)" },
+    closed:      { dot: "bg-rose-500",                   txt: "text-white/45",                label: "Closed now",       glow: undefined },
     away:        { dot: "bg-rose-500",                   txt: "text-white/45",                label: "Out of office",    glow: undefined },
     appointment: { dot: "bg-amber-400",                  txt: "font-medium text-amber-300",   label: "By appointment",   glow: "0 0 8px 1px rgba(251,191,36,0.6)" },
   }[oh] : null

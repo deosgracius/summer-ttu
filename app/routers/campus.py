@@ -117,7 +117,10 @@ def directory(db: Session = Depends(get_db)):
         nm = (x.name or "").strip()  # tolerate a NULL/blank name row without crashing
         return {"id": "p:" + nm, "name": nm, "photo": getattr(x, "photo_url", "") or "",
                 "title": getattr(x, "title", "") or "", "office": office_of(x),
-                "office_hours": (getattr(x, "office_hours", "") or "").strip()}
+                "office_hours": (getattr(x, "office_hours", "") or "").strip(),
+                # The professor's chosen fallback for when they're NOT in a posted slot
+                # (walk-in / by appointment / closed). Staff rows have no such field → "".
+                "office_hours_policy": (getattr(x, "office_hours_policy", "") or "").strip()}
 
     # Short rank shown under each name. Owner overrides win (e.g. Emily Pereira is a
     # professor, not the "Assistant Professor" the website still lists).

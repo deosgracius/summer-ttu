@@ -33,6 +33,9 @@ def campus_photo(photo_id: int, db: Session = Depends(get_db)):
                     headers={"Cache-Control": "public, max-age=604800",
                              "Access-Control-Allow-Origin": "*",
                              "Cross-Origin-Resource-Policy": "cross-origin",
+                             # Uploaded headshots are validated to be real images, but never let a
+                             # browser MIME-sniff the bytes into anything else (defense-in-depth).
+                             "X-Content-Type-Options": "nosniff",
                              "Vary": "Origin"})
 
 
@@ -73,6 +76,30 @@ def faculty_graph(db: Session = Depends(get_db)):
         "areas": [{"id": "a:" + a, "name": a} for a in sorted(areas)],
         "researches": researches,
     }
+
+
+# Manual section overrides for professors whose raw title lands them in the wrong bucket.
+_FORCE_SECTION = {"derek johnston": "faculty", "ben esser": "assistant", "emily pereira": "faculty"}
+
+
+def _prof_bucket(name: str, title: str):
+    """Which kiosk directory section a Professor row belongs in — "faculty", "instructors",
+    or "assistant" — or None to skip (emeritus/retired). Shared by the public kiosk directory
+    and the admin Directory Photos manager so both always agree on where a person appears."""
+    t = (title or "").lower()
+    forced = _FORCE_SECTION.get((name or "").strip().lower())
+    if forced:
+        return forced
+    if "emerit" in t:
+        return None  # emeritus (retired) professors are not featured in the rotation
+    if "assistant professor" in t:
+        return "assistant"
+    if ("instructor" in t or "lecturer" in t) and "professor" not in t:
+        return "instructors"
+    if any(k in t for k in ("professor", "dean", "endowed chair", "distinguished",
+                            "regents chair", "faculty fellow")):
+        return "faculty"
+    return "instructors"
 
 
 @router.get("/directory")
@@ -128,29 +155,14 @@ def directory(db: Session = Depends(get_db)):
             return "Professor"
         return "Faculty"
 
-    # Manual section overrides for people whose raw title lands them in the wrong bucket.
-    force = {"derek johnston": "faculty", "ben esser": "assistant", "emily pereira": "faculty"}
+    # Each professor's section (faculty / instructors / assistant, or skip for emeritus) comes
+    # from the shared _prof_bucket helper, so the kiosk and the admin photo manager stay in sync.
     faculty, instructors, assistant = [], [], []
+    buckets = {"faculty": faculty, "instructors": instructors, "assistant": assistant}
     for p in db.query(models.Professor).all():
-        t = (getattr(p, "title", "") or "").lower()
-        forced = force.get((p.name or "").strip().lower())
-        if forced == "faculty":
-            faculty.append(person(p))
-        elif forced == "instructors":
-            instructors.append(person(p))
-        elif forced == "assistant":
-            assistant.append(person(p))
-        elif "emerit" in t:
-            continue  # emeritus (retired) professors are not featured in the rotation
-        elif "assistant professor" in t:
-            assistant.append(person(p))
-        elif ("instructor" in t or "lecturer" in t) and "professor" not in t:
-            instructors.append(person(p))
-        elif any(k in t for k in ("professor", "dean", "endowed chair", "distinguished",
-                                  "regents chair", "faculty fellow")):
-            faculty.append(person(p))
-        else:
-            instructors.append(person(p))
+        b = _prof_bucket(p.name, getattr(p, "title", ""))
+        if b:
+            buckets[b].append(person(p))
     staff = [person(s) for s in db.query(models.Staff).all()]
 
     # sort each section by last name; the [-1:] guard keeps a blank name from raising IndexError.
@@ -168,6 +180,110 @@ def directory(db: Session = Depends(get_db)):
         for m in sec["members"]:
             m["role"] = role_of(m["title"], sec["key"], m["name"])
     return {"sections": sections}
+
+
+# ---- Directory Photos admin: upload / replace / remove a person's headshot ----
+# The kiosk sleep-screen directory reads photo_url off the Professor and Staff rows, so those
+# are the only two resources a photo edit needs to touch to show up on the kiosk.
+_PHOTO_RESOURCES = {"professors": models.Professor, "staff": models.Staff}
+MAX_PHOTO_BYTES = 6 * 1024 * 1024  # 6 MB — a generous headshot, keeps one row from bloating the DB
+# Accept only real raster images. SVG is deliberately excluded — it can carry <script> and would
+# be an XSS vector when served back. The content type is taken from the file's own magic bytes,
+# NOT the client's claimed type, so a mislabeled or hostile upload can't be echoed back with an
+# attacker-chosen type.
+_IMAGE_SIGS = ((b"\xff\xd8\xff", "image/jpeg"), (b"\x89PNG\r\n\x1a\n", "image/png"),
+               (b"GIF87a", "image/gif"), (b"GIF89a", "image/gif"))
+
+
+def _sniff_image(raw: bytes):
+    """Return the real image content-type from magic bytes, or None if it isn't an image we accept."""
+    for sig, ct in _IMAGE_SIGS:
+        if raw.startswith(sig):
+            return ct
+    if len(raw) >= 12 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":  # RIFF....WEBP
+        return "image/webp"
+    return None
+
+
+@router.get("/directory-admin")
+def directory_admin(db: Session = Depends(get_db),
+                    actor: models.User = Depends(require_roles("admin"))):
+    """Admin view of exactly the people the kiosk sleep-screen shows — professors bucketed into
+    Faculty / Instructors / Assistant Professors, plus Staff — WITH their database id, resource,
+    and current photo, so the Directory Photos manager can upload/replace/remove each headshot.
+    Because these are the same rows /campus/directory serves, a change here flows to the kiosk."""
+    def office_of(x):
+        return f"{(getattr(x, 'office_building', '') or '').strip()} {(getattr(x, 'office_number', '') or '').strip()}".strip()
+
+    def entry(resource, x):
+        return {"resource": resource, "id": x.id, "name": (x.name or "").strip(),
+                "title": (getattr(x, "title", "") or "").strip(), "office": office_of(x),
+                "photo_url": getattr(x, "photo_url", "") or ""}
+
+    buckets = {"faculty": [], "instructors": [], "assistant": []}
+    for p in db.query(models.Professor).all():
+        b = _prof_bucket(p.name, getattr(p, "title", ""))
+        if b:
+            buckets[b].append(entry("professors", p))
+    staff = [entry("staff", s) for s in db.query(models.Staff).all()]
+    key = lambda m: (m["name"].split()[-1:] or [m["name"]])[0].lower()
+    return {"sections": [
+        {"key": "faculty", "title": "Faculty", "members": sorted(buckets["faculty"], key=key)},
+        {"key": "instructors", "title": "Instructors", "members": sorted(buckets["instructors"], key=key)},
+        {"key": "assistant", "title": "Assistant Professors", "members": sorted(buckets["assistant"], key=key)},
+        {"key": "staff", "title": "Staff", "members": sorted(staff, key=key)},
+    ]}
+
+
+@router.post("/{resource}/{item_id}/photo")
+async def upload_directory_photo(resource: str, item_id: int, file: UploadFile = File(...),
+                                 db: Session = Depends(get_db),
+                                 actor: models.User = Depends(require_roles("admin"))):
+    """Upload/replace a directory headshot: store the image bytes on our own origin and point
+    the person's photo_url at them, so it appears on the kiosk. Central admins apply immediately;
+    other admins submit the swap for approval (the bytes are stored either way). Validated by real
+    image magic bytes, capped at 6 MB — never trusts the client's filename or content type."""
+    model = _PHOTO_RESOURCES.get(resource)
+    if model is None:
+        raise HTTPException(404, "Photos can only be set for professors or staff.")
+    obj = db.get(model, item_id)
+    if obj is None:
+        raise HTTPException(404, "That person no longer exists.")
+    raw = await file.read(MAX_PHOTO_BYTES + 1)
+    if len(raw) > MAX_PHOTO_BYTES:
+        raise HTTPException(413, "Image too large — please keep it under 6 MB.")
+    ctype = _sniff_image(raw)
+    if not ctype:
+        raise HTTPException(400, "Please upload a JPEG, PNG, GIF, or WebP image.")
+    photo = models.CampusPhoto(source_url=f"upload:{resource}:{item_id}", content_type=ctype, data=raw)
+    db.add(photo)
+    db.flush()  # assign photo.id
+    url = f"/campus/photo/{photo.id}"
+    summary = f"Update {resource} #{item_id} photo"
+    if actor.role == "central_admin":
+        approvals.apply_direct(db, actor, resource, "update", {"photo_url": url}, target_id=item_id, summary=summary)
+        return {"applied": True, "photo_url": url}
+    db.commit()  # persist the uploaded bytes, then queue the photo_url swap for approval
+    pc = approvals.propose(db, actor, resource, "update", {"photo_url": url}, target_id=item_id, summary=summary)
+    return {"pending": True, "change_id": pc.id, "photo_url": url}
+
+
+@router.delete("/{resource}/{item_id}/photo")
+def delete_directory_photo(resource: str, item_id: int, db: Session = Depends(get_db),
+                           actor: models.User = Depends(require_roles("admin"))):
+    """Remove a directory headshot — the kiosk falls back to an initials medallion. Central
+    admins apply immediately; other admins submit the removal for approval."""
+    model = _PHOTO_RESOURCES.get(resource)
+    if model is None:
+        raise HTTPException(404, "Photos can only be set for professors or staff.")
+    if db.get(model, item_id) is None:
+        raise HTTPException(404, "That person no longer exists.")
+    summary = f"Remove {resource} #{item_id} photo"
+    if actor.role == "central_admin":
+        approvals.apply_direct(db, actor, resource, "update", {"photo_url": ""}, target_id=item_id, summary=summary)
+        return {"applied": True}
+    pc = approvals.propose(db, actor, resource, "update", {"photo_url": ""}, target_id=item_id, summary=summary)
+    return {"pending": True, "change_id": pc.id}
 
 
 def _crud(name: str, model, schema_in, schema_out, search_fields):

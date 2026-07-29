@@ -17,6 +17,7 @@ import VoiceSettingsPanel from "@/components/panels/VoiceSettingsPanel"
 import ConnectionsPanel from "@/components/panels/ConnectionsPanel"
 import QuickLinksPanel from "@/components/panels/QuickLinksPanel"
 import FileImportPanel from "@/components/panels/FileImportPanel"
+import DirectoryPhotosPanel from "@/components/panels/DirectoryPhotosPanel"
 import QueryInsightsPanel from "@/components/panels/QueryInsightsPanel"
 import FailureLogPanel from "@/components/panels/FailureLogPanel"
 import MyAvailabilityPanel from "@/components/panels/MyAvailabilityPanel"
@@ -169,6 +170,7 @@ export default function DashboardPage() {
               </AdminSection>
               <AdminSection title="Campus data" desc="Import and refresh the people, courses, and documents Summer answers from.">
                 <FileImportPanel />
+                <DirectoryPhotosPanel />
               </AdminSection>
               <AdminSection title="Insights" desc="See what Summer answers instantly from the database vs. with the LLM.">
                 <QueryInsightsPanel />

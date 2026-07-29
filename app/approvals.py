@@ -48,6 +48,7 @@ def _notify_decision(pc, status, note=""):
 RESOURCES = {
     "buildings": models.Building,
     "professors": models.Professor,
+    "staff": models.Staff,
     "advisors": models.Advisor,
     "courses": models.CourseSection,
     "services": models.ServiceHours,

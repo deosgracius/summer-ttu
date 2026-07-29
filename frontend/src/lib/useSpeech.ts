@@ -189,10 +189,9 @@ export function useSpeech() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const speakSeq = useRef(0) // bumped to cancel an in-progress streamed reply
   // Conversation lifecycle: after the wake word, Summer stays "awake" (engaged) for this
-  // long so the on-screen conversation and follow-ups feel continuous. Each turn still
-  // requires the wake word ("Summer") to actually be answered — engagement only controls
-  // the awake UI state and idle timeout, NOT whether nearby talk gets a reply. After this
-  // many ms of silence she drops back to dormant.
+  // long, so follow-ups feel continuous and don't each need the wake word. After this many
+  // ms of silence she drops back to dormant, where the wake word is required again to start
+  // the next conversation. Generous so a started conversation isn't cut off while you think.
   const CONVO_IDLE_MS = 12000
   // Keep the just-spoken text as an echo reference for a beat after the audio ends, so
   // the recognizer's lagged tail of Summer's OWN voice is dropped, not answered. The
@@ -496,10 +495,9 @@ export function useSpeech() {
     if (!engaged.current || speaking.current || VOICE.speaking) return
     convoTimer.current = window.setTimeout(disengage, CONVO_IDLE_MS)
   }
-  // Enter / stay in an ENGAGED conversation: Summer is "awake" (the UI shows the live
-  // conversation) until an end phrase or CONVO_IDLE_MS of silence sends her back to
-  // dormant. Commands still require the wake word — engagement isn't a licence to answer
-  // every utterance, it just keeps the conversation UI alive between addressed turns.
+  // Enter / stay in an ENGAGED conversation: after the wake word, Summer listens for
+  // follow-ups without needing it again, until an end phrase or CONVO_IDLE_MS of silence
+  // sends her back to dormant.
   function engage() {
     engaged.current = true
     vstate.current = "active"
@@ -580,14 +578,11 @@ export function useSpeech() {
         onCmd.current(after)
         return
       }
-      // ENGAGED: Summer only answers when she's actually ADDRESSED. Even mid-conversation
-      // the wake word ("Summer") is required, so a side conversation near the kiosk keeps
-      // her awake but gets no reply — she isn't answering everything she overhears. Filler
+      // ENGAGED: once she's in a conversation, follow-ups DON'T need the wake word — just
+      // ask. The wake word is what STARTS a conversation (the dormant path above), so she
+      // won't wake to ambient chatter; but once you've called her, asking a question (and
+      // follow-ups) works without saying "Summer" every time. Filler ("uh", "okay", a cough)
       // keeps the conversation alive; a short end phrase closes it.
-      if (!hasWake) {
-        resetConvoTimer() // heard talking, but not to Summer — stay awake, don't respond
-        return
-      }
       const cmd = txt.replace(WAKE_LEAD, "").trim()
       if (cmd.length < 2 || FILLER.test(cmd)) {
         resetConvoTimer()
@@ -723,9 +718,8 @@ export function useSpeech() {
       }
       resetConvoTimer(); onCmd.current(after); return
     }
-    // ENGAGED: still require the wake word so Summer answers only when addressed — a side
-    // conversation near the kiosk (no "Summer") keeps her awake but gets no reply.
-    if (!WAKE.test(raw)) { resetConvoTimer(); return }
+    // ENGAGED: follow-ups don't need the wake word — the wake word (dormant path above) is
+    // what starts the conversation; once engaged, just ask.
     const cmd = raw.replace(WAKE_LEAD, "").trim()
     if (cmd.length < 2) return
     if (FILLER.test(cmd)) { resetConvoTimer(); return }

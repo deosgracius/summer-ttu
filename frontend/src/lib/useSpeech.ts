@@ -189,10 +189,15 @@ export function useSpeech() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const speakSeq = useRef(0) // bumped to cancel an in-progress streamed reply
   // Conversation lifecycle: after the wake word, Summer stays "awake" (engaged) for this
-  // long, so follow-ups feel continuous and don't each need the wake word. After this many
-  // ms of silence she drops back to dormant, where the wake word is required again to start
-  // the next conversation. Generous so a started conversation isn't cut off while you think.
+  // long. After this many ms of silence she drops back to dormant, where the wake word is
+  // required again to start the next conversation.
   const CONVO_IDLE_MS = 12000
+  // Middle ground between "wake word every turn" (too restrictive) and "answer anything while
+  // engaged" (too accessible): a follow-up may skip the wake word ONLY while a back-and-forth
+  // is actively going — within this many ms of your last turn or Summer's last reply. Once
+  // that lull passes she's still awake but needs the wake word again, so nearby conversation
+  // during a pause is heard but NOT answered.
+  const FOLLOWUP_GRACE_MS = 7000
   // Keep the just-spoken text as an echo reference for a beat after the audio ends, so
   // the recognizer's lagged tail of Summer's OWN voice is dropped, not answered. The
   // clear is unconditional (guarded only by "text unchanged") — it can never stick.
@@ -204,6 +209,9 @@ export function useSpeech() {
   const spokeEndAt = useRef(0)
   const engaged = useRef(false)
   const convoTimer = useRef<number | undefined>(undefined)
+  const lastTurn = useRef(0) // ms of the last accepted command — opens the wake-word-free follow-up window
+  // True while a back-and-forth is actively going: a follow-up may skip the wake word only now.
+  const inFollowup = () => Date.now() - Math.max(lastTurn.current, spokeEndAt.current) < FOLLOWUP_GRACE_MS
 
   // ---- TTS: ElevenLabs first, browser fallback ----
   // Split a reply into sentence chunks so we can start speaking the first one
@@ -575,14 +583,16 @@ export function useSpeech() {
           return
         }
         resetConvoTimer()
+        lastTurn.current = Date.now()
         onCmd.current(after)
         return
       }
-      // ENGAGED: once she's in a conversation, follow-ups DON'T need the wake word — just
-      // ask. The wake word is what STARTS a conversation (the dormant path above), so she
-      // won't wake to ambient chatter; but once you've called her, asking a question (and
-      // follow-ups) works without saying "Summer" every time. Filler ("uh", "okay", a cough)
-      // keeps the conversation alive; a short end phrase closes it.
+      // ENGAGED: a follow-up skips the wake word ONLY while the conversation is actively going
+      // (within FOLLOWUP_GRACE_MS of your last turn or Summer's last reply) — so a real
+      // back-and-forth flows. Once that lull passes, the wake word is required again, so nearby
+      // conversation during a pause is heard but not answered. Filler keeps it alive; a short
+      // end phrase closes it.
+      if (!hasWake && !inFollowup()) return // lull over and not addressed — ignore, let her go dormant
       const cmd = txt.replace(WAKE_LEAD, "").trim()
       if (cmd.length < 2 || FILLER.test(cmd)) {
         resetConvoTimer()
@@ -593,6 +603,7 @@ export function useSpeech() {
         return
       }
       resetConvoTimer()
+      lastTurn.current = Date.now()
       onCmd.current(cmd)
     }
     // Surface real problems (so it's not a silent failure). 'no-speech' and
@@ -716,15 +727,17 @@ export function useSpeech() {
       if (after.length < 2 || (ENDRE.test(after) && after.split(/\s+/).length <= 4)) {
         const a = pickAck(); setHeard(a); speak(a); resetConvoTimer(); return
       }
-      resetConvoTimer(); onCmd.current(after); return
+      resetConvoTimer(); lastTurn.current = Date.now(); onCmd.current(after); return
     }
-    // ENGAGED: follow-ups don't need the wake word — the wake word (dormant path above) is
-    // what starts the conversation; once engaged, just ask.
+    // ENGAGED: a follow-up skips the wake word only while a back-and-forth is actively going
+    // (within FOLLOWUP_GRACE_MS of the last turn / reply); after that lull the wake word is
+    // required again, so nearby talk during a pause is heard but not answered.
+    if (!WAKE.test(raw) && !inFollowup()) return
     const cmd = raw.replace(WAKE_LEAD, "").trim()
     if (cmd.length < 2) return
     if (FILLER.test(cmd)) { resetConvoTimer(); return }
     if (ENDRE.test(cmd) && cmd.split(/\s+/).length <= 4) { disengage(); return }
-    resetConvoTimer(); onCmd.current(cmd)
+    resetConvoTimer(); lastTurn.current = Date.now(); onCmd.current(cmd)
   }
 
   function serverStartRec() {
@@ -1014,6 +1027,7 @@ export function useSpeech() {
         setHeard("")
         if (text) {
           engage() // a mic tap starts/continues the conversation
+          lastTurn.current = Date.now() // opens the follow-up grace window for a spoken reply
           onText(text)
         } else setHeard("Didn't catch that. Please try again.")
       } catch {

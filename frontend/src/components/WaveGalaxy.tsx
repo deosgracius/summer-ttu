@@ -94,7 +94,7 @@ export default function WaveGalaxy() {
     geo.setAttribute("aRand", new THREE.BufferAttribute(rand, 1))
     geo.setAttribute("aStar", new THREE.BufferAttribute(star, 1))
 
-    const uniforms = { uTime: { value: 0 }, uSize: { value: Math.min(window.innerHeight, 1100) * 0.055 } }
+    const uniforms = { uTime: { value: 0 }, uSize: { value: Math.min(window.innerHeight, 1100) * 0.075 } }
 
     const mat = new THREE.ShaderMaterial({
       uniforms,
@@ -139,10 +139,10 @@ export default function WaveGalaxy() {
           vec2 d = gl_PointCoord - vec2(0.5);
           float m = 1.0 - smoothstep(0.0, 0.5, length(d));
           if (m <= 0.001) discard;
-          // Dust: deep blue -> cyan with the wave. Stars: near-white.
-          vec3 dust = mix(vec3(0.06, 0.20, 0.85), vec3(0.30, 0.90, 1.0), vGlow);
-          vec3 col  = mix(dust, vec3(0.88, 0.95, 1.0), vStar);
-          float alpha = mix(m * (0.14 + vGlow * 0.80), m * (0.55 + vGlow * 0.45), vStar);
+          // Dust: bright blue -> cyan with the wave. Stars: near-white.
+          vec3 dust = mix(vec3(0.12, 0.38, 1.0), vec3(0.45, 0.98, 1.0), vGlow);
+          vec3 col  = mix(dust, vec3(0.92, 0.97, 1.0), vStar);
+          float alpha = mix(m * (0.30 + vGlow * 0.95), m * (0.75 + vGlow * 0.25), vStar);
           gl_FragColor = vec4(col, alpha);
         }
       `,
@@ -155,7 +155,7 @@ export default function WaveGalaxy() {
       camera.aspect = window.innerWidth / window.innerHeight
       camera.updateProjectionMatrix()
       renderer.setSize(window.innerWidth, window.innerHeight)
-      uniforms.uSize.value = Math.min(window.innerHeight, 1100) * 0.055
+      uniforms.uSize.value = Math.min(window.innerHeight, 1100) * 0.075
     }
     window.addEventListener("resize", onResize)
 

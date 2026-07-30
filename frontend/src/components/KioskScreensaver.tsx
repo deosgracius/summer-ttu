@@ -189,11 +189,11 @@ export default function KioskScreensaver({ onCycleEnd }: { onCycleEnd?: () => vo
     return () => window.removeEventListener("resize", measure)
   }, [page])
 
-  if (!pages.length) return <div className="absolute inset-0 bg-[#060a12]/70" />
+  if (!pages.length) return <div className="absolute inset-0 bg-[#060a12]/45" />
   // Finale: the 3D "second brain" graph of all faculty + research areas.
   if (onGraph) {
     return (
-      <div className="absolute inset-0 isolate bg-[#060a12]/55">
+      <div className="absolute inset-0 isolate bg-[#060a12]/35">
         {/* Robot sits deepest: z=-1 puts it behind the (now transparent) graph but above the
             dark base, so it's a faint left-side backdrop. `isolate` makes this div the stacking
             context so the base stays behind the robot. It follows the ambient digital mouse. */}
@@ -213,14 +213,14 @@ export default function KioskScreensaver({ onCycleEnd }: { onCycleEnd?: () => vo
       </div>
     )
   }
-  if (!page) return <div className="absolute inset-0 bg-[#060a12]/70" />
+  if (!page) return <div className="absolute inset-0 bg-[#060a12]/45" />
   // Reveal the grid only once EVERY photo on this page has decoded, so they all appear together.
   const pageReady = page.members.every((m) => !m.photo || decoded.has(m.photo))
   const accent = ACCENT[page.key] || "#38bdf8"
   const cols = page.cols
 
   return (
-    <div className="absolute inset-0 flex flex-col overflow-hidden bg-[#060a12]/70">
+    <div className="absolute inset-0 flex flex-col overflow-hidden bg-[#060a12]/45">
       <style>{`@keyframes ssSpinIn { from { opacity: 0; transform: scale(0.98) } to { opacity: 1; transform: scale(1) } }`}</style>
       <div className="pointer-events-none absolute inset-0 opacity-20" aria-hidden
         style={{ background: `radial-gradient(55% 45% at 50% 28%, ${accent}22, transparent 70%)` }} />

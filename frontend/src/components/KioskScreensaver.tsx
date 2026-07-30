@@ -97,7 +97,7 @@ function Card({ m, w, showOffice, doctor, accent }: { m: Member; w: number; show
   )
 }
 
-export default function KioskScreensaver({ onCycleEnd }: { onCycleEnd?: () => void }) {
+export default function KioskScreensaver({ onCycleEnd, onGraphChange }: { onCycleEnd?: () => void; onGraphChange?: (onGraph: boolean) => void }) {
   const [data, setData] = useState<Dir | null>(CACHE)
   const [idx, setIdx] = useState(0)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -153,6 +153,15 @@ export default function KioskScreensaver({ onCycleEnd }: { onCycleEnd?: () => vo
   const stepCount = pages.length ? pages.length + 1 : 0
   const step = stepCount ? idx % stepCount : 0
   const onGraph = stepCount > 0 && step === pages.length
+
+  // Tell the page when the Research Network finale is showing. The finale draws its OWN robot
+  // (positioned and dimmed for the graph), so the page hides its always-on robot while this is
+  // true — otherwise both sit at anchor="left" and you see two overlapping robots. The cleanup
+  // clears it when the screensaver unmounts, so the page's robot comes straight back.
+  useEffect(() => {
+    onGraphChange?.(onGraph)
+    return () => onGraphChange?.(false)
+  }, [onGraph, onGraphChange])
 
   // Advance through the steps; the graph finale holds GRAPH_MS, each page PAGE_MS. After the graph,
   // hand control back to the idle "Hi, I'm Summer" page (via onCycleEnd) instead of looping straight

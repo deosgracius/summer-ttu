@@ -53,6 +53,8 @@ export default function KioskPage() {
   // Sleep-mode screensaver: dismissed=true shows the idle greeting page, dismissed=false shows
   // the directory screensaver. Starts true so the attract loop OPENS on the greeting.
   const [dismissed, setDismissed] = useState(true)
+  // True while the screensaver is on its Research Network finale, which brings its own robot.
+  const [graphStep, setGraphStep] = useState(false)
   const { supported: voiceIn, canSpeak, wakeActive, awake, wakeBlocked, serverWake, heard, isSpeaking, speak, stopSpeaking, startWakeWord, stopWakeWord, startServerWake, stopServerWake, primeAudio } =
     useSpeech()
   const idleTimer = useRef<number | undefined>(undefined)
@@ -172,7 +174,11 @@ export default function KioskPage() {
       <SpaceBackground />
       {/* Wave galaxy: a vast disc of blue/cyan points rippling outward, behind the robot. */}
       <WaveGalaxy />
-      <SplineRobot ambient anchor="left" />
+      {/* The page's robot rides along on every page EXCEPT the Research Network finale, which
+          draws its own robot behind the graph — two at anchor="left" overlapped. Hidden via dim/
+          scrim rather than unmounted, so the Spline scene never reloads and the digital mouse
+          keeps running. */}
+      <SplineRobot ambient anchor="left" dim={graphStep ? 0 : 1} scrim={!graphStep} />
 
       {/* Sleep-mode attract loop: an auto-orbiting 3D showcase of the ECE faculty, shown while
           the kiosk is dormant. Say "Hey Summer" (mic keeps listening beneath it) or tap to begin. */}
@@ -180,7 +186,7 @@ export default function KioskPage() {
           so it's the backdrop of EVERY kiosk page, not just the greeting. */}
       {sleeping && (
         <div className="fixed inset-0 z-40 bg-[#060a12]/45" onClick={() => { primeAudio(); goFullscreen(); window.clearTimeout(greetTimer.current); setDismissed(true); resetIdle() }}>
-          <KioskScreensaver onCycleEnd={enterAttract} />
+          <KioskScreensaver onCycleEnd={enterAttract} onGraphChange={setGraphStep} />
           {/* Wake prompt sits in its own gradient "footer" band, so the directory grid fades
               out above it instead of colliding with the names, offices, and progress dots. */}
           <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col items-center gap-2.5 px-4 pb-9 pt-28 text-center bg-gradient-to-t from-[#060a12] via-[#060a12]/95 to-transparent">

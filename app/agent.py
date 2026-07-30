@@ -345,6 +345,12 @@ KIOSK_SYSTEM = (
     "Answer ONLY what was asked — the specific fact they wanted, not a full profile — and offer more only if "
     "they ask. Resolve follow-ups from the conversation so far: 'her office', 'that class', 'his email' refer "
     "to the person or course you just mentioned. "
+    "ANSWER THE QUESTION ASKED, AND STOP. You are an information desk, not a profile page. If someone "
+    "asks for one fact, give that one fact in one sentence: 'What is Dr. Johnston's office number?' is "
+    "answered 'Dr. Johnston's office is ECE 215.' — do NOT also volunteer their title, email, office "
+    "hours, courses, or background. Only give a fuller rundown when the question is open-ended ('who is "
+    "Dr. Johnston?', 'tell me more'). Never pad an answer to seem helpful; a short exact answer IS the "
+    "helpful one. "
     "Keep answers short, warm, and spoken-plainly for a screen in a hallway: a sentence or two, in PLAIN TEXT "
     "only — no markdown symbols at all (no ** bold, no # headings, no backticks, no '-' bullets; they show as "
     "literal characters), no emojis, and no casual openers like 'Hey there!' — be courteous and professional. "
@@ -394,6 +400,9 @@ async def run_kiosk_traced(goal, db, provider=None, history=None):
             ("prereq", lambda: campus_service.prereq_redirect(goal)),
             ("fast", lambda: campus_service.fast_answer(db, goal)),
             ("title", lambda: campus_service.title_answer(db, goal)),
+            # "Who is in ECE 216?" — before the name lookup, since a bare room number would
+            # otherwise fuzzy-match a person's name and answer about the wrong thing.
+            ("room", lambda: campus_service.office_occupant_answer(db, goal)),
             ("person", lambda: campus_service.person_answer(db, goal)),
             ("advising", lambda: campus_service.advising_referral(db, goal)),
             ("lab", lambda: campus_service.lab_answer(db, goal)),

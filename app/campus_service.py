@@ -798,6 +798,110 @@ _WANTS_MORE = re.compile(
     r"publications?|cv|resume|phone)\b", re.I)
 
 
+# WHAT the question actually asks for. This is an information desk, so "what is Derek's office
+# number?" should get the room and nothing else — not a profile card. Checked in this order
+# because the phrases overlap: "office hours" contains "office", and "office number" is a room,
+# not a phone number.
+_ASK_HOURS = re.compile(r"\boffice hours?\b|\bwhen\b.*\b(free|available|in his|in her|in their|open)\b|\bhours\b", re.I)
+_ASK_EMAIL = re.compile(r"\be-?mail\b", re.I)
+_ASK_PHONE = re.compile(r"\b(phone|telephone|cell|call (?:him|her|them))\b", re.I)
+_ASK_OFFICE = re.compile(r"\b(office|room|where|located|location)\b", re.I)
+
+
+def _asked_field(query: str):
+    """Which single fact the question wants: "hours", "email", "phone", "office", or None for a
+    general "who is X" (which still gets the short profile)."""
+    q = query or ""
+    if _ASK_HOURS.search(q):
+        return "hours"
+    if _ASK_EMAIL.search(q):
+        return "email"
+    if _ASK_PHONE.search(q) and not _ASK_OFFICE.search(q):
+        return "phone"
+    if _ASK_OFFICE.search(q):
+        return "office"
+    return None
+
+
+def _person_one_fact(db, kind: str, r, field: str):
+    """One fact, one sentence. Returns None when we don't hold that fact, so the caller can fall
+    back to the fuller answer rather than inventing or stating a bare blank."""
+    name = r.name
+    if field == "office":
+        office = f"{getattr(r, 'office_building', '') or ''} {getattr(r, 'office_number', '') or ''}".strip()
+        return f"{name}'s office is {office}." if office else None
+    if field == "email":
+        email = getattr(r, "email", "") or ""
+        return f"{name}'s email is {email}." if email else None
+    if field == "phone":
+        phone = getattr(r, "phone", "") or ""
+        return f"{name}'s phone number is {phone}." if phone else None
+    if field == "hours":
+        p = db.query(models.Person).filter(models.Person.name == name).first() if hasattr(models, "Person") else None
+        hrs = ((getattr(p, "office_hours", "") or getattr(p, "schedule", "")) if p else "") \
+            or getattr(r, "office_hours", "") or getattr(r, "schedule", "")
+        pol = getattr(r, "office_hours_policy", "")
+        if hrs and pol:
+            return f"{name}'s office hours are {hrs}. Outside those hours: {pol}."
+        if hrs:
+            return f"{name}'s office hours are {hrs}."
+        if pol:
+            return f"{name} is {pol}."
+        return None
+    return None
+
+
+# "Who is in ECE 216?" — the reverse of a name lookup. Matches a room code with or without the
+# building prefix ("ECE 216", "216", "206C").
+_ROOM_RE = re.compile(r"\b(?:ece\s*)?(\d{2,4}[a-z]?)\b", re.I)
+_WHO_IN_ROOM = re.compile(r"\bwho(?:'?s| is| are)?\b|\bwhose\b|\bwhich (?:professor|faculty|staff|advisor)\b", re.I)
+
+
+def _room_key(v: str) -> str:
+    """'ECE 206C' -> '206c', so a room matches however it was typed or spoken."""
+    return re.sub(r"[^a-z0-9]", "", re.sub(r"\bece\b", "", (v or "").lower()))
+
+
+def office_occupant_answer(db, query: str):
+    """'Who is in ECE 216?' -> that person, in one line. The reverse of the name lookup, answered
+    straight from the DB so the model never guesses who sits where. Returns an honest 'not listed'
+    when the room is clearly named but empty, rather than letting the LLM fill the gap."""
+    q = query or ""
+    if not _WHO_IN_ROOM.search(q):
+        return None
+    if not re.search(r"\b(office|room|ece)\b", q, re.I):
+        return None
+    m = _ROOM_RE.search(q)
+    if not m:
+        return None
+    want = _room_key(m.group(1))
+    if not want:
+        return None
+    hits = []
+    sources = [("professor", models.Professor)]
+    if hasattr(models, "Staff"):
+        sources.append(("staff", models.Staff))
+    if hasattr(models, "Advisor"):
+        sources.append(("advisor", models.Advisor))
+    for kind, model in sources:
+        for r in db.query(model).all():
+            if _room_key(getattr(r, "office_number", "")) == want:
+                hits.append((kind, r))
+    room = (m.group(0) or "").upper().strip()
+    if not room.startswith("ECE"):
+        room = f"ECE {want.upper()}"
+    if not hits:
+        return (f"I don't have anyone listed in {room}. The ECE front office in ECE 224 "
+                f"can point you to the right person.")
+    lines = []
+    for kind, r in hits[:4]:
+        title = getattr(r, "title", "") or ("Academic Advisor" if kind == "advisor" else "")
+        lines.append(f"{r.name}{f', {title}' if title else ''}.")
+    if len(lines) == 1:
+        return f"{room}: {lines[0]}"
+    return f"{room} has {len(lines)} people listed:\n" + "\n".join(lines)
+
+
 def _person_scope(query: str) -> bool:
     """The person fast-path may only claim a query that is either a near-bare name
     ("Derek Johnston", "yo, who's derek") or free of reasoning cues. Long sentences
@@ -837,6 +941,15 @@ def person_answer(db, query: str):
                 lines.append(f"{r.name} ({t})" + (f", office {office}" if office else ""))
             return "\n".join(lines)
     kind, r, _ = matches[0]
+    # DIRECT ANSWER: if the question asks for one specific fact ("what's Derek's office number?"),
+    # give that fact and stop. This is an information desk — a profile card in reply to a
+    # one-field question is noise. Falls through to the fuller card when the fact isn't on file,
+    # or when the question is a general "who is X".
+    field = _asked_field(query) if top >= CONFIDENT and not _WANTS_MORE.search(query or "") else None
+    if field:
+        one = _person_one_fact(db, kind, r, field)
+        if one:
+            return one
     detail = _person_detail(db, kind, r, full=bool(_WANTS_MORE.search(query or "")))
     # Heard the name imperfectly but found a close match — say what we found, per the
     # "if a similar name is in the directory, give it and tell me" behavior.

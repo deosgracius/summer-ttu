@@ -261,10 +261,23 @@ export default function KioskPage() {
 
         {/* Voice-only kiosk: no type-in box, no mic button, no direct-search panel — the wall
             display stays clean and is driven entirely by "Hey Summer". Just the spoken prompt. */}
+        {/* Same wake prompt as every screensaver page — identical size, weight and colours — so
+            the call to action reads the same wherever the kiosk happens to be in its cycle. */}
         {voiceIn && wakeActive && (
-          <div className="flex items-center justify-center gap-2 text-sm text-primary/80 pb-1 min-h-5">
-            <span className="inline-block size-2 rounded-full bg-emerald-400 animate-pulse" />
-            {heard ? <span className="text-foreground italic">“{heard}”</span> : awake ? <>Listening — just talk</> : <>Say <b>“Hey Summer”</b> to start</>}
+          <div className="flex flex-col items-center gap-2.5 pb-1 text-center">
+            <div className="flex items-center gap-3 text-3xl font-semibold tracking-tight text-white md:text-4xl">
+              <span className="inline-block size-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_2px_rgba(52,211,153,0.7)] animate-pulse" />
+              {heard ? (
+                <span className="italic text-sky-300">“{heard}”</span>
+              ) : awake ? (
+                <>Listening — <span className="text-sky-300">just talk</span></>
+              ) : (
+                <>Say <span className="text-sky-300">“Hey Summer”</span></>
+              )}
+            </div>
+            {!heard && !awake && (
+              <div className="text-xs font-medium uppercase tracking-[0.28em] text-white/45">or tap anywhere to begin</div>
+            )}
           </div>
         )}
         <div className="flex items-center justify-between text-xs text-muted-foreground pt-2">

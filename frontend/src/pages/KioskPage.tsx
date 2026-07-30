@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Mic, Radio, Volume2, VolumeX } from "lucide-react"
+import { Radio, Volume2, VolumeX } from "lucide-react"
 import { api } from "@/lib/api"
 import { useSpeech } from "@/lib/useSpeech"
 import SummerOrb from "@/components/SummerOrb"
@@ -7,8 +7,6 @@ import SplineRobot from "@/components/SplineRobot"
 import SpaceBackground from "@/components/SpaceBackground"
 import WaveGalaxy from "@/components/WaveGalaxy"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import CampusSearch from "@/components/CampusSearch"
 import KioskScreensaver from "@/components/KioskScreensaver"
 import PersonAnswerCard from "@/components/PersonAnswerCard"
 import AnswerCaptions from "@/components/AnswerCaptions"
@@ -55,7 +53,7 @@ export default function KioskPage() {
   // Sleep-mode screensaver: dismissed=true shows the idle greeting page, dismissed=false shows
   // the directory screensaver. Starts true so the attract loop OPENS on the greeting.
   const [dismissed, setDismissed] = useState(true)
-  const { supported: voiceIn, canSpeak, listening, wakeActive, awake, wakeBlocked, serverWake, heard, isSpeaking, listen, speak, stopSpeaking, startWakeWord, stopWakeWord, startServerWake, stopServerWake, primeAudio } =
+  const { supported: voiceIn, canSpeak, wakeActive, awake, wakeBlocked, serverWake, heard, isSpeaking, speak, stopSpeaking, startWakeWord, stopWakeWord, startServerWake, stopServerWake, primeAudio } =
     useSpeech()
   const idleTimer = useRef<number | undefined>(undefined)
   const greetTimer = useRef<number | undefined>(undefined)
@@ -240,57 +238,21 @@ export default function KioskPage() {
           )}
         </div>
 
+        {/* Voice-only kiosk: no type-in box, no mic button, no direct-search panel — the wall
+            display stays clean and is driven entirely by "Hey Summer". Just the spoken prompt. */}
         {voiceIn && wakeActive && (
           <div className="flex items-center justify-center gap-2 text-sm text-primary/80 pb-1 min-h-5">
             <span className="inline-block size-2 rounded-full bg-emerald-400 animate-pulse" />
-            {heard ? <span className="text-foreground italic">“{heard}”</span> : awake ? <>Listening — just talk</> : <>Say <b>“Hey Summer”</b> to start, or tap the mic</>}
+            {heard ? <span className="text-foreground italic">“{heard}”</span> : awake ? <>Listening — just talk</> : <>Say <b>“Hey Summer”</b> to start</>}
           </div>
         )}
-
-        {/* Ask box */}
-        <div className="flex gap-2 sticky bottom-0 bg-background py-2">
-          <Input
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && ask()}
-            placeholder={listening ? "Listening…" : "Type your question, or tap the mic…"}
-            className="text-base h-12"
-            autoFocus
-          />
-          {voiceIn && (
-            <Button
-              variant={listening ? "default" : "secondary"}
-              className="h-12 px-4 text-lg"
-              title="Tap to speak"
-              disabled={loading || listening}
-              onClick={() => {
-                stopSpeaking()
-                listen((t) => ask(t))
-              }}
-            >
-              {listening ? <span className="size-2.5 rounded-full bg-current" /> : <Mic className="size-5" />}
-            </Button>
-          )}
-          <Button onClick={() => ask()} disabled={loading} className="h-12 px-6">
-            Ask
-          </Button>
-        </div>
-
-        {/* Plain instant search — no AI, no waiting, no cost. */}
-        <details className="mt-2">
-          <summary className="cursor-pointer text-sm text-primary/80">
-            Or search directly — instant, no waiting
-          </summary>
-          <div className="mt-3 flex justify-center">
-            <CampusSearch />
-          </div>
-        </details>
         <div className="flex items-center justify-between text-xs text-muted-foreground pt-2">
           <span>I'm an information kiosk — not an academic advisor.</span>
           <div className="flex gap-3">
+            {/* Live status: green when the wake word is listening, red when it's off. */}
             {voiceIn && (
               <button
-                className="inline-flex items-center gap-1.5 underline-offset-4 hover:underline"
+                className={`inline-flex items-center gap-1.5 underline-offset-4 hover:underline ${wakeActive ? "text-emerald-400" : "text-rose-400"}`}
                 onClick={() => {
                   if (wakeActive) stopWakeWord()
                   else {
@@ -299,6 +261,7 @@ export default function KioskPage() {
                   }
                 }}
               >
+                <span className={`inline-block size-2 rounded-full ${wakeActive ? "bg-emerald-400 animate-pulse" : "bg-rose-500"}`} />
                 <Radio className="size-3.5" /> {wakeActive ? "Wake word on" : "Wake word off"}
               </button>
             )}
@@ -316,14 +279,16 @@ export default function KioskPage() {
                 <Radio className="size-3.5" /> {serverWake ? "Hands-free on (server)" : "Enable hands-free (no Google)"}
               </button>
             )}
+            {/* Live status: green when Summer speaks answers aloud, red when muted. */}
             {canSpeak && (
               <button
-                className="inline-flex items-center gap-1.5 underline-offset-4 hover:underline"
+                className={`inline-flex items-center gap-1.5 underline-offset-4 hover:underline ${muted ? "text-rose-400" : "text-emerald-400"}`}
                 onClick={() => {
                   stopSpeaking()
                   setMuted((m) => !m)
                 }}
               >
+                <span className={`inline-block size-2 rounded-full ${muted ? "bg-rose-500" : "bg-emerald-400 animate-pulse"}`} />
                 {muted ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}
                 {muted ? "Voice off" : "Voice on"}
               </button>

@@ -2,22 +2,33 @@ import { useEffect, useRef } from "react"
 import * as THREE from "three"
 
 /**
- * Wave galaxy — a vast disc of glowing blue/cyan points over deep black, rippling outward in an
- * animated radial wave. Rendered as a fixed, full-screen WebGL canvas that sits BEHIND the Spline
- * robot and all UI (pointer-events: none), so it's pure atmosphere.
+ * Wave galaxy — a vast spiral galaxy of glowing blue/cyan points over deep black, with concentric
+ * ripples travelling outward through the arms. Rendered as a fixed, full-screen WebGL canvas BEHIND
+ * the Spline robot and all UI (pointer-events: none), so it's pure atmosphere.
  *
- * Points are laid out in a disc (uniform by area, so the density is even rather than clumping at
- * the centre) with a slight spiral swirl. A vertex shader lifts each point on a radial sine wave
- * travelling outward from the middle; colour lerps blue -> cyan with the wave crest, and points
- * further out fade, so the disc melts into the dark instead of ending on a hard edge.
+ * Structure (what makes it read as a galaxy rather than a flat disc):
+ *  - points are assigned to ARMS logarithmic spiral arms — angle = armAngle + radius * SPIN — so the
+ *    dust gathers into distinct lanes instead of an even wash;
+ *  - scatter around each arm uses pow(random, P), which piles most points tight on the lane and
+ *    throws a few wide, giving soft feathered edges;
+ *  - scatter grows with radius, so arms are crisp in the core and diffuse at the rim;
+ *  - a fraction of points are "stars": brighter, whiter, off-plane, so the field is dusted with
+ *    sharp highlights the way the reference is.
+ *
+ * A vertex shader lifts every point on two summed radial sine waves (the arcs sweeping through the
+ * arms) and slowly rotates the whole galaxy.
  *
  * Cheap by construction: ONE draw call (a single THREE.Points), no per-frame CPU geometry work —
- * the wave is computed on the GPU, and the only per-frame JS is advancing a uniform. Honors
- * prefers-reduced-motion (renders one static frame) and pauses when the tab is hidden.
+ * the wave runs on the GPU and only a uniform advances per frame. Honors prefers-reduced-motion,
+ * pauses when the tab is hidden, and fails closed if WebGL is unavailable.
  */
-const COUNT = 14000        // points in the disc
-const INNER = 3            // hollow centre, so the core doesn't blow out
-const OUTER = 34           // disc radius
+const COUNT = 26000        // points in the galaxy
+const OUTER = 40           // disc radius
+const ARMS = 5             // spiral arms
+const SPIN = 0.85          // how tightly the arms wind
+const SCATTER = 0.34       // arm thickness (fraction of radius)
+const SCATTER_POW = 2.7    // higher = tighter lanes with feathered edges
+const STAR_FRACTION = 0.14 // share of points drawn as bright white stars
 
 export default function WaveGalaxy() {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -40,26 +51,40 @@ export default function WaveGalaxy() {
     host.appendChild(renderer.domElement)
 
     const scene = new THREE.Scene()
-    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 200)
-    // Low, tilted vantage so the disc reads as a galaxy receding to the horizon.
-    camera.position.set(0, 11, 27)
+    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 300)
+    // Steep, tilted vantage looking down INTO the spiral, so the arms read as arms.
+    camera.position.set(0, 26, 26)
     camera.lookAt(0, 0, 0)
 
-    // ---- disc geometry: radius uniform BY AREA (sqrt) so density is even, plus a spiral swirl ----
     const pos = new Float32Array(COUNT * 3)
-    const rand = new Float32Array(COUNT) // per-point jitter, so the wave isn't a perfect ring
+    const rand = new Float32Array(COUNT)   // per-point brightness jitter
+    const star = new Float32Array(COUNT)   // 1 = bright white star, 0 = blue dust
+    const scatterPow = (amount: number) =>
+      Math.pow(Math.random(), SCATTER_POW) * (Math.random() < 0.5 ? 1 : -1) * amount
+
     for (let i = 0; i < COUNT; i++) {
-      const t = Math.random()
-      const r = Math.sqrt(INNER * INNER + t * (OUTER * OUTER - INNER * INNER))
-      const a = Math.random() * Math.PI * 2 + r * 0.16 // swirl grows with radius
-      pos[i * 3] = Math.cos(a) * r
-      pos[i * 3 + 1] = (Math.random() - 0.5) * 0.7     // slight thickness
-      pos[i * 3 + 2] = Math.sin(a) * r
+      const isStar = Math.random() < STAR_FRACTION
+      // Radius biased toward the core (^0.62), like a real galaxy's brightness falloff.
+      const r = Math.pow(Math.random(), 0.62) * OUTER
+      // Which arm this point belongs to, plus the spiral wind.
+      const arm = ((i % ARMS) / ARMS) * Math.PI * 2
+      const a = arm + r * (SPIN * 0.1)
+      const spread = SCATTER * r + 0.6 // arms diffuse as they go out
+      const x = Math.cos(a) * r + scatterPow(spread)
+      const z = Math.sin(a) * r + scatterPow(spread)
+      // Stars sit off-plane (a loose halo); dust stays in a thin disc.
+      const y = isStar ? scatterPow(6 + r * 0.1) : scatterPow(0.9)
+      pos[i * 3] = x
+      pos[i * 3 + 1] = y
+      pos[i * 3 + 2] = z
       rand[i] = Math.random()
+      star[i] = isStar ? 1 : 0
     }
+
     const geo = new THREE.BufferGeometry()
     geo.setAttribute("position", new THREE.BufferAttribute(pos, 3))
     geo.setAttribute("aRand", new THREE.BufferAttribute(rand, 1))
+    geo.setAttribute("aStar", new THREE.BufferAttribute(star, 1))
 
     const uniforms = { uTime: { value: 0 }, uSize: { value: Math.min(window.innerHeight, 1100) * 0.055 } }
 
@@ -72,36 +97,44 @@ export default function WaveGalaxy() {
         uniform float uTime;
         uniform float uSize;
         attribute float aRand;
+        attribute float aStar;
         varying float vGlow;
+        varying float vStar;
         void main() {
           vec3 p = position;
           float r = length(p.xz);
-          // Radial wave travelling outward from the centre, with a second slower wave for depth.
-          float w = sin(r * 0.42 - uTime * 1.15) * 0.85
-                  + sin(r * 0.17 - uTime * 0.55) * 0.45;
-          p.y += w * (1.0 - smoothstep(0.0, ${OUTER.toFixed(1)}, r) * 0.55) * 1.5;
-          // Whole disc turns slowly.
-          float a = uTime * 0.045;
+          // Concentric ripples travelling outward through the arms.
+          float w = sin(r * 0.40 - uTime * 1.05) * 0.8
+                  + sin(r * 0.16 - uTime * 0.50) * 0.4;
+          p.y += w * (1.0 - smoothstep(0.0, ${OUTER.toFixed(1)}, r) * 0.5) * 1.3;
+          // The whole galaxy turns slowly.
+          float a = uTime * 0.035;
           p.xz = mat2(cos(a), -sin(a), sin(a), cos(a)) * p.xz;
           vec4 mv = modelViewMatrix * vec4(p, 1.0);
           gl_Position = projectionMatrix * mv;
-          // Crests glow brighter; outer points fade so the disc melts into the dark.
           float crest = w * 0.5 + 0.5;
-          float fade = 1.0 - smoothstep(${(OUTER * 0.55).toFixed(1)}, ${OUTER.toFixed(1)}, r);
-          vGlow = clamp(crest * (0.45 + aRand * 0.55) * fade, 0.0, 1.0);
-          gl_PointSize = uSize * (0.35 + crest * 0.75) * (1.0 / -mv.z);
+          // Fade the very outer rim so the galaxy melts into the dark.
+          float fade = 1.0 - smoothstep(${(OUTER * 0.62).toFixed(1)}, ${OUTER.toFixed(1)}, r);
+          vStar = aStar;
+          vGlow = clamp((0.30 + crest * 0.70) * (0.45 + aRand * 0.55) * fade, 0.0, 1.0);
+          // Stars are small and sharp; dust scales with the wave crest.
+          float sz = mix(uSize * (0.30 + crest * 0.70), uSize * 0.42 * (0.5 + aRand), aStar);
+          gl_PointSize = sz * (1.0 / -mv.z);
         }
       `,
       fragmentShader: `
         varying float vGlow;
+        varying float vStar;
         void main() {
           // Round, soft-edged point.
           vec2 d = gl_PointCoord - vec2(0.5);
           float m = 1.0 - smoothstep(0.0, 0.5, length(d));
           if (m <= 0.001) discard;
-          // Deep blue in the troughs -> bright cyan on the crests.
-          vec3 col = mix(vec3(0.09, 0.28, 0.95), vec3(0.35, 0.95, 1.0), vGlow);
-          gl_FragColor = vec4(col, m * (0.16 + vGlow * 0.85));
+          // Dust: deep blue -> cyan with the wave. Stars: near-white.
+          vec3 dust = mix(vec3(0.06, 0.20, 0.85), vec3(0.30, 0.90, 1.0), vGlow);
+          vec3 col  = mix(dust, vec3(0.88, 0.95, 1.0), vStar);
+          float alpha = mix(m * (0.14 + vGlow * 0.80), m * (0.55 + vGlow * 0.45), vStar);
+          gl_FragColor = vec4(col, alpha);
         }
       `,
     })

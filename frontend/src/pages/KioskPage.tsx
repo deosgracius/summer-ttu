@@ -218,8 +218,10 @@ export default function KioskPage() {
         </div>
         {!conversing && (
           <>
-            <h1 className="mt-3 text-4xl font-semibold tracking-tight">Hi, I'm Summer.</h1>
-            <p className="mt-2 text-base text-muted-foreground max-w-xl leading-relaxed">
+            <h1 className="mt-6 text-5xl font-semibold tracking-tight text-white">Hi, I'm Summer.</h1>
+            {/* One measure (max-w-2xl) shared with the prompts below, and text-balance so the two
+                lines break evenly instead of leaving a short orphan. */}
+            <p className="mx-auto mt-3 max-w-2xl text-balance text-lg leading-relaxed text-white/65">
               Ask me about this department — classes, rooms, schedules, professors' office hours,
               advisors, buildings, and services like the stockroom.
             </p>
@@ -234,12 +236,25 @@ export default function KioskPage() {
             (sent to the backend) but not displayed. */}
         <div className={`flex flex-1 flex-col overflow-auto ${turns.length || loading ? "justify-center pb-24" : "justify-center py-2"}`}>
           {turns.length === 0 && !loading && (
-            <div className="flex flex-wrap justify-center gap-2">
-              {EXAMPLES.map((e) => (
-                <Button key={e} variant="secondary" size="sm" onClick={() => ask(e)}>
-                  {e}
-                </Button>
-              ))}
+            /* A fixed 2x2 grid of equal-width cells, not a ragged flex-wrap: the four prompts
+               used to break 3 + 1 because their text lengths differ, which read as lopsided.
+               Same max-w-2xl measure as the paragraph above, so the whole column lines up. */
+            <div className="mx-auto w-full max-w-2xl">
+              <p className="mb-3 text-center text-[0.7rem] font-medium uppercase tracking-[0.28em] text-white/40">
+                Try asking
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                {EXAMPLES.map((e) => (
+                  <Button
+                    key={e}
+                    variant="secondary"
+                    onClick={() => ask(e)}
+                    className="h-auto w-full whitespace-normal py-2.5 text-center text-sm leading-snug"
+                  >
+                    {e}
+                  </Button>
+                ))}
+              </div>
             </div>
           )}
           {(loading || turns.length > 0) && (
@@ -280,9 +295,13 @@ export default function KioskPage() {
             )}
           </div>
         )}
-        <div className="flex items-center justify-between text-xs text-muted-foreground pt-2">
+        {/* Centred, not justify-between: the disclaimer used to sit hard left with the toggles
+            hard right, which fought the centred column above it on a wide display. One centred
+            row with a divider keeps the whole page on a single axis. */}
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 pt-6 text-xs text-white/45">
           <span>I'm an information kiosk — not an academic advisor.</span>
-          <div className="flex gap-3">
+          <span aria-hidden className="hidden h-3 w-px bg-white/15 sm:block" />
+          <div className="flex items-center gap-4">
             {/* Live status: green when the wake word is listening, red when it's off. */}
             {voiceIn && (
               <button

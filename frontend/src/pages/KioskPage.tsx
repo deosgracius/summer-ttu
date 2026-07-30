@@ -211,7 +211,7 @@ export default function KioskPage() {
             style={{
               width: 380 * 1.15,
               height: 380 * 1.15,
-              background: "radial-gradient(circle, rgba(6,10,18,0.85) 0%, rgba(6,10,18,0.6) 45%, rgba(6,10,18,0) 72%)",
+              background: "radial-gradient(circle, rgba(6,10,18,0.62) 0%, rgba(6,10,18,0.32) 45%, rgba(6,10,18,0) 70%)",
             }}
           />
           <SummerOrb size={380} state={orbState} />

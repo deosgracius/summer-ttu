@@ -22,7 +22,7 @@ import * as THREE from "three"
  * the wave runs on the GPU and only a uniform advances per frame. Honors prefers-reduced-motion,
  * pauses when the tab is hidden, and fails closed if WebGL is unavailable.
  */
-const COUNT = 30000        // points in the galaxy
+const COUNT = 46000        // points in the galaxy — denser field = a stronger, glowier wave
 // The disc is deliberately far WIDER than the camera frustum, so the spiral bleeds off every edge
 // and fills the whole screen instead of sitting as a blob in the middle.
 const OUTER = 90           // disc radius
@@ -38,7 +38,7 @@ const ORBIT_H = 17         // camera height — low enough that the disc fills t
 const ORBIT_SPEED = 0.055  // radians/sec — one lap ≈ 1.9 min
 // Aim ABOVE the disc centre: that pushes the galaxy down in frame so it covers the bottom of the
 // screen instead of hugging the middle/top with dead space beneath it.
-const LOOK_Y = 7
+const LOOK_Y = 10
 
 export default function WaveGalaxy() {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -83,8 +83,9 @@ export default function WaveGalaxy() {
       const spread = SCATTER * r + 0.6 // arms diffuse as they go out
       const x = Math.cos(a) * r + scatterPow(spread)
       const z = Math.sin(a) * r + scatterPow(spread)
-      // Stars sit off-plane (a loose halo); dust stays in a thin disc.
-      const y = isStar ? scatterPow(6 + r * 0.1) : scatterPow(0.9)
+      // Stars sit off-plane (a loose halo); dust fills a disc with real thickness, so the
+      // UNDERSIDE of the spiral carries glowing points too rather than being a flat sheet.
+      const y = isStar ? scatterPow(6 + r * 0.1) : scatterPow(2.2)
       pos[i * 3] = x
       pos[i * 3 + 1] = y
       pos[i * 3 + 2] = z
@@ -114,10 +115,11 @@ export default function WaveGalaxy() {
         void main() {
           vec3 p = position;
           float r = length(p.xz);
-          // Concentric ripples travelling outward through the arms.
+          // Concentric ripples travelling outward through the arms — taller now, so the wave
+          // rolls visibly through the disc instead of only shimmering.
           float w = sin(r * 0.40 - uTime * 1.05) * 0.8
                   + sin(r * 0.16 - uTime * 0.50) * 0.4;
-          p.y += w * (1.0 - smoothstep(0.0, ${OUTER.toFixed(1)}, r) * 0.5) * 1.3;
+          p.y += w * (1.0 - smoothstep(0.0, ${OUTER.toFixed(1)}, r) * 0.5) * 2.6;
           // The whole galaxy turns slowly.
           float a = uTime * 0.035;
           p.xz = mat2(cos(a), -sin(a), sin(a), cos(a)) * p.xz;
@@ -142,10 +144,10 @@ export default function WaveGalaxy() {
           vec2 d = gl_PointCoord - vec2(0.5);
           float m = 1.0 - smoothstep(0.0, 0.5, length(d));
           if (m <= 0.001) discard;
-          // Dust: bright blue -> cyan with the wave. Stars: near-white.
-          vec3 dust = mix(vec3(0.12, 0.38, 1.0), vec3(0.45, 0.98, 1.0), vGlow);
-          vec3 col  = mix(dust, vec3(0.92, 0.97, 1.0), vStar);
-          float alpha = mix(m * (0.30 + vGlow * 0.95), m * (0.75 + vGlow * 0.25), vStar);
+          // Dust: glowing blue -> bright cyan with the wave. Stars: near-white.
+          vec3 dust = mix(vec3(0.16, 0.45, 1.0), vec3(0.55, 1.0, 1.0), vGlow);
+          vec3 col  = mix(dust, vec3(0.95, 0.99, 1.0), vStar);
+          float alpha = mix(m * (0.42 + vGlow * 1.05), m * (0.85 + vGlow * 0.15), vStar);
           gl_FragColor = vec4(col, alpha);
         }
       `,

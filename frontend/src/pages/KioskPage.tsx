@@ -124,6 +124,12 @@ export default function KioskPage() {
   // Sleep mode: mic listening, dormant (not awake/answering), nothing on screen, not dismissed.
   const sleeping = wakeActive && !awake && !loading && turns.length === 0 && !dismissed
 
+  // Orb state drives the on-screen orb's colour + animation, so the conversation is visible:
+  // blue while dormant, then GREEN the instant you call "Summer" — listening, thinking while she
+  // looks it up, speaking while she talks. `conversing` keeps the orb up for the whole exchange.
+  const orbState = isSpeaking ? "speaking" : loading ? "thinking" : (awake || turns.length > 0) ? "listening" : "idle"
+  const conversing = orbState !== "idle"
+
   // Speech mode is the DEFAULT: start listening on load. Audio output unlocks on
   // the first click/keypress anywhere (browser requirement) — no button needed.
   useEffect(() => {
@@ -183,18 +189,21 @@ export default function KioskPage() {
           </div>
         </div>
       )}
-      {/* Orb + greeting show only while idle — once Summer answers they're removed so the
-          answer sits higher and is fully visible. */}
-      {turns.length === 0 && !loading && (
-        <div className="relative z-10 mb-4 flex flex-col items-center text-center">
-          <SummerOrb size={380} state="idle" />
-          <h1 className="mt-3 text-4xl font-semibold tracking-tight">Hi, I'm Summer.</h1>
-          <p className="mt-2 text-base text-muted-foreground max-w-xl leading-relaxed">
-            Ask me about this department — classes, rooms, schedules, professors' office hours,
-            advisors, buildings, and services like the stockroom.
-          </p>
-        </div>
-      )}
+      {/* The orb is always on screen and shows the conversation state: a big BLUE orb with the
+          greeting while idle; a compact GREEN orb (listening → thinking → speaking) the moment
+          you call "Summer", so the exchange is visible and feels spontaneous. */}
+      <div className="relative z-10 mb-2 flex flex-col items-center text-center">
+        <SummerOrb size={conversing ? 160 : 380} state={orbState} />
+        {!conversing && (
+          <>
+            <h1 className="mt-3 text-4xl font-semibold tracking-tight">Hi, I'm Summer.</h1>
+            <p className="mt-2 text-base text-muted-foreground max-w-xl leading-relaxed">
+              Ask me about this department — classes, rooms, schedules, professors' office hours,
+              advisors, buildings, and services like the stockroom.
+            </p>
+          </>
+        )}
+      </div>
 
       <div className={`relative z-10 w-full flex-1 flex flex-col ${turns.length || loading ? "max-w-3xl" : "max-w-2xl"}`}>
         {/* Only the current answer is shown. While answering, Summer's orb sits beside the

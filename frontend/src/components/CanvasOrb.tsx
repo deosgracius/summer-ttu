@@ -6,11 +6,13 @@ import { useEffect, useRef } from "react"
  * the exact original parameters, then CSS-scaled to the requested display size
  * (so it looks identical to the original, just sized to fit).
  */
+// Blue when dormant (waiting for the wake word); green the whole time you're conversing
+// (listening / thinking / speaking) — so calling "Summer" flips the orb blue -> green at once.
 const COL = {
-  idle: "#3B82F6",
-  listening: "#22D3EE",
-  thinking: "#A78BFA",
-  speaking: "#34D399",
+  idle: "#3B82F6",       // blue — dormant
+  listening: "#34D399",  // green — awake, listening
+  thinking: "#10B981",   // green — working on the answer
+  speaking: "#22C55E",   // green — speaking
 } as const
 export type OrbState = keyof typeof COL
 

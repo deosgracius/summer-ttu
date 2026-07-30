@@ -1,13 +1,10 @@
 import { lazy, Suspense, useState } from "react"
-import { MessageSquare, ListChecks, ShieldCheck, Settings as SettingsIcon, Cpu, Users, Database, BarChart3, Activity, ChevronLeft, type LucideIcon } from "lucide-react"
+import { MessageSquare, ShieldCheck, Settings as SettingsIcon, Cpu, Users, Database, BarChart3, Activity, ChevronLeft, type LucideIcon } from "lucide-react"
 import { ShaderCard, type ShaderConfig } from "@/components/ui/shader-card"
 import { useAuth } from "@/lib/auth"
 import { Button } from "@/components/ui/button"
 import AgentChat from "@/components/AgentChat"
-import TasksPanel from "@/components/panels/TasksPanel"
-import RemindersPanel from "@/components/panels/RemindersPanel"
 import MemoriesPanel from "@/components/panels/MemoriesPanel"
-import DraftsPanel from "@/components/panels/DraftsPanel"
 import CampusPanel from "@/components/panels/CampusPanel"
 import PeoplePanel from "@/components/panels/PeoplePanel"
 import UserAccessPanel from "@/components/panels/UserAccessPanel"
@@ -15,13 +12,11 @@ import DelegationPanel from "@/components/panels/DelegationPanel"
 import ApprovalsPanel from "@/components/panels/ApprovalsPanel"
 import SecurityPanel from "@/components/panels/SecurityPanel"
 import VoiceSettingsPanel from "@/components/panels/VoiceSettingsPanel"
-import ConnectionsPanel from "@/components/panels/ConnectionsPanel"
 import QuickLinksPanel from "@/components/panels/QuickLinksPanel"
 import FileImportPanel from "@/components/panels/FileImportPanel"
 import DirectoryPhotosPanel from "@/components/panels/DirectoryPhotosPanel"
 import QueryInsightsPanel from "@/components/panels/QueryInsightsPanel"
 import FailureLogPanel from "@/components/panels/FailureLogPanel"
-import MyAvailabilityPanel from "@/components/panels/MyAvailabilityPanel"
 import WelcomeBriefing from "@/components/WelcomeBriefing"
 import OnboardingModal from "@/components/OnboardingModal"
 // Admin-only "Engineering Brain" (3D, three.js) — lazy so it ships only when opened.
@@ -31,7 +26,7 @@ const EngineeringBrain = lazy(() => import("@/components/EngineeringBrain"))
 import SplineRobot from "@/components/SplineRobot"
 import SpaceBackground from "@/components/SpaceBackground"
 
-type TabId = "assistant" | "brain" | "items" | "admin" | "settings"
+type TabId = "assistant" | "brain" | "admin" | "settings"
 
 // The Admin tab is a console home: a grid of animated shader cards (paper-design/Warp), one per
 // area. Clicking a card opens that area's tools. One hue family per area; presets adapted from
@@ -87,7 +82,6 @@ export default function DashboardPage() {
   // panels render — so the most important things are reachable without scrolling.
   const tabs: { id: TabId; label: string; icon: typeof MessageSquare; show: boolean }[] = [
     { id: "assistant", label: "Assistant", icon: MessageSquare, show: true },
-    { id: "items", label: "My Items", icon: ListChecks, show: true },
     { id: "admin", label: "Admin", icon: ShieldCheck, show: isAdmin },
     { id: "brain", label: "Engineering Brain", icon: Cpu, show: isAdmin },
     { id: "settings", label: "Settings", icon: SettingsIcon, show: true },
@@ -158,18 +152,6 @@ export default function DashboardPage() {
             <>
               <WelcomeBriefing />
               <AgentChat onChanged={refreshAll} pendingAsk={pendingAsk} onAsked={() => setPendingAsk(null)} />
-            </>
-          )}
-
-          {tab === "items" && (
-            <>
-              <MyAvailabilityPanel reloadKey={reloadKey} />
-              <div className="grid gap-6 md:grid-cols-2">
-                <TasksPanel reloadKey={reloadKey} />
-                <RemindersPanel reloadKey={reloadKey} />
-                <DraftsPanel reloadKey={reloadKey} />
-                <MemoriesPanel reloadKey={reloadKey} />
-              </div>
             </>
           )}
 
@@ -244,7 +226,7 @@ export default function DashboardPage() {
             <>
               <SecurityPanel reloadKey={reloadKey} />
               <VoiceSettingsPanel reloadKey={reloadKey} />
-              <ConnectionsPanel reloadKey={reloadKey} />
+              <MemoriesPanel reloadKey={reloadKey} />
             </>
           )}
 

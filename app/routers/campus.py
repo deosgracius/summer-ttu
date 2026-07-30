@@ -87,7 +87,7 @@ def faculty_graph(db: Session = Depends(get_db)):
 
 
 # Manual section overrides for professors whose raw title lands them in the wrong bucket.
-_FORCE_SECTION = {"derek johnston": "faculty", "ben esser": "assistant", "emily pereira": "faculty"}
+_FORCE_SECTION = {"derek johnston": "faculty", "ben esser": "assistant"}
 
 
 def _prof_bucket(name: str, title: str):
@@ -137,9 +137,10 @@ def directory(db: Session = Depends(get_db)):
                 # (walk-in / by appointment / closed). Staff rows have no such field → "".
                 "office_hours_policy": (getattr(x, "office_hours_policy", "") or "").strip()}
 
-    # Short rank shown under each name. Owner overrides win (e.g. Emily Pereira is a
-    # professor, not the "Assistant Professor" the website still lists).
-    role_override = {"emily pereira": "Professor"}
+    # Short rank shown under each name. Owner overrides win, for anyone whose posted title
+    # doesn't match their actual rank. (Empty right now: the Emily Pereira override was removed
+    # once confirmed she is an Assistant Professor, which is what her title already says.)
+    role_override: dict[str, str] = {}
 
     def role_of(title, key, name):
         ov = role_override.get((name or "").strip().lower())

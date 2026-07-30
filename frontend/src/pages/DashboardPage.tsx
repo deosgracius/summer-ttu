@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, type ReactNode } from "react"
-import { MessageSquare, ListChecks, ShieldCheck, Settings as SettingsIcon, Cpu } from "lucide-react"
+import { MessageSquare, ListChecks, ShieldCheck, Settings as SettingsIcon, Cpu, Users, Database, BarChart3, Activity, type LucideIcon } from "lucide-react"
 import { useAuth } from "@/lib/auth"
 import { Button } from "@/components/ui/button"
 import AgentChat from "@/components/AgentChat"
@@ -34,14 +34,19 @@ type TabId = "assistant" | "brain" | "items" | "admin" | "settings"
 
 // A labeled group of admin panels — a heading + one-line description over its cards, so the
 // Admin tab reads as clear sections instead of one long undifferentiated stack.
-function AdminSection({ title, desc, children }: { title: string; desc: string; children: ReactNode }) {
+function AdminSection({ icon: Icon, title, desc, children }: { icon: LucideIcon; title: string; desc: string; children: ReactNode }) {
   return (
     <section className="space-y-4">
-      <div className="border-b border-border/40 pb-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-primary/80">{title}</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">{desc}</p>
+      <div className="flex items-start gap-3 border-b border-border/40 pb-3">
+        <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
+          <Icon className="size-[18px]" />
+        </span>
+        <div>
+          <h2 className="text-base font-semibold tracking-tight text-foreground">{title}</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">{desc}</p>
+        </div>
       </div>
-      {children}
+      <div className="space-y-4">{children}</div>
     </section>
   )
 }
@@ -153,24 +158,26 @@ export default function DashboardPage() {
           )}
 
           {tab === "admin" && isAdmin && (
-            <div className="space-y-8">
-              <AdminSection title="People & access" desc="Approve sign-ups, set roles and access, and designate deputy admins.">
+            <div className="space-y-10">
+              <AdminSection icon={ShieldCheck} title="Approvals & access" desc="Approve sign-ups and pending changes, set roles and per-user access, and designate deputy admins.">
                 <ApprovalsPanel reloadKey={reloadKey} onApplied={refreshAll} />
                 <UserAccessPanel reloadKey={reloadKey} />
                 <DelegationPanel />
               </AdminSection>
-              <AdminSection title="Campus data" desc="Import, browse and edit the people, courses, offices and documents Summer answers from.">
+              <AdminSection icon={Users} title="Directory" desc="The people Summer shows on the kiosk — their profiles and their headshots.">
+                <PeoplePanel reloadKey={reloadKey} />
+                <DirectoryPhotosPanel />
+              </AdminSection>
+              <AdminSection icon={Database} title="Campus data" desc="Import a registrar file, then browse and correct the courses, offices, and services Summer answers from.">
                 <FileImportPanel />
                 <CampusPanel reloadKey={reloadKey} />
-                <DirectoryPhotosPanel />
-                <PeoplePanel reloadKey={reloadKey} />
                 <QuickLinksPanel />
               </AdminSection>
-              <AdminSection title="Insights" desc="See what Summer answers instantly from the database vs. with the LLM.">
+              <AdminSection icon={BarChart3} title="Insights" desc="What Summer answered instantly from the database vs. with the LLM.">
                 <QueryInsightsPanel />
               </AdminSection>
               {isCentral && (
-                <AdminSection title="System health" desc="Central-admin only: failures Summer has hit, so you can fix what's broken.">
+                <AdminSection icon={Activity} title="System health" desc="Central-admin only: failures Summer has hit, so you can fix what's broken.">
                   <FailureLogPanel />
                 </AdminSection>
               )}

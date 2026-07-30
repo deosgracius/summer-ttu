@@ -22,13 +22,20 @@ import * as THREE from "three"
  * the wave runs on the GPU and only a uniform advances per frame. Honors prefers-reduced-motion,
  * pauses when the tab is hidden, and fails closed if WebGL is unavailable.
  */
-const COUNT = 26000        // points in the galaxy
-const OUTER = 40           // disc radius
+const COUNT = 30000        // points in the galaxy
+// The disc is deliberately far WIDER than the camera frustum, so the spiral bleeds off every edge
+// and fills the whole screen instead of sitting as a blob in the middle.
+const OUTER = 90           // disc radius
 const ARMS = 5             // spiral arms
 const SPIN = 0.85          // how tightly the arms wind
 const SCATTER = 0.34       // arm thickness (fraction of radius)
 const SCATTER_POW = 2.7    // higher = tighter lanes with feathered edges
 const STAR_FRACTION = 0.14 // share of points drawn as bright white stars
+// Camera flies a slow circular orbit around the galaxy (the 3D circular motion), rising and
+// falling as it goes, so the spiral is seen from continuously changing angles with real parallax.
+const ORBIT_R = 46         // orbit radius
+const ORBIT_H = 25         // average camera height above the disc
+const ORBIT_SPEED = 0.055  // radians/sec — one lap ≈ 1.9 min
 
 export default function WaveGalaxy() {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -51,9 +58,9 @@ export default function WaveGalaxy() {
     host.appendChild(renderer.domElement)
 
     const scene = new THREE.Scene()
-    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 300)
-    // Steep, tilted vantage looking down INTO the spiral, so the arms read as arms.
-    camera.position.set(0, 26, 26)
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 400)
+    // Start on the orbit; the render loop flies it around (see tick()).
+    camera.position.set(ORBIT_R, ORBIT_H, 0)
     camera.lookAt(0, 0, 0)
 
     const pos = new Float32Array(COUNT * 3)
@@ -64,8 +71,9 @@ export default function WaveGalaxy() {
 
     for (let i = 0; i < COUNT; i++) {
       const isStar = Math.random() < STAR_FRACTION
-      // Radius biased toward the core (^0.62), like a real galaxy's brightness falloff.
-      const r = Math.pow(Math.random(), 0.62) * OUTER
+      // Radius mildly biased toward the core (^0.7), like a galaxy's brightness falloff, while
+      // still throwing plenty of points to the rim so the spiral covers the whole screen.
+      const r = Math.pow(Math.random(), 0.7) * OUTER
       // Which arm this point belongs to, plus the spiral wind.
       const arm = ((i % ARMS) / ARMS) * Math.PI * 2
       const a = arm + r * (SPIN * 0.1)
@@ -113,8 +121,9 @@ export default function WaveGalaxy() {
           vec4 mv = modelViewMatrix * vec4(p, 1.0);
           gl_Position = projectionMatrix * mv;
           float crest = w * 0.5 + 0.5;
-          // Fade the very outer rim so the galaxy melts into the dark.
-          float fade = 1.0 - smoothstep(${(OUTER * 0.62).toFixed(1)}, ${OUTER.toFixed(1)}, r);
+          // Only the VERY outer rim fades, so the spiral stays bright right off the screen edges
+          // instead of dimming into a centred blob.
+          float fade = 1.0 - smoothstep(${(OUTER * 0.86).toFixed(1)}, ${OUTER.toFixed(1)}, r);
           vStar = aStar;
           vGlow = clamp((0.30 + crest * 0.70) * (0.45 + aRand * 0.55) * fade, 0.0, 1.0);
           // Stars are small and sharp; dust scales with the wave crest.
@@ -150,17 +159,32 @@ export default function WaveGalaxy() {
     }
     window.addEventListener("resize", onResize)
 
+    // Fly the camera around the galaxy in a circle, rising/falling as it goes — the 3D circular
+    // motion. Because the disc is much wider than the frustum, the spiral fills the frame from
+    // every angle; the changing vantage gives real parallax through the arms.
+    const orbit = (t: number) => {
+      const a = t * ORBIT_SPEED
+      camera.position.set(
+        Math.cos(a) * ORBIT_R,
+        ORBIT_H + Math.sin(t * 0.035) * 7, // slow rise and fall
+        Math.sin(a) * ORBIT_R,
+      )
+      camera.lookAt(0, 0, 0)
+    }
+
     let raf = 0
     const t0 = performance.now()
     const tick = (now: number) => {
       // Pause work when the tab is hidden (the kiosk sits idle for hours).
       if (!document.hidden) {
-        uniforms.uTime.value = (now - t0) / 1000
+        const t = (now - t0) / 1000
+        uniforms.uTime.value = t
+        orbit(t)
         renderer.render(scene, camera)
       }
       raf = requestAnimationFrame(tick)
     }
-    if (reduce) renderer.render(scene, camera) // one static frame, no animation
+    if (reduce) { orbit(0); renderer.render(scene, camera) } // one static frame, no animation
     else raf = requestAnimationFrame(tick)
 
     return () => {

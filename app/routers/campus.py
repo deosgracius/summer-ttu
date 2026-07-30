@@ -92,14 +92,21 @@ _FORCE_SECTION = {"derek johnston": "faculty", "ben esser": "assistant", "emily 
 
 def _prof_bucket(name: str, title: str):
     """Which kiosk directory section a Professor row belongs in — "faculty", "instructors",
-    or "assistant" — or None to skip (emeritus/retired). Shared by the public kiosk directory
-    and the admin Directory Photos manager so both always agree on where a person appears."""
+    or "assistant" — or None to skip. Shared by the public kiosk directory and the admin
+    Directory Photos manager so both always agree on where a person appears.
+
+    Skipped groups (per the ECE academic coordinator): the directory exists to show who is in
+    the building and where their office is, so people with no ECE office aren't featured —
+    emeritus (retired) and adjunct faculty. They stay in the database and Summer still answers
+    questions about them; they're just not in the attract-loop pages."""
     t = (title or "").lower()
     forced = _FORCE_SECTION.get((name or "").strip().lower())
     if forced:
         return forced
     if "emerit" in t:
         return None  # emeritus (retired) professors are not featured in the rotation
+    if "adjunct" in t:
+        return None  # adjunct faculty hold no ECE office, so they aren't featured either
     if "assistant professor" in t:
         return "assistant"
     if ("instructor" in t or "lecturer" in t) and "professor" not in t:

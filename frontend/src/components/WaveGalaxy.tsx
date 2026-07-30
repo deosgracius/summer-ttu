@@ -34,8 +34,11 @@ const STAR_FRACTION = 0.14 // share of points drawn as bright white stars
 // Camera flies a slow circular orbit around the galaxy (the 3D circular motion), rising and
 // falling as it goes, so the spiral is seen from continuously changing angles with real parallax.
 const ORBIT_R = 46         // orbit radius
-const ORBIT_H = 25         // average camera height above the disc
+const ORBIT_H = 17         // camera height — low enough that the disc fills the LOWER screen too
 const ORBIT_SPEED = 0.055  // radians/sec — one lap ≈ 1.9 min
+// Aim ABOVE the disc centre: that pushes the galaxy down in frame so it covers the bottom of the
+// screen instead of hugging the middle/top with dead space beneath it.
+const LOOK_Y = 7
 
 export default function WaveGalaxy() {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -61,7 +64,7 @@ export default function WaveGalaxy() {
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 400)
     // Start on the orbit; the render loop flies it around (see tick()).
     camera.position.set(ORBIT_R, ORBIT_H, 0)
-    camera.lookAt(0, 0, 0)
+    camera.lookAt(0, LOOK_Y, 0)
 
     const pos = new Float32Array(COUNT * 3)
     const rand = new Float32Array(COUNT)   // per-point brightness jitter
@@ -166,10 +169,10 @@ export default function WaveGalaxy() {
       const a = t * ORBIT_SPEED
       camera.position.set(
         Math.cos(a) * ORBIT_R,
-        ORBIT_H + Math.sin(t * 0.035) * 7, // slow rise and fall
+        ORBIT_H + Math.sin(t * 0.035) * 5, // slow rise and fall
         Math.sin(a) * ORBIT_R,
       )
-      camera.lookAt(0, 0, 0)
+      camera.lookAt(0, LOOK_Y, 0)
     }
 
     let raf = 0

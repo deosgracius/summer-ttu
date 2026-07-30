@@ -4,6 +4,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse, FileResponse, JSONResponse
+from starlette.datastructures import MutableHeaders
 from sqlalchemy import inspect, text
 from .database import Base, engine, SessionLocal
 from .routers import auth, tasks, events, reminders, emails, memories, admin, oauth, spotify, outlook, vision, agent, voice, campus, security, kiosk, docs
@@ -191,25 +192,49 @@ _SECURITY_HEADERS = {
 }
 
 
-@app.middleware("http")
-async def _security_and_cache_headers(request, call_next):
+class _SecurityAndCacheHeaders:
     """Add baseline security headers to every response, and serve the HTML shell uncached
     so every deploy reaches the browser.
 
-    The React index.html is served from "/" and the SPA fallback (/kiosk, /login, …),
-    NOT just /ui — and without this it went out with no Cache-Control, so browsers
-    cached a stale index.html pointing at an OLD JS bundle and never saw new deploys.
-    We no-cache any text/html response; the hashed /assets (JS/CSS) stay immutable and
-    cacheable because their filename changes every build."""
-    resp = await call_next(request)
-    for _k, _v in _SECURITY_HEADERS.items():
-        resp.headers.setdefault(_k, _v)
-    ctype = resp.headers.get("content-type", "")
-    if request.url.path.startswith("/ui") or ctype.startswith("text/html"):
-        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-        resp.headers["Pragma"] = "no-cache"
-        resp.headers["Expires"] = "0"
-    return resp
+    The React index.html is served from "/" and the SPA fallback (/kiosk, /login, …), NOT
+    just /ui — and without this it went out with no Cache-Control, so browsers cached a stale
+    index.html pointing at an OLD JS bundle and never saw new deploys. We no-cache any
+    text/html response; the hashed /assets (JS/CSS) stay immutable and cacheable because their
+    filename changes every build.
+
+    Written as pure-ASGI (not @app.middleware("http"), which re-streams the body through
+    Starlette's BaseHTTPMiddleware and drops Content-Length, forcing chunked transfer-encoding
+    on EVERY response) so responses keep their Content-Length. That keeps simple HTTP clients
+    that can't read chunked bodies happy (e.g. the uptime pinger that keeps the free host warm)
+    and is marginally more efficient. Headers are injected into the response-start message; the
+    body is never touched."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        path = scope.get("path", "")
+
+        async def _send(message):
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(raw=message["headers"])
+                for _k, _v in _SECURITY_HEADERS.items():
+                    if _k not in headers:
+                        headers[_k] = _v
+                ctype = headers.get("content-type", "")
+                if path.startswith("/ui") or ctype.startswith("text/html"):
+                    headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+                    headers["Pragma"] = "no-cache"
+                    headers["Expires"] = "0"
+            await send(message)
+
+        await self.app(scope, receive, _send)
+
+
+app.add_middleware(_SecurityAndCacheHeaders)
 
 
 @app.exception_handler(Exception)

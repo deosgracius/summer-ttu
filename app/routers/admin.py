@@ -507,15 +507,31 @@ def staleness(days: int = 0, notify: int = 0, db: Session = Depends(get_db),
 # --- Intelligent file import (security-check -> understand -> PROPOSE -> apply) ---
 
 @router.post("/import/analyze")
-async def import_analyze(file: UploadFile = File(...),
+async def import_analyze(file: UploadFile = File(...), db: Session = Depends(get_db),
                          actor: models.User = Depends(require_roles("admin"))):
-    """Upload a data file. Summer security-checks it, figures out what it contains, and
-    returns a PROPOSAL (what it found + suggested actions). It does NOT write anything."""
-    from .. import file_import
+    """Upload a data file. Summer security-checks it, figures out what it contains, returns a
+    PROPOSAL of any structured changes, and — the part that used to need a second step —
+    EMBEDS the file's text so Summer can answer from it right away.
+
+    Uploading is the whole job: no separate "add to knowledge" click. Structured campus edits
+    (course schedules, rosters) still go through the explicit apply/approval path below, because
+    those overwrite authoritative records; embedding only makes the document readable, so it's
+    safe to do automatically. Re-uploading the same filename REPLACES the previous version
+    rather than stacking a stale copy beside it."""
+    from .. import file_import, docs_rag
     data = await file.read()
     if len(data) > file_import.MAX_BYTES:
         raise HTTPException(413, "File too large.")
-    return file_import.analyze(file.filename or "upload", data)
+    res = file_import.analyze(file.filename or "upload", data)
+    name = file.filename or "upload"
+    try:
+        text, kind = docs_rag.extract_text(name, data)
+        res["knowledge"] = docs_rag.ingest_or_replace(db, name, name, text, kind)
+        res["knowledge"]["ok"] = True
+    except Exception as e:  # noqa — a file we can't read must never fail the upload
+        db.rollback()
+        res["knowledge"] = {"ok": False, "error": str(e)}
+    return res
 
 
 class ApplyImport(BaseModel):

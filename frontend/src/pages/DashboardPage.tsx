@@ -1,5 +1,6 @@
-import { lazy, Suspense, useState, type ReactNode } from "react"
-import { MessageSquare, ListChecks, ShieldCheck, Settings as SettingsIcon, Cpu, Users, Database, BarChart3, Activity, type LucideIcon } from "lucide-react"
+import { lazy, Suspense, useState } from "react"
+import { MessageSquare, ListChecks, ShieldCheck, Settings as SettingsIcon, Cpu, Users, Database, BarChart3, Activity, ChevronLeft, type LucideIcon } from "lucide-react"
+import { ShaderCard, type ShaderConfig } from "@/components/ui/shader-card"
 import { useAuth } from "@/lib/auth"
 import { Button } from "@/components/ui/button"
 import AgentChat from "@/components/AgentChat"
@@ -32,24 +33,37 @@ import SpaceBackground from "@/components/SpaceBackground"
 
 type TabId = "assistant" | "brain" | "items" | "admin" | "settings"
 
-// A labeled group of admin panels — a heading + one-line description over its cards, so the
-// Admin tab reads as clear sections instead of one long undifferentiated stack.
-function AdminSection({ icon: Icon, title, desc, children }: { icon: LucideIcon; title: string; desc: string; children: ReactNode }) {
-  return (
-    <section className="space-y-4">
-      <div className="flex items-start gap-3 border-b border-border/40 pb-3">
-        <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
-          <Icon className="size-[18px]" />
-        </span>
-        <div>
-          <h2 className="text-base font-semibold tracking-tight text-foreground">{title}</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">{desc}</p>
-        </div>
-      </div>
-      <div className="space-y-4">{children}</div>
-    </section>
-  )
-}
+// The Admin tab is a console home: a grid of animated shader cards (paper-design/Warp), one per
+// area. Clicking a card opens that area's tools. One hue family per area; presets adapted from
+// the Warp examples. `central` cards show only to central admins.
+type AdminArea = "access" | "directory" | "campus" | "insights" | "health"
+const ADMIN_CARDS: { key: AdminArea; icon: LucideIcon; title: string; desc: string; central?: boolean; config: ShaderConfig }[] = [
+  {
+    key: "access", icon: ShieldCheck, title: "Approvals & access",
+    desc: "Approve sign-ups and pending changes, set roles and per-user access, and designate deputy admins.",
+    config: { proportion: 0.38, softness: 0.95, distortion: 0.16, swirl: 0.85, swirlIterations: 11, shape: "checks", shapeScale: 0.11, colors: ["hsl(250,100%,30%)", "hsl(270,100%,65%)", "hsl(260,90%,35%)", "hsl(265,100%,70%)"] },
+  },
+  {
+    key: "directory", icon: Users, title: "Directory",
+    desc: "The people Summer shows on the kiosk — their profiles and their headshots.",
+    config: { proportion: 0.4, softness: 1.2, distortion: 0.2, swirl: 0.9, swirlIterations: 12, shape: "stripes", shapeScale: 0.12, colors: ["hsl(200,100%,25%)", "hsl(180,100%,65%)", "hsl(160,90%,35%)", "hsl(190,100%,75%)"] },
+  },
+  {
+    key: "campus", icon: Database, title: "Campus data",
+    desc: "Import a registrar file, then browse and correct the courses, offices, and services Summer answers from.",
+    config: { proportion: 0.35, softness: 0.9, distortion: 0.18, swirl: 0.7, swirlIterations: 10, shape: "checks", shapeScale: 0.1, colors: ["hsl(120,100%,25%)", "hsl(140,100%,60%)", "hsl(100,90%,30%)", "hsl(130,100%,70%)"] },
+  },
+  {
+    key: "insights", icon: BarChart3, title: "Insights",
+    desc: "What Summer answered instantly from the database vs. with the LLM.",
+    config: { proportion: 0.45, softness: 1.1, distortion: 0.22, swirl: 0.8, swirlIterations: 15, shape: "stripes", shapeScale: 0.09, colors: ["hsl(30,100%,35%)", "hsl(50,100%,65%)", "hsl(40,90%,40%)", "hsl(45,100%,75%)"] },
+  },
+  {
+    key: "health", icon: Activity, title: "System health", central: true,
+    desc: "Central-admin only: failures Summer has hit, so you can fix what's broken.",
+    config: { proportion: 0.42, softness: 1.0, distortion: 0.19, swirl: 0.75, swirlIterations: 9, shape: "stripes", shapeScale: 0.13, colors: ["hsl(330,100%,30%)", "hsl(350,100%,60%)", "hsl(340,90%,35%)", "hsl(345,100%,70%)"] },
+  },
+]
 
 export default function DashboardPage() {
   const { me, logout } = useAuth()
@@ -59,6 +73,8 @@ export default function DashboardPage() {
   // First-login welcome + details capture, until the user completes (or skips) it.
   const [onboard, setOnboard] = useState(!me?.profile?.onboarded)
   const [tab, setTab] = useState<TabId>("assistant")
+  // Which admin area is open (null = the console home / card grid).
+  const [adminView, setAdminView] = useState<AdminArea | null>(null)
   // A question handed to the Assistant tab (e.g. "Ask Summer about X" from the graph).
   const [pendingAsk, setPendingAsk] = useState<string | null>(null)
 
@@ -157,30 +173,70 @@ export default function DashboardPage() {
             </>
           )}
 
-          {tab === "admin" && isAdmin && (
-            <div className="space-y-10">
-              <AdminSection icon={ShieldCheck} title="Approvals & access" desc="Approve sign-ups and pending changes, set roles and per-user access, and designate deputy admins.">
-                <ApprovalsPanel reloadKey={reloadKey} onApplied={refreshAll} />
-                <UserAccessPanel reloadKey={reloadKey} />
-                <DelegationPanel />
-              </AdminSection>
-              <AdminSection icon={Users} title="Directory" desc="The people Summer shows on the kiosk — their profiles and their headshots.">
-                <PeoplePanel reloadKey={reloadKey} />
-                <DirectoryPhotosPanel />
-              </AdminSection>
-              <AdminSection icon={Database} title="Campus data" desc="Import a registrar file, then browse and correct the courses, offices, and services Summer answers from.">
-                <FileImportPanel />
-                <CampusPanel reloadKey={reloadKey} />
-                <QuickLinksPanel />
-              </AdminSection>
-              <AdminSection icon={BarChart3} title="Insights" desc="What Summer answered instantly from the database vs. with the LLM.">
-                <QueryInsightsPanel />
-              </AdminSection>
-              {isCentral && (
-                <AdminSection icon={Activity} title="System health" desc="Central-admin only: failures Summer has hit, so you can fix what's broken.">
-                  <FailureLogPanel />
-                </AdminSection>
+          {tab === "admin" && isAdmin && adminView === null && (
+            <div>
+              <div className="mb-6">
+                <h1 className="text-2xl font-semibold tracking-tight">Admin console</h1>
+                <p className="mt-1 text-sm text-muted-foreground">Pick an area to manage — everything Summer answers from lives here.</p>
+              </div>
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {ADMIN_CARDS.filter((c) => !c.central || isCentral).map((c) => (
+                  <ShaderCard
+                    key={c.key}
+                    icon={<c.icon className="size-9" strokeWidth={1.75} />}
+                    title={c.title}
+                    description={c.desc}
+                    config={c.config}
+                    onClick={() => setAdminView(c.key)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {tab === "admin" && isAdmin && adminView !== null && (
+            <div className="space-y-6">
+              <div className="flex items-center gap-3">
+                <Button variant="ghost" size="sm" onClick={() => setAdminView(null)} className="gap-1.5 text-muted-foreground">
+                  <ChevronLeft className="size-4" /> Admin
+                </Button>
+                {(() => {
+                  const active = ADMIN_CARDS.find((c) => c.key === adminView)
+                  if (!active) return null
+                  const Icon = active.icon
+                  return (
+                    <>
+                      <span className="grid size-9 place-items-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
+                        <Icon className="size-[18px]" />
+                      </span>
+                      <h2 className="text-lg font-semibold tracking-tight">{active.title}</h2>
+                    </>
+                  )
+                })()}
+              </div>
+
+              {adminView === "access" && (
+                <div className="space-y-4">
+                  <ApprovalsPanel reloadKey={reloadKey} onApplied={refreshAll} />
+                  <UserAccessPanel reloadKey={reloadKey} />
+                  <DelegationPanel />
+                </div>
               )}
+              {adminView === "directory" && (
+                <div className="space-y-4">
+                  <PeoplePanel reloadKey={reloadKey} />
+                  <DirectoryPhotosPanel />
+                </div>
+              )}
+              {adminView === "campus" && (
+                <div className="space-y-4">
+                  <FileImportPanel />
+                  <CampusPanel reloadKey={reloadKey} />
+                  <QuickLinksPanel />
+                </div>
+              )}
+              {adminView === "insights" && <QueryInsightsPanel />}
+              {adminView === "health" && isCentral && <FailureLogPanel />}
             </div>
           )}
 

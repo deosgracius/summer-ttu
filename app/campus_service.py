@@ -806,11 +806,13 @@ _ASK_HOURS = re.compile(r"\boffice hours?\b|\bwhen\b.*\b(free|available|in his|i
 _ASK_EMAIL = re.compile(r"\be-?mail\b", re.I)
 _ASK_PHONE = re.compile(r"\b(phone|telephone|cell|call (?:him|her|them))\b", re.I)
 _ASK_OFFICE = re.compile(r"\b(office|room|where|located|location)\b", re.I)
+_ASK_TEACHING = re.compile(r"\b(teach|teaches|teaching|class|classes|course|courses|section|sections)\b", re.I)
 
 
 def _asked_field(query: str):
-    """Which single fact the question wants: "hours", "email", "phone", "office", or None for a
-    general "who is X" (which still gets the short profile)."""
+    """Which single fact the question wants: "hours", "email", "phone", "office", "teaching", or
+    None for a general "who is X" (which still gets the short profile). Office is checked before
+    teaching so "what room does she teach in" answers with the room."""
     q = query or ""
     if _ASK_HOURS.search(q):
         return "hours"
@@ -820,6 +822,8 @@ def _asked_field(query: str):
         return "phone"
     if _ASK_OFFICE.search(q):
         return "office"
+    if _ASK_TEACHING.search(q):
+        return "teaching"
     return None
 
 
@@ -836,6 +840,11 @@ def _person_one_fact(db, kind: str, r, field: str):
     if field == "phone":
         phone = getattr(r, "phone", "") or ""
         return f"{name}'s phone number is {phone}." if phone else None
+    if field == "teaching":
+        taught = _courses_taught(db, name)
+        # _courses_taught already reads "Teaches ..." / "Courses: ..."; return it as-is so the
+        # answer is the class list and nothing else. None -> caller falls back to the profile.
+        return taught or None
     if field == "hours":
         p = db.query(models.Person).filter(models.Person.name == name).first() if hasattr(models, "Person") else None
         hrs = ((getattr(p, "office_hours", "") or getattr(p, "schedule", "")) if p else "") \

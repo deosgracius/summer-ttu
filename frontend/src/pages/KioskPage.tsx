@@ -179,7 +179,7 @@ export default function KioskPage() {
       {/* Translucent, not opaque: the wave galaxy (z-0) keeps drifting behind the screensaver,
           so it's the backdrop of EVERY kiosk page, not just the greeting. */}
       {sleeping && (
-        <div className="fixed inset-0 z-40 bg-[#060a12]/80" onClick={() => { primeAudio(); goFullscreen(); window.clearTimeout(greetTimer.current); setDismissed(true); resetIdle() }}>
+        <div className="fixed inset-0 z-40 bg-[#060a12]/45" onClick={() => { primeAudio(); goFullscreen(); window.clearTimeout(greetTimer.current); setDismissed(true); resetIdle() }}>
           <KioskScreensaver onCycleEnd={enterAttract} />
           {/* Wake prompt sits in its own gradient "footer" band, so the directory grid fades
               out above it instead of colliding with the names, offices, and progress dots. */}
@@ -192,11 +192,30 @@ export default function KioskPage() {
           </div>
         </div>
       )}
-      {/* The orb is always on screen and shows the conversation state: a big BLUE orb with the
-          greeting while idle; a compact GREEN orb (listening → thinking → speaking) the moment
-          you call "Summer", so the exchange is visible and feels spontaneous. */}
-      <div className="relative z-10 mb-2 flex flex-col items-center text-center">
-        <SummerOrb size={380} state={orbState} />
+      {/* Everything below is the GREETING page (page 1): orb, greeting, answers, status bar. It is
+          mounted ONLY when the screensaver isn't showing — the screensaver overlay is translucent
+          now (so the galaxy drifts behind it), and without this gate page 1's orb and text bled
+          through the faculty/research pages. The galaxy and the robot stay on every page. */}
+      {!sleeping && (
+      <>
+      {/* The orb shows the conversation state: a big BLUE orb with the greeting while idle,
+          turning GREEN (listening → thinking → speaking) the moment you call "Summer". */}
+      <div className="relative z-20 mb-2 flex flex-col items-center text-center">
+        {/* The orb sits a layer ABOVE the wave galaxy (z-20 vs the galaxy's z-0). Its canvas is
+            transparent, so a soft radial scrim behind it stops the bright spiral shining through
+            and keeps the orb reading as a distinct object on top. */}
+        <div className="relative">
+          <span
+            aria-hidden
+            className="pointer-events-none absolute left-1/2 top-1/2 -z-10 -translate-x-1/2 -translate-y-1/2 rounded-full"
+            style={{
+              width: 380 * 1.15,
+              height: 380 * 1.15,
+              background: "radial-gradient(circle, rgba(6,10,18,0.85) 0%, rgba(6,10,18,0.6) 45%, rgba(6,10,18,0) 72%)",
+            }}
+          />
+          <SummerOrb size={380} state={orbState} />
+        </div>
         {!conversing && (
           <>
             <h1 className="mt-3 text-4xl font-semibold tracking-tight">Hi, I'm Summer.</h1>
@@ -309,6 +328,8 @@ export default function KioskPage() {
           </div>
         </div>
       </div>
+      </>
+      )}
     </div>
   )
 }

@@ -35,8 +35,8 @@ const EXAMPLES = [
 const IDLE_RESET_MS = 60_000 // clear the screen for the next person after a minute idle
 // The attract loop OPENS on the idle "Hi, I'm Summer" greeting and holds it this long before
 // dropping into the directory screensaver — and returns to it after the Research Network finale.
-// So each cycle reads: greeting (25s) → directory pages → Research Network → back to the greeting.
-const GREET_MS = 25_000
+// So each cycle reads: greeting (36s) → directory pages → Research Network → back to the greeting.
+const GREET_MS = 36_000
 
 // Use the whole screen (hide the browser address/tab bar). Fullscreen needs a user gesture, so
 // this rides on the first tap/keypress. Best-effort — ignored if the browser blocks it. For a

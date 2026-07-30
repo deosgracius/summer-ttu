@@ -185,10 +185,10 @@ export default function KioskPage() {
       <SplineRobot ambient anchor="left" dim={graphStep ? 0 : 1} scrim={false} />
 
       {/* Greeting page only: with the robot's vignette gone the galaxy was at full strength, so a
-          flat 25% veil takes it to ~75% — enough to settle the backdrop behind the text without
+          flat 35% veil takes it to ~65% — enough to settle the backdrop behind the text without
           losing the wave. The screensaver pages already carry their own scrims. Sits above the
           galaxy (z-0) and the robot (z-1), below all content (z-10+). */}
-      {!sleeping && <div aria-hidden className="pointer-events-none fixed inset-0 z-[2] bg-[#060a12]/25" />}
+      {!sleeping && <div aria-hidden className="pointer-events-none fixed inset-0 z-[2] bg-[#060a12]/35" />}
 
       {/* Sleep-mode attract loop: an auto-orbiting 3D showcase of the ECE faculty, shown while
           the kiosk is dormant. Say "Hey Summer" (mic keeps listening beneath it) or tap to begin. */}

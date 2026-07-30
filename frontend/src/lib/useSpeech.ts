@@ -188,16 +188,17 @@ export function useSpeech() {
   const onCmd = useRef<(s: string) => void>(() => {})
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const speakSeq = useRef(0) // bumped to cancel an in-progress streamed reply
-  // Conversation lifecycle: after the wake word, Summer stays "awake" (engaged) for this
-  // long. After this many ms of silence she drops back to dormant, where the wake word is
-  // required again to start the next conversation.
-  const CONVO_IDLE_MS = 12000
-  // Middle ground between "wake word every turn" (too restrictive) and "answer anything while
-  // engaged" (too accessible): a follow-up may skip the wake word ONLY while a back-and-forth
-  // is actively going — within this many ms of your last turn or Summer's last reply. Once
-  // that lull passes she's still awake but needs the wake word again, so nearby conversation
-  // during a pause is heard but NOT answered.
-  const FOLLOWUP_GRACE_MS = 7000
+  // Conversation lifecycle, as specified: a conversation ends when you say "thank you" (or
+  // another end phrase in ENDRE), OR when there's no further question for 8 seconds. Until
+  // then it stays open, so you can keep asking — "who is in 216?" … "what about 212?" —
+  // without repeating the wake word each time.
+  const CONVO_IDLE_MS = 8000
+  // The window in which a follow-up may skip the wake word. Kept equal to CONVO_IDLE_MS so
+  // the two rules agree: for as long as the conversation is alive, follow-ups are answered;
+  // once it lapses she's dormant again and the wake word starts a fresh one. (Both are
+  // measured from your last turn OR Summer's last reply, so a long answer doesn't eat the
+  // window.)
+  const FOLLOWUP_GRACE_MS = 8000
   // Keep the just-spoken text as an echo reference for a beat after the audio ends, so
   // the recognizer's lagged tail of Summer's OWN voice is dropped, not answered. The
   // clear is unconditional (guarded only by "text unchanged") — it can never stick.

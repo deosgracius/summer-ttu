@@ -76,10 +76,88 @@ def chunk_text(text: str, target_chars: int = TARGET_CHARS,
     return chunks
 
 
+def _xlsx_text(raw: bytes) -> str:
+    """Every sheet as tab-separated rows, with the sheet name as a heading. openpyxl is already
+    a dependency (the registrar importer uses it). read_only + values_only keeps big workbooks
+    cheap, and blank rows are dropped so the chunks stay meaningful."""
+    import io
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+    out = []
+    for ws in wb.worksheets:
+        rows = []
+        for row in ws.iter_rows(values_only=True):
+            cells = ["" if c is None else str(c).strip() for c in row]
+            if any(cells):
+                rows.append("\t".join(cells).rstrip())
+        if rows:
+            out.append(f"# {ws.title}\n" + "\n".join(rows))
+    wb.close()
+    return "\n\n".join(out)
+
+
+def _ooxml_text(raw: bytes, member_glob: str, tag: str, para_tag: str = "") -> str:
+    """Pull the visible text out of a .docx/.pptx without any extra dependency: both are ZIPs of
+    XML, so read the parts we want and collect the text runs. `para_tag` (when given) marks a
+    paragraph/line break so the output keeps its structure instead of running together."""
+    import io
+    import re as _re
+    import zipfile
+    parts = []
+    with zipfile.ZipFile(io.BytesIO(raw)) as z:
+        names = sorted(n for n in z.namelist() if _re.fullmatch(member_glob, n))
+        for n in names:
+            xml = z.read(n).decode("utf-8", errors="ignore")
+            if para_tag:
+                xml = _re.sub(rf"</{para_tag}>", "\n", xml)
+            # <w:t>text</w:t> / <a:t>text</a:t>
+            chunks = _re.findall(rf"<{tag}[^>]*>(.*?)</{tag}>", xml, _re.S)
+            text = "".join(chunks)
+            # strip any leftover markup, then unescape the five XML entities
+            text = _re.sub(r"<[^>]+>", "", text)
+            for a, b in (("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", '"'), ("&apos;", "'")):
+                text = text.replace(a, b)
+            text = _re.sub(r"\n{3,}", "\n\n", text).strip()
+            if text:
+                parts.append(text)
+    return "\n\n".join(parts)
+
+
 def extract_text(filename: str, raw: bytes) -> tuple:
-    """Return (text, kind) extracted from an uploaded file. Supports .txt/.md natively
-    and .pdf via pypdf (lazy import). Raises ValueError on unsupported/garbled input."""
+    """Return (text, kind) extracted from an uploaded file.
+
+    Handles the formats the department actually sends: Excel (.xlsx/.xlsm), Word (.docx),
+    PowerPoint (.pptx), PDF, and plain text/markdown. Office files are ZIP archives, so without
+    a real extractor they used to fall through to the latin-1 decode below and get embedded as
+    binary garbage — searchable nonsense that polluted answers. Raises ValueError on unsupported
+    or unreadable input so the caller can say so instead of storing junk."""
     name = (filename or "").lower()
+    if name.endswith((".xlsx", ".xlsm")):
+        try:
+            text = _xlsx_text(raw)
+        except Exception as e:
+            raise ValueError(f"Could not read the spreadsheet: {e}")
+        if not text.strip():
+            raise ValueError("That spreadsheet had no readable cells.")
+        return text, "spreadsheet"
+    if name.endswith(".docx"):
+        try:
+            text = _ooxml_text(raw, r"word/document\.xml", "w:t", para_tag="w:p")
+        except Exception as e:
+            raise ValueError(f"Could not read the Word document: {e}")
+        if not text.strip():
+            raise ValueError("That Word document had no readable text.")
+        return text, "document"
+    if name.endswith(".pptx"):
+        try:
+            text = _ooxml_text(raw, r"ppt/slides/slide\d+\.xml", "a:t", para_tag="a:p")
+        except Exception as e:
+            raise ValueError(f"Could not read the presentation: {e}")
+        if not text.strip():
+            raise ValueError("That presentation had no readable text.")
+        return text, "slides"
+    if name.endswith((".doc", ".ppt", ".xls")):
+        raise ValueError("That's the old Office format. Please save it as .docx, .pptx, or .xlsx and upload again.")
     if name.endswith(".pdf"):
         try:
             import pypdf
@@ -125,6 +203,27 @@ def ingest_document(db, title: str, source: str, text: str, kind: str = "text") 
     db.commit()
     return {"document_id": doc.id, "title": doc.title, "chunks": len(chunks),
             "embedded": embedded, "embeddings_on": embeddings.is_configured()}
+
+
+def ingest_or_replace(db, title: str, source: str, text: str, kind: str = "text") -> dict:
+    """Ingest a document, REPLACING any earlier version with the same source.
+
+    Uploading the same file again (a corrected electives list, say) should update what Summer
+    knows, not stack a second stale copy alongside it — otherwise retrieval starts returning
+    last month's schedule with equal confidence. Same-source chunks are deleted first, so
+    re-uploading is always safe and idempotent."""
+    old = db.query(models.Document).filter(models.Document.source == source).all()
+    replaced = 0
+    for d in old:
+        db.query(models.DocumentChunk).filter(models.DocumentChunk.document_id == d.id).delete()
+        db.delete(d)
+        replaced += 1
+    if replaced:
+        db.flush()
+    res = ingest_document(db, title, source, text, kind)
+    if replaced:
+        res["replaced"] = replaced
+    return res
 
 
 def _keyword_score(text: str, query: str) -> float:

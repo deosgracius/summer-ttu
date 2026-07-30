@@ -193,7 +193,7 @@ export default function KioskScreensaver({ onCycleEnd }: { onCycleEnd?: () => vo
   // Finale: the 3D "second brain" graph of all faculty + research areas.
   if (onGraph) {
     return (
-      <div className="absolute inset-0 isolate bg-[#060a12]/35">
+      <div className="absolute inset-0 isolate bg-[#060a12]/20">
         {/* Robot sits deepest: z=-1 puts it behind the (now transparent) graph but above the
             dark base, so it's a faint left-side backdrop. `isolate` makes this div the stacking
             context so the base stays behind the robot. It follows the ambient digital mouse. */}

@@ -5,6 +5,7 @@ import { useSpeech } from "@/lib/useSpeech"
 import SummerOrb from "@/components/SummerOrb"
 import SplineRobot from "@/components/SplineRobot"
 import SpaceBackground from "@/components/SpaceBackground"
+import WaveGalaxy from "@/components/WaveGalaxy"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import CampusSearch from "@/components/CampusSearch"
@@ -171,6 +172,8 @@ export default function KioskPage() {
   return (
     <div className="summer-bg min-h-svh bg-background text-foreground flex flex-col items-center px-4 py-8">
       <SpaceBackground />
+      {/* Wave galaxy: a vast disc of blue/cyan points rippling outward, behind the robot. */}
+      <WaveGalaxy />
       <SplineRobot ambient anchor="left" />
 
       {/* Sleep-mode attract loop: an auto-orbiting 3D showcase of the ECE faculty, shown while

@@ -100,6 +100,13 @@ def _prof_bucket(name: str, title: str):
     emeritus (retired) and adjunct faculty. They stay in the database and Summer still answers
     questions about them; they're just not in the attract-loop pages."""
     t = (title or "").lower()
+    # Checked FIRST, ahead of even the owner overrides: a record created automatically from an
+    # uploaded course file is a campus record Summer can answer from, never a curated directory
+    # entry. If a name we force-place ever got auto-created (because the file spells it
+    # differently), it must still not reach the kiosk with a placeholder title.
+    from ..file_import import AUTO_INSTRUCTOR_TITLE
+    if (title or "").strip() == AUTO_INSTRUCTOR_TITLE:
+        return None
     forced = _FORCE_SECTION.get((name or "").strip().lower())
     if forced:
         return forced

@@ -524,6 +524,16 @@ async def import_analyze(file: UploadFile = File(...), db: Session = Depends(get
         raise HTTPException(413, "File too large.")
     res = file_import.analyze(file.filename or "upload", data)
     name = file.filename or "upload"
+    # AUTO-APPLY course files: the schedule/electives sheets the department sends are the whole
+    # point of uploading, so a central admin doesn't have to confirm a second time. Held to the
+    # same bar as /import/apply (central_admin only) because it writes authoritative campus data;
+    # for other admins it stays a proposal they can confirm there.
+    if res.get("ok") and res.get("kind") == "courses" and actor.role == "central_admin":
+        try:
+            res["auto_applied"] = file_import.apply(db, "courses", res.get("rows") or [])
+        except Exception as e:  # noqa — a bad row must not fail the upload or the embedding
+            db.rollback()
+            res["auto_applied"] = {"applied": False, "error": str(e)}
     try:
         text, kind = docs_rag.extract_text(name, data)
         res["knowledge"] = docs_rag.ingest_or_replace(db, name, name, text, kind)

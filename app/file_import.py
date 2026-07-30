@@ -103,8 +103,10 @@ def _suggest(kind: str, n: int):
                 "title, phone, and hours of people already in the directory, matched by name "
                 "or email. Unmatched names are reported, never created."]
     if kind == "courses":
-        return [f"This looks like {n} course rows. Course schedule changes run through the "
-                "campus importer; I can preview but won't alter the schedule from here."]
+        return [f"This looks like {n} course rows. I'll save them as campus data (matched by CRN, "
+                "so re-uploading updates rather than duplicates). Any instructor not already in "
+                "the directory is added to campus data so I can answer questions about them — the "
+                "kiosk directory pages stay exactly as they are."]
     return ["I can't tell what this file is for. Here's a preview — tell me what to do with it."]
 
 
@@ -217,10 +219,87 @@ def _set_people_fields(db, person, r) -> list:
     return changed
 
 
+# Instructors created automatically from an uploaded course file carry this exact title. It is
+# what keeps them OUT of the kiosk directory (see _prof_bucket in routers/campus.py) while still
+# being real campus records Summer can answer questions from. Deliberately not a plain
+# "Instructor", which is a real rank that belongs on the Instructors page.
+AUTO_INSTRUCTOR_TITLE = "Instructor of record (from course file)"
+
+
+def _apply_courses(db, rows) -> dict:
+    """Save uploaded course rows as campus data.
+
+    Sections are upserted by CRN, so re-uploading a corrected file updates rows instead of
+    duplicating them. Any instructor named in the file who isn't in the directory yet is added as
+    a Professor with AUTO_INSTRUCTOR_TITLE — that makes them answerable ("who teaches X?", "what
+    is X teaching?") WITHOUT putting them on the kiosk directory pages, which stay exactly as the
+    department curated them."""
+    M = getattr(models, "CourseSection", None)
+    if M is None:
+        return {"applied": False, "error": "Course sections aren't available in this build."}
+    # Nothing usable -> say so before touching the database at all.
+    usable = [r for r in (rows or []) if _get(r, "crn", "CRN")]
+    if not usable:
+        return {"applied": False, "error": "No course rows with a CRN were found."}
+    added = updated = 0
+    new_instructors = []
+    for r in usable:
+        crn = _get(r, "crn", "CRN")
+        sem = _get(r, "semester", "term")
+        row = db.query(M).filter(M.crn == crn).first()
+        if row is None:
+            row = M(crn=crn)
+            db.add(row)
+            added += 1
+        else:
+            updated += 1
+        # Map the registrar's column names onto the model, tolerating the header variants the
+        # department actually sends ("room" vs "room_number", "max enroll" vs "max_enroll").
+        for attr, keys in (
+            ("subject", ("subject",)), ("course", ("course", "course number")),
+            ("section", ("section",)), ("title", ("title", "title (pre-requisite course(s) listed in parentheses)")),
+            ("prerequisites", ("prerequisites", "pre-requisites", "prereq")),
+            ("permit_required", ("permit required?", "permit_required", "permit")),
+            ("days", ("days",)), ("times", ("times", "time")),
+            ("start_date", ("start date", "start_date")), ("end_date", ("end date", "end_date")),
+            ("campus", ("campus",)), ("building", ("building",)),
+            ("room_number", ("room", "room_number", "room #")),
+            ("instructor", ("instructor", "professor", "faculty")),
+        ):
+            v = _get(r, *keys)
+            if v:
+                setattr(row, attr, v)
+        mx = _get(r, "max enroll", "max_enroll", "max enrollment")
+        if mx:
+            try:
+                row.max_enroll = int(float(mx))
+            except ValueError:
+                pass
+        if sem:
+            row.semester = sem
+        # New instructor -> a campus record, so Summer can answer about them. Never the kiosk.
+        instr = _get(r, "instructor", "professor", "faculty")
+        if instr and not _find_person(db, instr, ""):
+            if instr not in new_instructors:
+                db.add(models.Professor(name=instr, title=AUTO_INSTRUCTOR_TITLE,
+                                        department="ECE", email="", office_building="",
+                                        office_number="", semester=sem or ""))
+                new_instructors.append(instr)
+    db.commit()
+    bits = [f"Saved {added + updated} course sections ({added} new, {updated} updated)"]
+    if new_instructors:
+        bits.append(f"added {len(new_instructors)} new instructor(s) to campus data "
+                    f"(not shown on the kiosk directory): {', '.join(new_instructors)}")
+    return {"applied": True, "added": added, "updated": updated,
+            "new_instructors": new_instructors, "summary": "; ".join(bits) + "."}
+
+
 def apply(db, kind: str, rows) -> dict:
-    """Apply a CONFIRMED proposal. Supports 'office_hours' (hours only) and 'people'
-    (office/email/title/phone/hours). Both UPDATE existing directory people only — never
-    create — and report anyone they couldn't match."""
+    """Apply a CONFIRMED proposal. Supports 'courses' (schedule + new instructors),
+    'office_hours' (hours only) and 'people' (office/email/title/phone/hours). The people paths
+    UPDATE existing directory entries only — never create — and report anyone they couldn't match."""
+    if kind == "courses":
+        return _apply_courses(db, rows)
     if kind not in ("office_hours", "people"):
         return {"applied": False,
                 "error": f"Applying '{kind}' isn't supported — office hours and people updates only."}

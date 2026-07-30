@@ -53,8 +53,52 @@ def test_analyze_blocks_bad_file():
 
 
 def test_apply_rejects_unsupported_kind():
-    res = fi.apply(None, "courses", [])
+    """A kind we have no importer for is refused outright — and refused BEFORE any database
+    work, so passing no session is safe."""
+    res = fi.apply(None, "spreadsheet_of_unknown_purpose", [])
     assert not res["applied"]
+
+
+def test_apply_courses_needs_crns():
+    """Course rows are supported now, but a file with no CRN column has nothing to key on, so it
+    is rejected before touching the database (hence db=None here)."""
+    res = fi.apply(None, "courses", [{"subject": "ECE", "course": "3332"}])
+    assert not res["applied"]
+    assert "CRN" in res["error"]
+
+
+def test_apply_courses_saves_sections_and_hides_new_instructors():
+    """Uploading a course file saves the sections, upserts by CRN on re-upload, and adds an
+    unknown instructor to campus data WITHOUT putting them on the kiosk directory."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from app.database import Base
+    from app import models
+    from app.routers.campus import _prof_bucket
+
+    eng = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=eng)
+    db = sessionmaker(bind=eng)()
+    rows = [{"crn": "30887", "subject": "ECE", "course": "3332", "section": "301",
+             "title": "Microcontroller Project Lab", "days": "T", "times": "2:00pm-4:50pm",
+             "room": "00122", "instructor": "Ada Lovelace"}]
+
+    res = fi.apply(db, "courses", rows)
+    assert res["applied"] and res["added"] == 1
+    sec = db.query(models.CourseSection).filter(models.CourseSection.crn == "30887").first()
+    assert sec.instructor == "Ada Lovelace" and sec.room_number == "00122"
+
+    # The instructor became a campus record Summer can answer from...
+    prof = db.query(models.Professor).filter(models.Professor.name == "Ada Lovelace").first()
+    assert prof is not None
+    # ...but is NOT featured on the kiosk directory pages.
+    assert _prof_bucket(prof.name, prof.title) is None
+
+    # Re-uploading the same file updates rather than duplicating.
+    again = fi.apply(db, "courses", rows)
+    assert again["updated"] == 1 and again["added"] == 0
+    assert db.query(models.CourseSection).count() == 1
+    db.close()
 
 
 def test_apply_people_updates_existing_only():

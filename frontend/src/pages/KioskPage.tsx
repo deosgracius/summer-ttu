@@ -176,8 +176,10 @@ export default function KioskPage() {
 
       {/* Sleep-mode attract loop: an auto-orbiting 3D showcase of the ECE faculty, shown while
           the kiosk is dormant. Say "Hey Summer" (mic keeps listening beneath it) or tap to begin. */}
+      {/* Translucent, not opaque: the wave galaxy (z-0) keeps drifting behind the screensaver,
+          so it's the backdrop of EVERY kiosk page, not just the greeting. */}
       {sleeping && (
-        <div className="fixed inset-0 z-40 bg-[#060a12]" onClick={() => { primeAudio(); goFullscreen(); window.clearTimeout(greetTimer.current); setDismissed(true); resetIdle() }}>
+        <div className="fixed inset-0 z-40 bg-[#060a12]/80" onClick={() => { primeAudio(); goFullscreen(); window.clearTimeout(greetTimer.current); setDismissed(true); resetIdle() }}>
           <KioskScreensaver onCycleEnd={enterAttract} />
           {/* Wake prompt sits in its own gradient "footer" band, so the directory grid fades
               out above it instead of colliding with the names, offices, and progress dots. */}

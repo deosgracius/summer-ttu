@@ -193,7 +193,7 @@ export default function KioskPage() {
           greeting while idle; a compact GREEN orb (listening → thinking → speaking) the moment
           you call "Summer", so the exchange is visible and feels spontaneous. */}
       <div className="relative z-10 mb-2 flex flex-col items-center text-center">
-        <SummerOrb size={conversing ? 160 : 380} state={orbState} />
+        <SummerOrb size={380} state={orbState} />
         {!conversing && (
           <>
             <h1 className="mt-3 text-4xl font-semibold tracking-tight">Hi, I'm Summer.</h1>

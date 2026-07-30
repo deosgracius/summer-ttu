@@ -94,6 +94,9 @@ async def tts(data: TTSReq, db: Session = Depends(get_db), user: models.User = D
         raise HTTPException(400, "text required")
     try:
         audio = await voice.tts(data.text, data.voice_id or active_voice(db))
+    except voice.TTSUnavailable:
+        # Quota / rate-limited — expected degradation; client falls back to browser voice.
+        return Response(status_code=204)
     except Exception as e:  # noqa
         from .. import failures
         failures.record("voice_tts", "Text-to-speech (ElevenLabs) failed", detail=str(e))

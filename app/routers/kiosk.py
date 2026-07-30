@@ -142,6 +142,11 @@ async def kiosk_tts(data: KioskTTS, request: Request, db: Session = Depends(get_
         raise HTTPException(400, "text required")
     try:
         audio = await voice.tts(text, appsettings.get(db, "voice_id", voice.DEFAULT_VOICE))
+    except voice.TTSUnavailable:
+        # Quota / rate-limited — expected degradation (voice.tts already noted it once). Tell the
+        # client there's no audio (204) so it uses its free browser voice, instead of logging an
+        # error on every call and returning a 502.
+        return Response(status_code=204)
     except Exception as e:  # noqa
         import logging
         logging.getLogger("summer").warning("kiosk TTS failed: %s", e)

@@ -1,9 +1,22 @@
 """ElevenLabs text-to-speech. Gated by ELEVENLABS_API_KEY — falls back gracefully when unset."""
 import os
 import re
+import time
 import httpx
 
 API = "https://api.elevenlabs.io/v1"
+
+
+class TTSUnavailable(Exception):
+    """ElevenLabs is out of quota or rate-limited (429). Callers should quietly fall back to the
+    browser's built-in voice — this is expected degradation, NOT a bug to alert on."""
+
+
+# Circuit breaker: once ElevenLabs returns 429 (monthly quota used up / rate-limited), stop
+# calling it for this long. Otherwise a busy hallway kiosk hammers a rate-limited API hundreds
+# of times, floods the failure log, and adds latency before every browser-voice fallback.
+_QUOTA_COOLDOWN_S = 900  # 15 minutes
+_blocked_until = 0.0
 # .strip() these: a secret pasted into a host's env UI very often carries a trailing
 # newline, which makes httpx reject the xi-api-key header as an "illegal header value".
 DEFAULT_VOICE = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM").strip()  # "Rachel" (public)
@@ -114,10 +127,15 @@ async def list_voices() -> list[dict]:
 
 
 async def tts(text: str, voice_id: str | None = None, model: str | None = None) -> bytes:
-    """Return MP3 audio bytes for the given text. Raises if the key is missing or the API errors."""
+    """Return MP3 audio bytes for the given text. Raises TTSUnavailable when ElevenLabs is out of
+    quota / rate-limited (caller falls back to browser voice); raises for other config/API errors."""
+    global _blocked_until
     key = _key()
     if not key:
         raise RuntimeError("ElevenLabs not configured")
+    if time.time() < _blocked_until:
+        # Still cooling down from a recent 429 — don't call ElevenLabs at all; use browser voice.
+        raise TTSUnavailable("ElevenLabs cooling down after a rate-limit")
     # Auto-switch the voice by language: a non-English reply is spoken with the
     # matching voice; English keeps the caller's configured/default voice.
     lang = detect_lang(text)
@@ -131,5 +149,17 @@ async def tts(text: str, voice_id: str | None = None, model: str | None = None) 
         r = await c.post(f"{API}/text-to-speech/{vid}",
                          headers={"xi-api-key": key, "accept": "audio/mpeg", "content-type": "application/json"},
                          json=payload)
+        if r.status_code == 429:
+            # Quota / rate-limit: trip the breaker so we stop retrying for a while, note it ONCE
+            # (deduped, warning severity — not an error that needs fixing), then fall back.
+            _blocked_until = time.time() + _QUOTA_COOLDOWN_S
+            try:
+                from . import failures
+                failures.record("tts_quota",
+                                "ElevenLabs voice quota/rate-limit reached — using free browser voice",
+                                severity="warning")
+            except Exception:  # noqa
+                pass
+            raise TTSUnavailable("ElevenLabs quota/rate-limited (429)")
         r.raise_for_status()
         return r.content

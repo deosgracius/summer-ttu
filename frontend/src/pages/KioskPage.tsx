@@ -296,7 +296,10 @@ export default function KioskPage() {
             the call to action reads the same wherever the kiosk happens to be in its cycle. */}
         {voiceIn && wakeActive && (
           <div className="flex flex-col items-center gap-2.5 pb-1 text-center">
-            <div className="flex items-center gap-3 text-3xl font-semibold tracking-tight text-white md:text-4xl">
+            {/* "Say Hey Summer" / "Listening" keep the big headline size (matching every
+                screensaver page). The TRANSCRIBED question is set smaller: it's arbitrary-length
+                user speech, so at headline size a normal question overwhelmed the screen. */}
+            <div className={`flex items-center gap-3 font-semibold tracking-tight text-white ${heard ? "text-xl md:text-2xl" : "text-3xl md:text-4xl"}`}>
               <span className="inline-block size-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_2px_rgba(52,211,153,0.7)] animate-pulse" />
               {heard ? (
                 <span className="italic text-sky-300">“{heard}”</span>

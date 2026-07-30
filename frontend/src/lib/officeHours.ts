@@ -142,3 +142,61 @@ export function officeHoursStatus(
   if (found) return pol || txtPol || "closed" // has hours but closed now → the fallback preference
   return pol || txtPol || null                // no slot → policy (or a text phrase), else nothing
 }
+
+// ---- Editing helpers ----------------------------------------------------------------
+// The admin picker edits a simple {days, start, end} slot, but the value STORED stays the same
+// human-readable string the kiosk (and Summer's answers) already read, e.g. "Mon/Wed 1:00pm-3:00pm".
+// Parsing and formatting live here, next to officeHoursStatus, so the picker and the live status
+// check can never drift apart.
+
+export type HoursSlot = { days: number[]; start: string; end: string } // start/end are "HH:MM" (24h)
+
+const DAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+
+function hhmm(mins: number): string {
+  const h = Math.floor(mins / 60), m = mins % 60
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
+}
+
+/** "13:00" -> "1:00pm" (the form officeHoursStatus parses most reliably). */
+function to12h(v: string): string {
+  const [hs, ms] = v.split(":")
+  let h = Number(hs)
+  const m = ms ?? "00"
+  const ap = h >= 12 ? "pm" : "am"
+  if (h === 0) h = 12
+  else if (h > 12) h -= 12
+  return `${h}:${m}${ap}`
+}
+
+/** Read an existing office-hours string back into the picker's day/time slot (first range wins). */
+export function parseSlot(text: string | undefined): HoursSlot | null {
+  const raw = (text || "").toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, " ").trim()
+  if (!raw || !/\d/.test(raw)) return null
+  const s = raw.replace(/\bto\b/g, "-")
+  const TIME = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*-\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/
+  const m = TIME.exec(s)
+  if (!m) return null
+  const days = parseDays(s.slice(0, m.index))
+  let start = toMinutes(+m[1], m[2] ? +m[2] : 0, m[3], m[6])
+  let end = toMinutes(+m[4], m[5] ? +m[5] : 0, m[6], m[6])
+  if (start == null || end == null) return null
+  // Same meridiem inference officeHoursStatus uses, so "10-2pm" and "9-5" round-trip correctly.
+  if (end <= start && !m[3]) {
+    const am = toMinutes(+m[1], m[2] ? +m[2] : 0, "am", "am")
+    if (am != null && am < end) start = am
+  }
+  if (end <= start && !m[3] && !m[6]) {
+    const pm = toMinutes(+m[4], m[5] ? +m[5] : 0, "pm", "pm")
+    if (pm != null && pm > start) end = pm
+  }
+  if (end <= start) return null
+  return { days, start: hhmm(start), end: hhmm(end) }
+}
+
+/** Turn the picker's slot into the stored string, e.g. {days:[1,3],9:00,11:00} -> "Mon/Wed 9:00am-11:00am". */
+export function formatSlot(slot: HoursSlot): string {
+  if (!slot.days.length || !slot.start || !slot.end) return ""
+  const days = [...new Set(slot.days)].sort((a, b) => a - b).map((d) => DAY_ABBR[d]).join("/")
+  return `${days} ${to12h(slot.start)}-${to12h(slot.end)}`
+}

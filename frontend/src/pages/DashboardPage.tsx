@@ -15,6 +15,7 @@ import VoiceSettingsPanel from "@/components/panels/VoiceSettingsPanel"
 import QuickLinksPanel from "@/components/panels/QuickLinksPanel"
 import FileImportPanel from "@/components/panels/FileImportPanel"
 import DirectoryPhotosPanel from "@/components/panels/DirectoryPhotosPanel"
+import OfficeHoursPanel from "@/components/panels/OfficeHoursPanel"
 import QueryInsightsPanel from "@/components/panels/QueryInsightsPanel"
 import FailureLogPanel from "@/components/panels/FailureLogPanel"
 import WelcomeBriefing from "@/components/WelcomeBriefing"
@@ -207,6 +208,7 @@ export default function DashboardPage() {
               {adminView === "directory" && (
                 <div className="space-y-4">
                   <PeoplePanel reloadKey={reloadKey} />
+                  <OfficeHoursPanel />
                   <DirectoryPhotosPanel />
                 </div>
               )}

@@ -105,8 +105,14 @@ export default function KioskScreensaver({ onCycleEnd, onGraphChange }: { onCycl
   const [decoded, setDecoded] = useState<Set<string>>(() => new Set(DECODED))
 
   useEffect(() => {
-    if (CACHE) return
-    api.get<Dir>("/campus/directory").then((d) => { CACHE = d; setData(d) }).catch(() => {})
+    const fetchDir = () =>
+      api.get<Dir>("/campus/directory").then((d) => { CACHE = d; setData(d) }).catch(() => {})
+    if (!CACHE) fetchDir()
+    // Re-fetch on a timer so admin edits — office hours, photos, someone leaving — reach the wall
+    // display on their own. The kiosk can run for days without anyone reloading it, and before this
+    // the directory was fetched once into a module-level cache and never refreshed.
+    const id = window.setInterval(fetchDir, 5 * 60 * 1000)
+    return () => window.clearInterval(id)
   }, [])
 
   // Preload AND decode every photo up front, tracking which are ready, so a page's whole grid can

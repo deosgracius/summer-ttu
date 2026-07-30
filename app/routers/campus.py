@@ -205,6 +205,9 @@ def directory(db: Session = Depends(get_db)):
 # The kiosk sleep-screen directory reads photo_url off the Professor and Staff rows, so those
 # are the only two resources a photo edit needs to touch to show up on the kiosk.
 _PHOTO_RESOURCES = {"professors": models.Professor, "staff": models.Staff}
+# What a professor's status falls back to OUTSIDE their posted slot. Whitelisted so the stored
+# value always matches what frontend/src/lib/officeHours.ts knows how to read.
+_OFFICE_HOURS_POLICIES = {"walk-in", "by appointment", "closed", "away"}
 MAX_PHOTO_BYTES = 6 * 1024 * 1024  # 6 MB — a generous headshot, keeps one row from bloating the DB
 # Accept only real raster images. SVG is deliberately excluded — it can carry <script> and would
 # be an XSS vector when served back. The content type is taken from the file's own magic bytes,
@@ -237,7 +240,10 @@ def directory_admin(db: Session = Depends(get_db),
     def entry(resource, x):
         return {"resource": resource, "id": x.id, "name": (x.name or "").strip(),
                 "title": (getattr(x, "title", "") or "").strip(), "office": office_of(x),
-                "photo_url": getattr(x, "photo_url", "") or ""}
+                "photo_url": getattr(x, "photo_url", "") or "",
+                # Office hours + the fallback preference, so the admin can edit them in place.
+                "office_hours": (getattr(x, "office_hours", "") or "").strip(),
+                "office_hours_policy": (getattr(x, "office_hours_policy", "") or "").strip()}
 
     buckets = {"faculty": [], "instructors": [], "assistant": []}
     for p in db.query(models.Professor).all():
@@ -303,6 +309,34 @@ def delete_directory_photo(resource: str, item_id: int, db: Session = Depends(ge
         return {"applied": True}
     pc = approvals.propose(db, actor, resource, "update", {"photo_url": ""}, target_id=item_id, summary=summary)
     return {"pending": True, "change_id": pc.id}
+
+
+@router.put("/professors/{item_id}/office-hours")
+def set_office_hours(item_id: int, data: dict, db: Session = Depends(get_db),
+                     actor: models.User = Depends(require_roles("admin"))):
+    """Set a professor's office-hours slot and their out-of-hours preference.
+
+    The admin UI edits days + a start/end time, but what's STORED is the same human-readable
+    string the kiosk and Summer's answers already read (e.g. "Mon/Wed 1:00pm-3:00pm"), so nothing
+    downstream has to change. The kiosk re-evaluates it against the clock, which is what makes the
+    dot flip to "Open now" on its own when the slot starts and back to the chosen preference
+    (walk-in / by appointment / closed / out of office) when it ends.
+
+    Central admins apply immediately; other admins submit for approval, like every campus edit.
+    """
+    if db.get(models.Professor, item_id) is None:
+        raise HTTPException(404, "That person no longer exists.")
+    hours = str(data.get("office_hours", "") or "").strip()[:200]
+    policy = str(data.get("office_hours_policy", "") or "").strip()[:80]
+    if policy and policy not in _OFFICE_HOURS_POLICIES:
+        raise HTTPException(400, "Unknown office-hours preference.")
+    payload = {"office_hours": hours, "office_hours_policy": policy}
+    summary = f"Update professors #{item_id} office hours"
+    if actor.role == "central_admin":
+        approvals.apply_direct(db, actor, "professors", "update", payload, target_id=item_id, summary=summary)
+        return {"applied": True, **payload}
+    pc = approvals.propose(db, actor, "professors", "update", payload, target_id=item_id, summary=summary)
+    return {"pending": True, "change_id": pc.id, **payload}
 
 
 def _crud(name: str, model, schema_in, schema_out, search_fields):

@@ -175,10 +175,14 @@ export default function KioskPage() {
       {/* Wave galaxy: a vast disc of blue/cyan points rippling outward, behind the robot. */}
       <WaveGalaxy />
       {/* The page's robot rides along on every page EXCEPT the Research Network finale, which
-          draws its own robot behind the graph — two at anchor="left" overlapped. Hidden via dim/
-          scrim rather than unmounted, so the Spline scene never reloads and the digital mouse
-          keeps running. */}
-      <SplineRobot ambient anchor="left" dim={graphStep ? 0 : 1} scrim={!graphStep} />
+          draws its own robot behind the graph — two at anchor="left" overlapped. Hidden via dim
+          rather than unmounted, so the Spline scene never reloads and the digital mouse keeps
+          running.
+          scrim={false}: the robot's readability vignette is a full-screen gradient that darkens to
+          82% at the edges ABOVE the galaxy (z=2 vs z=0), which is exactly why the wave looked flat
+          on the greeting but vivid on the Research Network page (whose robot already sets
+          scrim={false}). Off here too, so the galaxy reads the same on every page. */}
+      <SplineRobot ambient anchor="left" dim={graphStep ? 0 : 1} scrim={false} />
 
       {/* Sleep-mode attract loop: an auto-orbiting 3D showcase of the ECE faculty, shown while
           the kiosk is dormant. Say "Hey Summer" (mic keeps listening beneath it) or tap to begin. */}
@@ -217,7 +221,7 @@ export default function KioskPage() {
             style={{
               width: 380 * 1.15,
               height: 380 * 1.15,
-              background: "radial-gradient(circle, rgba(6,10,18,0.62) 0%, rgba(6,10,18,0.32) 45%, rgba(6,10,18,0) 70%)",
+              background: "radial-gradient(circle, rgba(6,10,18,0.42) 0%, rgba(6,10,18,0.18) 45%, rgba(6,10,18,0) 68%)",
             }}
           />
           <SummerOrb size={380} state={orbState} />

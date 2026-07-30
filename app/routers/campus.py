@@ -26,7 +26,15 @@ def campus_photo(photo_id: int, db: Session = Depends(get_db)):
     can draw it into a WebGL texture — always succeeds, even from the browser's cache
     (otherwise a cache entry from a non-CORS <img> load makes the crossOrigin request fail
     and the node falls back to an initials medallion)."""
-    p = db.get(models.CampusPhoto, photo_id)
+    # The kiosk loads many photos at once; a pooled DB connection the pooler dropped while idle
+    # can surface as an OperationalError. Roll back and retry once on a fresh connection
+    # (pool_pre_ping validates it) so a transient drop serves the photo instead of a 500.
+    from sqlalchemy.exc import OperationalError
+    try:
+        p = db.get(models.CampusPhoto, photo_id)
+    except OperationalError:
+        db.rollback()
+        p = db.get(models.CampusPhoto, photo_id)
     if not p or not p.data:
         raise HTTPException(404, "Photo not found.")
     return Response(content=p.data, media_type=p.content_type or "image/jpeg",

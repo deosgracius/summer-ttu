@@ -235,11 +235,14 @@ export default function KioskPage() {
         {!conversing && (
           <>
             <h1 className="mt-6 text-5xl font-semibold tracking-tight text-white">Hi, I'm Summer.</h1>
-            {/* One measure (max-w-2xl) shared with the prompts below, and text-balance so the two
-                lines break evenly instead of leaving a short orphan. */}
-            <p className="mx-auto mt-3 max-w-2xl text-balance text-lg leading-relaxed text-white/65">
-              Ask me about this department — classes, rooms, schedules, professors' office hours,
-              advisors, buildings, and services like the stockroom.
+            {/* Subtitle. One measure (max-w-2xl) shared with the prompts below, text-balance so
+                the lines break evenly, and a lighter, larger face than the old text-lg body copy:
+                against a 5xl semibold heading, a light xl subtitle reads as considered hierarchy
+                rather than a paragraph of small print. Copy tightened into four parallel groups
+                instead of a seven-item run-on list. */}
+            <p className="mx-auto mt-4 max-w-2xl text-balance text-xl font-light leading-relaxed tracking-[0.01em] text-white/70">
+              Ask about course times and rooms, faculty offices and hours, advising,
+              or department services.
             </p>
           </>
         )}

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import * as THREE from "three"
 
 /**
@@ -42,6 +42,11 @@ const LOOK_Y = 10
 
 export default function WaveGalaxy() {
   const hostRef = useRef<HTMLDivElement>(null)
+  // Bumped when the GPU drops our WebGL context, which tears this effect down and rebuilds the
+  // whole scene on a fresh context. A wall kiosk runs for days on a low-power stick, and browsers
+  // DO reclaim contexts under memory pressure (or when too many are alive at once). Without this
+  // the dead canvas stayed in the page and composited as flat grey over the whole backdrop.
+  const [gen, setGen] = useState(0)
 
   useEffect(() => {
     const host = hostRef.current
@@ -59,6 +64,20 @@ export default function WaveGalaxy() {
     renderer.setSize(window.innerWidth, window.innerHeight)
     renderer.setClearColor(0x000000, 0) // transparent: the page's deep-black backdrop shows through
     host.appendChild(renderer.domElement)
+
+    // GPU context loss. On a kiosk running for days this DOES happen (driver reset, memory
+    // pressure, too many live contexts), and a dead canvas composites as flat grey over the whole
+    // page — the backdrop appears to "turn grey after a long time". Hide it immediately so the
+    // page falls back to its own dark background, and preventDefault() so the browser is willing
+    // to hand the context back; on restore, rebuild the scene from scratch via `gen`.
+    const canvas = renderer.domElement
+    const onLost = (e: Event) => {
+      e.preventDefault()
+      canvas.style.display = "none"
+    }
+    const onRestored = () => setGen((g) => g + 1)
+    canvas.addEventListener("webglcontextlost", onLost, false)
+    canvas.addEventListener("webglcontextrestored", onRestored, false)
 
     const scene = new THREE.Scene()
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 400)
@@ -195,12 +214,14 @@ export default function WaveGalaxy() {
     return () => {
       cancelAnimationFrame(raf)
       window.removeEventListener("resize", onResize)
+      canvas.removeEventListener("webglcontextlost", onLost)
+      canvas.removeEventListener("webglcontextrestored", onRestored)
       geo.dispose()
       mat.dispose()
-      renderer.dispose()
-      if (renderer.domElement.parentNode === host) host.removeChild(renderer.domElement)
+      renderer.dispose() // frees the GPU context, so remounts can't pile them up
+      if (canvas.parentNode === host) host.removeChild(canvas)
     }
-  }, [])
+  }, [gen])
 
   // z-0: above the CSS star/nebula backdrop, behind the Spline robot (z-1) and all UI (z-10).
   return <div ref={hostRef} aria-hidden className="pointer-events-none fixed inset-0 z-0" />

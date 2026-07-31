@@ -170,7 +170,10 @@ export default function KioskPage() {
   askRef.current = ask
 
   return (
-    <div className="summer-bg min-h-svh bg-background text-foreground flex flex-col items-center px-4 py-8">
+    // bg-[#060a12] is pinned explicitly rather than relying on the theme token: this screen runs
+    // for days, and if a WebGL layer or the theme class ever fails the wall must still show the
+    // dark backdrop, never a bare grey page.
+    <div className="summer-bg min-h-svh bg-[#060a12] text-foreground flex flex-col items-center px-4 py-8">
       <SpaceBackground />
       {/* Wave galaxy: a vast disc of blue/cyan points rippling outward, behind the robot. */}
       <WaveGalaxy />

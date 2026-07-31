@@ -63,13 +63,12 @@ function Card({ m, w, showOffice, doctor, accent }: { m: Member; w: number; show
     const id = window.setInterval(() => setTick((t) => t + 1), 30000)
     return () => window.clearInterval(id)
   }, [m.office_hours])
-  const oh = officeHoursStatus(m.office_hours, m.office_hours_policy)
+  // Two states only: open during the posted hours, closed outside them, nothing when no hours
+  // are set. (Walk-in / by appointment / out-of-office were removed at the owner's request.)
+  const oh = officeHoursStatus(m.office_hours)
   const OH = oh ? {
-    open:        { dot: "bg-emerald-400 animate-pulse", txt: "font-medium text-emerald-300", label: "Open now",         glow: "0 0 8px 1px rgba(52,211,153,0.85)" },
-    walkin:      { dot: "bg-teal-300 animate-pulse",     txt: "font-medium text-teal-200",    label: "Walk-ins welcome", glow: "0 0 8px 1px rgba(45,212,191,0.7)" },
-    closed:      { dot: "bg-rose-500",                   txt: "text-white/45",                label: "Closed now",       glow: undefined },
-    away:        { dot: "bg-rose-500",                   txt: "text-white/45",                label: "Out of office",    glow: undefined },
-    appointment: { dot: "bg-amber-400",                  txt: "font-medium text-amber-300",   label: "By appointment",   glow: "0 0 8px 1px rgba(251,191,36,0.6)" },
+    open:   { dot: "bg-emerald-400 animate-pulse", txt: "font-medium text-emerald-300", label: "Open now",   glow: "0 0 8px 1px rgba(52,211,153,0.85)" },
+    closed: { dot: "bg-rose-500",                  txt: "text-white/45",                label: "Closed now", glow: undefined },
   }[oh] : null
   return (
     <div style={{ width: w }} className="flex flex-col items-center">

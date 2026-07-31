@@ -22,31 +22,20 @@ const DAYS = [
   { n: 4, label: "Thu" }, { n: 5, label: "Fri" }, { n: 6, label: "Sat" }, { n: 0, label: "Sun" },
 ]
 
-// What shows on the kiosk OUTSIDE the posted slot. Values must match the backend whitelist.
-const POLICIES = [
-  { value: "closed", label: "Closed outside those hours" },
-  { value: "walk-in", label: "Walk-ins welcome" },
-  { value: "by appointment", label: "By appointment" },
-  { value: "away", label: "Out of office / on leave" },
-]
-
 // How each live status is presented, mirroring the kiosk card so the preview is truthful.
 const STATUS: Record<string, { label: string; cls: string; dot: string }> = {
   open: { label: "Open now", cls: "text-emerald-400", dot: "bg-emerald-400" },
-  walkin: { label: "Walk-ins welcome", cls: "text-teal-300", dot: "bg-teal-300" },
-  appointment: { label: "By appointment", cls: "text-amber-400", dot: "bg-amber-400" },
   closed: { label: "Closed now", cls: "text-rose-400", dot: "bg-rose-500" },
-  away: { label: "Out of office", cls: "text-rose-400", dot: "bg-rose-500" },
 }
 
-function StatusPill({ hours, policy }: { hours: string; policy: string }) {
+function StatusPill({ hours }: { hours: string }) {
   // Re-evaluate every 30s so the preview flips exactly when the kiosk does.
   const [, tick] = useState(0)
   useEffect(() => {
     const id = window.setInterval(() => tick((t) => t + 1), 30_000)
     return () => window.clearInterval(id)
   }, [])
-  const s = officeHoursStatus(hours, policy)
+  const s = officeHoursStatus(hours)
   if (!s) return <span className="text-xs text-muted-foreground">No status shown</span>
   const v = STATUS[s]
   return (
@@ -64,7 +53,9 @@ function PersonRow({ p, onSaved }: { p: DirPerson; onSaved: () => void }) {
     [p.office_hours],
   )
   const [slot, setSlot] = useState<HoursSlot>(initial)
-  const [policy, setPolicy] = useState(p.office_hours_policy || "closed")
+  // Preserved as-is and sent back unchanged: the status is time-driven now, but wiping the
+  // stored preference on every save would silently discard data the department entered.
+  const policy = p.office_hours_policy || ""
 
   // The exact string that will be stored, and therefore what the kiosk will read.
   const hoursText = formatSlot(slot)
@@ -97,7 +88,7 @@ function PersonRow({ p, onSaved }: { p: DirPerson; onSaved: () => void }) {
             {p.office_hours || "No hours set"}
           </span>
         </span>
-        <StatusPill hours={p.office_hours} policy={p.office_hours_policy} />
+        <StatusPill hours={p.office_hours} />
         <span className="text-xs text-muted-foreground">{open ? "▾" : "▸"}</span>
       </button>
 
@@ -136,21 +127,14 @@ function PersonRow({ p, onSaved }: { p: DirPerson; onSaved: () => void }) {
                 onChange={(e) => setSlot((s) => ({ ...s, end: e.target.value }))}
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground" />
             </label>
-            <label className="min-w-[14rem] flex-1 text-xs text-muted-foreground">
-              <span className="mb-1 block">Rest of the time, show</span>
-              <select value={policy} onChange={(e) => setPolicy(e.target.value)}
-                className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground">
-                {POLICIES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </label>
           </div>
 
           {/* Truthful preview: same function the kiosk calls, against the clock right now. */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-muted/40 px-3 py-2">
             <span className="text-xs text-muted-foreground">Kiosk shows now:</span>
-            <StatusPill hours={hoursText} policy={policy} />
+            <StatusPill hours={hoursText} />
             <span className="text-xs text-muted-foreground">
-              {hoursText ? `Stored as "${hoursText}"` : "No hours — the preference shows at all times"}
+              {hoursText ? `Stored as "${hoursText}"` : "No hours set — no status is shown"}
             </span>
           </div>
 
@@ -217,9 +201,9 @@ export default function OfficeHoursPanel() {
       {open && (
         <div className="mt-3">
           <p className="mb-3 text-xs text-muted-foreground">
-            Pick the days and hours the door is open, and what to show the rest of the time. The kiosk
-            checks the clock, so it turns green on its own when the slot starts and back again when it
-            ends. No need to change anything by hand.
+            Pick the days and hours the door is open. The kiosk checks the clock, so it shows "Open
+            now" on its own when the slot starts and "Closed now" when it ends. Leave the hours empty
+            and no status is shown at all. No need to change anything by hand.
             {me?.role !== "central_admin" && " Your changes are submitted for approval before they go live."}
           </p>
           <input

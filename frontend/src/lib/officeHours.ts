@@ -1,9 +1,8 @@
 // Decide a professor's office-hours state right now, for the directory dot.
-//   "open"        -> in office hours right now, or an open-door policy (green)
-//   "closed"      -> has posted hours, but closed right now (red)
-//   "away"        -> out of office / on leave (red)
-//   "appointment" -> by appointment only (amber)
-//   null          -> nothing posted or unparseable (no dot)
+//   "open"   -> inside the posted hours right now (green)
+//   "closed" -> hours are posted, but we're outside them (red)
+//   null     -> no hours posted, or unparseable — show nothing at all
+// Purely time-driven: the only two states are open and closed.
 // Uses the browser's local time. The kiosk is on-campus (US Central), so local time is the
 // same clock the hours are posted in.
 //
@@ -11,7 +10,7 @@
 //   "Mon/Wed 2-4pm"          "Monday, Wednesday 2:00-4:00 PM"
 //   "TR 1-2pm"  (T=Tue, R=Thu)   "MWF 10-11am"
 //   "Tue 14:00-16:00"        "Mon 9-10am, 2-3pm"  (2nd range inherits Mon)
-//   "Wed 10-11am; Fri 1-2pm"     "By appointment" -> null
+//   "Wed 10-11am; Fri 1-2pm"     text with no times -> null
 
 const DAY_WORDS: [RegExp, number][] = [
   [/^su(n(day)?)?$/, 0], [/^m(on(day)?)?$/, 1], [/^tu(e(s|sday)?)?$/, 2],
@@ -61,46 +60,18 @@ function toMinutes(h: number, m: number, ap?: string, fallbackAp?: string): numb
   return hh * 60 + m
 }
 
-export type OfficeHoursStatus = "open" | "closed" | "away" | "appointment" | "walkin" | null
+export type OfficeHoursStatus = "open" | "closed" | null
 
-// The professor's chosen PREFERENCE (a short policy string set on the admin page). This is
-// what shows when they are NOT currently inside a posted time slot: walk-in / by appointment /
-// closed / out of office. Set by the "Office-hours policy" dropdown.
-function policyStatus(policy: string | undefined): OfficeHoursStatus {
-  const p = (policy || "").toLowerCase().trim()
-  if (!p) return null
-  // Substring (not whole-word) matching on distinctive stems, so "appointment" matches
-  // "appoint" and "closed" matches "close".
-  if (/appoint|appt|arrangement|request/.test(p)) return "appointment"
-  if (/walk|drop|open ?door|open-door/.test(p)) return "walkin"
-  if (/away|leave|sabbatical|unavailable|out of office/.test(p)) return "away"
-  if (/close|scheduled|by hours/.test(p)) return "closed"
-  if (/open|available|any ?time/.test(p)) return "walkin"
-  return null
-}
-
-// Policy PHRASES embedded in the free-text hours (back-compat for rows with no explicit policy).
-function textPolicy(raw: string): OfficeHoursStatus {
-  if (/\b(always open|open all day|open ?door|open-door|walk-?ins? (welcome|anytime)|drop-?ins? welcome)\b/.test(raw)) return "walkin"
-  if (/\b(out of office|on leave|sabbatical|unavailable|not available|away)\b/.test(raw)) return "away"
-  if (/\b(appointment|appt|by arrangement|email (me )?to schedule|schedule online|request)\b/.test(raw)) return "appointment"
-  return null
-}
-
-// Decide a professor's office-hours status right now: "open" while inside a posted time slot,
-// otherwise the professor's policy preference (walk-in / by appointment / closed / away). The
-// admin sets the slot (office_hours) and the fallback (office_hours_policy) on the admin page.
+// "open" while inside the posted time slot, "closed" outside it, and nothing at all when no
+// hours are set. The admin sets the slot (office_hours) with the picker on the admin page.
 export function officeHoursStatus(
   text: string | undefined,
-  policy?: string,
+  _policy?: string, // accepted for call-site compatibility; the status is purely time-driven now
   now: Date = new Date(),
 ): OfficeHoursStatus {
   // raw: normalized but WITHOUT the "to"->"-" swap, so phrases like "email me to schedule"
   // survive. s (below): the "to"->"-" form used for time-range parsing ("9 to 10am").
   const raw = (text || "").toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, " ").trim()
-  const pol = policyStatus(policy)
-  const txtPol = raw ? textPolicy(raw) : null
-
   // Parse posted time ranges and see whether we're inside one right now.
   let found = false, live = false
   if (raw && /\d/.test(raw)) {
@@ -138,9 +109,9 @@ export function officeHoursStatus(
     }
   }
 
-  if (live) return "open"                     // inside a posted slot → open right now
-  if (found) return pol || txtPol || "closed" // has hours but closed now → the fallback preference
-  return pol || txtPol || null                // no slot → policy (or a text phrase), else nothing
+  if (live) return "open"    // inside a posted slot → open right now
+  if (found) return "closed" // hours are posted, but we're outside them
+  return null                // no hours set → show nothing at all
 }
 
 // ---- Editing helpers ----------------------------------------------------------------

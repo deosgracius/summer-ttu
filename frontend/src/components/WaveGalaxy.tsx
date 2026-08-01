@@ -166,7 +166,9 @@ export default function WaveGalaxy() {
           // Dust: glowing blue -> bright cyan with the wave. Stars: near-white.
           vec3 dust = mix(vec3(0.16, 0.45, 1.0), vec3(0.55, 1.0, 1.0), vGlow);
           vec3 col  = mix(dust, vec3(0.95, 0.99, 1.0), vStar);
-          float alpha = mix(m * (0.42 + vGlow * 1.05), m * (0.85 + vGlow * 0.15), vStar);
+          // Every term is the previous value x1.25 — a straight 25% lift in how strongly each
+          // point burns through, which with additive blending is what reads as "brighter".
+          float alpha = mix(m * (0.53 + vGlow * 1.31), m * (1.00 + vGlow * 0.19), vStar);
           gl_FragColor = vec4(col, alpha);
         }
       `,

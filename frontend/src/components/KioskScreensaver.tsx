@@ -208,10 +208,18 @@ export default function KioskScreensaver({ onCycleEnd, onGraphChange }: { onCycl
   if (onGraph) {
     return (
       <div className="absolute inset-0 isolate bg-[#060a12]/20">
-        {/* Robot sits deepest: z=-1 puts it behind the (now transparent) graph but above the
-            dark base, so it's a faint left-side backdrop. `isolate` makes this div the stacking
-            context so the base stays behind the robot. It follows the ambient digital mouse. */}
-        <SplineRobot anchor="left" scrim={false} dim={0.55} z={-1} />
+        {/* The robot is behind the graph but IN FRONT OF THE WAVE GALAXY. `isolate` makes this div
+            the stacking context, and the whole screensaver sits at z-40 in the page while the
+            galaxy is at z-0, so the galaxy is always the lower layer. It was still reading as if
+            the wave were in front, because at dim=0.55 the robot is nearly half transparent and
+            the (now brighter) galaxy shone straight through it — so it's opaque enough here to
+            read as solid. A dark plate underneath stops the galaxy bleeding through the robot
+            itself; the wave still shows everywhere around it. Follows the ambient digital mouse. */}
+        <div className="pointer-events-none absolute inset-0" aria-hidden style={{
+          zIndex: -2, // one layer BELOW the robot (-1), still above this container's background
+          background: "radial-gradient(70% 90% at 22% 55%, rgba(6,10,18,0.85) 0%, rgba(6,10,18,0.5) 45%, rgba(6,10,18,0) 75%)",
+        }} />
+        <SplineRobot anchor="left" scrim={false} dim={0.95} z={-1} />
         <FacultyGraph3D />
         {/* Vignette: darken the edges for depth */}
         <div className="pointer-events-none absolute inset-0 z-[1]" aria-hidden

@@ -18,27 +18,52 @@ from ..campus_import import parse_workbook
 router = APIRouter(prefix="/campus", tags=["campus"])
 
 
+# Headshots served straight out of Postgres, cached in this process after the first read.
+#
+# WHY THIS MATTERS: the bytes live in the campus_photos table, so every uncached request pulls
+# them OUT of the database — which on a hosted Postgres is billed egress. The whole photo set is
+# only ~8 MB, but the kiosk runs all day and the Research Network re-loads every face as a WebGL
+# texture each cycle, so those 8 MB were being fetched over and over: gigabytes a month for a
+# handful of pictures that never change. A photo id is immutable (a replacement upload writes a
+# NEW row and repoints photo_url), so caching by id can never go stale.
+_PHOTO_CACHE: dict[int, tuple[str, bytes]] = {}
+_PHOTO_CACHE_MAX_BYTES = 48 * 1024 * 1024  # far above the real set; a ceiling, not a target
+_photo_cache_bytes = 0
+
+
 @router.get("/photo/{photo_id}", include_in_schema=False)
 def campus_photo(photo_id: int, db: Session = Depends(get_db)):
-    """Serve a locally-cached headshot (public — the anonymous kiosk loads these via
-    <img>, so no auth). Cached hard since the bytes are immutable per id. Sends CORS +
+    """Serve a headshot (public — the anonymous kiosk loads these via <img>, so no auth).
+    Immutable per id, so it's cached in-process and cached hard by the browser. Sends CORS +
     CORP headers so the 3D knowledge graph — which loads the image with crossOrigin so it
     can draw it into a WebGL texture — always succeeds, even from the browser's cache
     (otherwise a cache entry from a non-CORS <img> load makes the crossOrigin request fail
     and the node falls back to an initials medallion)."""
-    # The kiosk loads many photos at once; a pooled DB connection the pooler dropped while idle
-    # can surface as an OperationalError. Roll back and retry once on a fresh connection
-    # (pool_pre_ping validates it) so a transient drop serves the photo instead of a 500.
-    from sqlalchemy.exc import OperationalError
-    try:
-        p = db.get(models.CampusPhoto, photo_id)
-    except OperationalError:
-        db.rollback()
-        p = db.get(models.CampusPhoto, photo_id)
-    if not p or not p.data:
-        raise HTTPException(404, "Photo not found.")
-    return Response(content=p.data, media_type=p.content_type or "image/jpeg",
-                    headers={"Cache-Control": "public, max-age=604800",
+    global _photo_cache_bytes
+    hit = _PHOTO_CACHE.get(photo_id)
+    if hit is None:
+        # The kiosk loads many photos at once; a pooled DB connection the pooler dropped while
+        # idle can surface as an OperationalError. Roll back and retry once on a fresh connection
+        # (pool_pre_ping validates it) so a transient drop serves the photo instead of a 500.
+        from sqlalchemy.exc import OperationalError
+        try:
+            p = db.get(models.CampusPhoto, photo_id)
+        except OperationalError:
+            db.rollback()
+            p = db.get(models.CampusPhoto, photo_id)
+        if not p or not p.data:
+            raise HTTPException(404, "Photo not found.")
+        hit = (p.content_type or "image/jpeg", p.data)
+        if _photo_cache_bytes + len(hit[1]) <= _PHOTO_CACHE_MAX_BYTES:
+            _PHOTO_CACHE[photo_id] = hit
+            _photo_cache_bytes += len(hit[1])
+    ctype, data = hit
+    return Response(content=data, media_type=ctype,
+                    # immutable: a photo id's bytes never change, so browsers must not
+                    # re-validate at all. 1 year + an ETag, so a kiosk left running for weeks
+                    # stops asking the server for faces it already has.
+                    headers={"Cache-Control": "public, max-age=31536000, immutable",
+                             "ETag": f'"photo-{photo_id}"',
                              "Access-Control-Allow-Origin": "*",
                              "Cross-Origin-Resource-Policy": "cross-origin",
                              # Uploaded headshots are validated to be real images, but never let a

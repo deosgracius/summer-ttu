@@ -18,6 +18,33 @@ import json
 from . import models, embeddings
 from .vector_store import cosine
 
+# Every search used to pull the WHOLE chunk table — text plus the full vector JSON — out of the
+# database, on every question. That is real egress on a hosted Postgres, it repeats for identical
+# questions, and it grows with each file the department uploads. Chunks only change when a
+# document is ingested or deleted, both of which go through this module, so cache them here and
+# drop the cache on those writes.
+_CHUNK_CACHE: list | None = None
+_CHUNK_CACHE_TITLES: dict | None = None
+_CHUNK_CACHE_MAX = 4000  # stop caching if the corpus grows past this many chunks
+
+
+def _invalidate_chunk_cache() -> None:
+    global _CHUNK_CACHE, _CHUNK_CACHE_TITLES
+    _CHUNK_CACHE = None
+    _CHUNK_CACHE_TITLES = None
+
+
+class _Chunk:
+    """A detached copy of the columns scoring actually reads. Plain attributes, so a cached chunk
+    never touches a closed session or keeps ORM identity-map state alive."""
+    __slots__ = ("document_id", "ordinal", "text", "vector")
+
+    def __init__(self, document_id, ordinal, text, vector):
+        self.document_id = document_id
+        self.ordinal = ordinal
+        self.text = text
+        self.vector = vector
+
 # Chunking defaults — ~800 chars (~150-200 tokens) with overlap so a passage that
 # straddles a boundary still appears whole in at least one chunk.
 TARGET_CHARS = 800
@@ -201,6 +228,7 @@ def ingest_document(db, title: str, source: str, text: str, kind: str = "text") 
             vector=json.dumps(vec) if vec is not None else "[]",
             model=embeddings.effective_model() if vec is not None else ""))
     db.commit()
+    _invalidate_chunk_cache()  # new chunks -> the cached corpus is stale
     return {"document_id": doc.id, "title": doc.title, "chunks": len(chunks),
             "embedded": embedded, "embeddings_on": embeddings.is_configured()}
 
@@ -242,11 +270,20 @@ def search_documents(db, query: str, limit: int = 5) -> dict:
     query = (query or "").strip()
     if not query:
         return {"matches": []}
-    rows = db.query(models.DocumentChunk).all()
+    global _CHUNK_CACHE, _CHUNK_CACHE_TITLES
+    if _CHUNK_CACHE is not None:
+        rows, titles = _CHUNK_CACHE, _CHUNK_CACHE_TITLES or {}
+    else:
+        rows = db.query(models.DocumentChunk).all()
+        titles = {d.id: d.title for d in db.query(models.Document).all()}
+        # Detach from the session and keep only what scoring needs, so cached rows can't go stale
+        # against a closed session or hold ORM state alive.
+        if len(rows) <= _CHUNK_CACHE_MAX:
+            _CHUNK_CACHE = [_Chunk(r.document_id, r.ordinal, r.text, r.vector) for r in rows]
+            _CHUNK_CACHE_TITLES = titles
+            rows = _CHUNK_CACHE
     if not rows:
         return {"matches": [], "note": "No documents have been uploaded yet."}
-
-    titles = {d.id: d.title for d in db.query(models.Document).all()}
     qvec = embeddings.embed_text(query) if embeddings.is_configured() else None
 
     scored = []
@@ -292,4 +329,5 @@ def delete_document(db, doc_id: int) -> bool:
     db.query(models.DocumentChunk).filter_by(document_id=doc_id).delete()
     db.delete(doc)
     db.commit()
+    _invalidate_chunk_cache()  # chunks removed -> the cached corpus is stale
     return True

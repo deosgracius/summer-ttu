@@ -46,11 +46,15 @@ const LOOK_Y = 10
 
 export default function WaveGalaxy() {
   const hostRef = useRef<HTMLDivElement>(null)
-  // Bumped when the GPU drops our WebGL context, which tears this effect down and rebuilds the
-  // whole scene on a fresh context. A wall kiosk runs for days on a low-power stick, and browsers
-  // DO reclaim contexts under memory pressure (or when too many are alive at once). Without this
-  // the dead canvas stayed in the page and composited as flat grey over the whole backdrop.
+  // Bumped to tear this effect down and rebuild the whole scene on a fresh context. A wall kiosk
+  // runs for days, and browsers DO reclaim WebGL contexts under memory pressure. Waiting for the
+  // browser's own `webglcontextrestored` was not enough: that event frequently never fires, so
+  // the galaxy vanished for good. A watchdog now forces the rebuild ourselves.
   const [gen, setGen] = useState(0)
+  // How many contexts we've lost this session. Each loss means the GPU could not sustain the
+  // scene, so the rebuild uses FEWER points — the backdrop degrades gracefully to whatever the
+  // hardware can actually hold, instead of looking perfect for an hour and then disappearing.
+  const lossesRef = useRef(0)
 
   useEffect(() => {
     const host = hostRef.current
@@ -75,11 +79,21 @@ export default function WaveGalaxy() {
     // page falls back to its own dark background, and preventDefault() so the browser is willing
     // to hand the context back; on restore, rebuild the scene from scratch via `gen`.
     const canvas = renderer.domElement
-    const onLost = (e: Event) => {
-      e.preventDefault()
-      canvas.style.display = "none"
+    let retryTimer = 0
+    const rebuild = () => {
+      window.clearTimeout(retryTimer)
+      retryTimer = 0
+      setGen((g) => g + 1)
     }
-    const onRestored = () => setGen((g) => g + 1)
+    const onLost = (e: Event) => {
+      e.preventDefault() // ask the browser to give the context back
+      canvas.style.display = "none" // never let a dead canvas composite over the page
+      lossesRef.current += 1
+      // WATCHDOG: `webglcontextrestored` often never arrives. Rebuild ourselves after a short
+      // pause (long enough for whatever caused the loss to settle) so the galaxy always returns.
+      if (!retryTimer) retryTimer = window.setTimeout(rebuild, 4000)
+    }
+    const onRestored = () => rebuild()
     canvas.addEventListener("webglcontextlost", onLost, false)
     canvas.addEventListener("webglcontextrestored", onRestored, false)
 
@@ -89,13 +103,17 @@ export default function WaveGalaxy() {
     camera.position.set(ORBIT_R, ORBIT_H, 0)
     camera.lookAt(0, LOOK_Y, 0)
 
-    const pos = new Float32Array(COUNT * 3)
-    const rand = new Float32Array(COUNT)   // per-point brightness jitter
-    const star = new Float32Array(COUNT)   // 1 = bright white star, 0 = blue dust
+    // Adaptive density: full count normally, but each context loss halves it (floored), so a
+    // machine that cannot hold the full scene settles at a lighter one that it CAN hold, rather
+    // than cycling between looking perfect and vanishing.
+    const count = Math.max(9000, Math.round(COUNT / Math.pow(2, lossesRef.current)))
+    const pos = new Float32Array(count * 3)
+    const rand = new Float32Array(count)   // per-point brightness jitter
+    const star = new Float32Array(count)   // 1 = bright white star, 0 = blue dust
     const scatterPow = (amount: number) =>
       Math.pow(Math.random(), SCATTER_POW) * (Math.random() < 0.5 ? 1 : -1) * amount
 
-    for (let i = 0; i < COUNT; i++) {
+    for (let i = 0; i < count; i++) {
       const isStar = Math.random() < STAR_FRACTION
       // Radius mildly biased toward the core (^0.7), like a galaxy's brightness falloff, while
       // still throwing plenty of points to the rim so the spiral covers the whole screen.
@@ -220,6 +238,7 @@ export default function WaveGalaxy() {
     return () => {
       cancelAnimationFrame(raf)
       window.removeEventListener("resize", onResize)
+      window.clearTimeout(retryTimer)
       canvas.removeEventListener("webglcontextlost", onLost)
       canvas.removeEventListener("webglcontextrestored", onRestored)
       geo.dispose()

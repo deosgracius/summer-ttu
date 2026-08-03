@@ -22,7 +22,11 @@ import * as THREE from "three"
  * the wave runs on the GPU and only a uniform advances per frame. Honors prefers-reduced-motion,
  * pauses when the tab is hidden, and fails closed if WebGL is unavailable.
  */
-const COUNT = 46000        // points in the galaxy — denser field = a stronger, glowier wave
+// 25% more points than before (46k). One canvas serves every page, so this is necessarily global.
+// It is also the single biggest driver of GPU load — the grey-backdrop failure this kiosk hit was
+// WebGL context loss under exactly this pressure. That is now self-healing, but if the backdrop
+// starts dropping out on the display hardware, this number is the first thing to bring back down.
+const COUNT = 57500        // points in the galaxy — denser field = a stronger, glowier wave
 // The disc is deliberately far WIDER than the camera frustum, so the spiral bleeds off every edge
 // and fills the whole screen instead of sitting as a blob in the middle.
 const OUTER = 90           // disc radius

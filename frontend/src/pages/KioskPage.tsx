@@ -197,8 +197,11 @@ export default function KioskPage() {
           the kiosk is dormant. Say "Hey Summer" (mic keeps listening beneath it) or tap to begin. */}
       {/* Translucent, not opaque: the wave galaxy (z-0) keeps drifting behind the screensaver,
           so it's the backdrop of EVERY kiosk page, not just the greeting. */}
+      {/* The Research Network finale gets a lighter scrim than the directory pages, so ~25% more
+          of the galaxy comes through there (45% dark -> 30% dark is 0.55 -> 0.70 pass-through).
+          The directory pages keep the heavier scrim, where photos and names need the contrast. */}
       {sleeping && (
-        <div className="fixed inset-0 z-40 bg-[#060a12]/45" onClick={() => { primeAudio(); goFullscreen(); window.clearTimeout(greetTimer.current); setDismissed(true); resetIdle() }}>
+        <div className={`fixed inset-0 z-40 ${graphStep ? "bg-[#060a12]/30" : "bg-[#060a12]/45"}`} onClick={() => { primeAudio(); goFullscreen(); window.clearTimeout(greetTimer.current); setDismissed(true); resetIdle() }}>
           <KioskScreensaver onCycleEnd={enterAttract} onGraphChange={setGraphStep} />
           {/* Wake prompt sits in its own gradient "footer" band, so the directory grid fades
               out above it instead of colliding with the names, offices, and progress dots. */}

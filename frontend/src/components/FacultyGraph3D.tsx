@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react"
 import ForceGraph3D from "3d-force-graph"
 import * as THREE from "three"
 import { api } from "@/lib/api"
-import { FRAME_MS, LINK_PARTICLES } from "@/lib/device"
+import { FRAME_MS, LINK_PARTICLES, LOW_POWER } from "@/lib/device"
 
 /**
  * The "second brain" finale of the kiosk sleep loop: a slowly auto-orbiting 3D graph of ALL
@@ -40,8 +40,16 @@ function roundRect(x: CanvasRenderingContext2D, X: number, Y: number, w: number,
 
 function faceTexture(img: HTMLImageElement | null, name: string, color: string) {
   const W = 600, H = 740, cy = 300, r = 262
-  const c = document.createElement("canvas"); c.width = W; c.height = H
+  // Each face is rasterised here and uploaded as a GPU texture, for a sprite that draws at about
+  // 165px on screen — 600x740 is roughly 4x oversampled, times ~35 faces, which on shared-memory
+  // hardware is a lot of texture and a lot of rasterisation. On low-power devices the BACKING
+  // STORE is halved (a 4x cut in pixels, still ~2x oversampled at the drawn size) while every
+  // drawing coordinate below stays in the original 600x740 space — ctx.scale does the mapping,
+  // so none of the hand-tuned sizes, fonts or offsets need touching.
+  const FS = LOW_POWER ? 0.5 : 1
+  const c = document.createElement("canvas"); c.width = Math.round(W * FS); c.height = Math.round(H * FS)
   const x = c.getContext("2d")!
+  if (FS !== 1) x.scale(FS, FS)
   x.save(); x.beginPath(); x.arc(W / 2, cy, r, 0, 7); x.closePath(); x.clip()
   if (img) {
     const sz = Math.min(img.naturalWidth, img.naturalHeight)

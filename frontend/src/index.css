@@ -191,8 +191,18 @@
 
 /* ===== Summer space backdrop (stars + nebula + moon) — ported from static UI ===== */
 .summer-space { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
-.summer-nebula { position: absolute; inset: -30%; filter: blur(26px); opacity: 0.5; }
-.summer-nebula i { position: absolute; border-radius: 50%; display: block; }
+/* PERF: the blur used to sit on .summer-nebula itself. That element is inset:-30%, i.e. 160% of
+   the viewport in each direction — roughly 5.3 MILLION pixels at 1080p — and its three children
+   animate forever, so the browser could never cache the blurred surface. It re-blurred all 5.3M
+   pixels every frame, on every page, whether or not anything else was on screen. That is why the
+   faculty directory pages still cost ~137% CPU on the Pi despite having no 3D content at all.
+   Blurring the three circles individually instead cuts the blurred area about 17x (to ~315k px),
+   and will-change lets each be rasterised once and then merely composited as it drifts.
+   Visually near-identical: the circles are far apart and fade to transparent, so blurring them
+   separately rather than as a composite is not perceptible. */
+.summer-nebula { position: absolute; inset: -30%; opacity: 0.5; }
+.summer-nebula i { position: absolute; border-radius: 50%; display: block;
+  filter: blur(26px); will-change: transform; }
 .summer-nebula i:nth-child(1) { width: 260px; height: 260px; left: 6%; top: 8%;
   background: radial-gradient(circle, rgba(84,168,255,.55), transparent 70%); animation: neb1 19s ease-in-out infinite; }
 .summer-nebula i:nth-child(2) { width: 320px; height: 320px; right: 4%; top: 22%;
@@ -202,7 +212,10 @@
 @keyframes neb1 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(42px,30px) scale(1.18); } }
 @keyframes neb2 { 0%,100% { transform: translate(0,0) scale(1.05); } 50% { transform: translate(-48px,26px) scale(.9); } }
 @keyframes neb3 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(22px,-32px) scale(1.2); } }
+/* will-change promotes this to its own compositor layer, so the twinkle animates opacity on an
+   already-rasterised texture instead of repainting the star field each frame. */
 .summer-stars { position: absolute; inset: 0; animation: twinkle 5.5s ease-in-out infinite;
+  will-change: opacity;
   background-image:
     radial-gradient(1px 1px at 18% 30%, rgba(255,255,255,.7), transparent),
     radial-gradient(1px 1px at 72% 62%, rgba(255,255,255,.55), transparent),

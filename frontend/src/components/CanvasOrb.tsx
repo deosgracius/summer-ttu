@@ -32,19 +32,30 @@ export default function CanvasOrb({
   useEffect(() => {
     const cv = ref.current
     if (!cv) return
-    cv.width = 800
-    cv.height = 800
+    // The backing store used to be a hardcoded 800x800 no matter what `size` was, then CSS
+    // scaled it down to 330-380px — so ~4.4x the pixels were drawn (with five shadow-blurred
+    // passes each frame) and thrown away. On a Raspberry Pi kiosk that was the single most
+    // expensive continuous item on the page. Draw at the size actually displayed instead.
+    // K scales every absolute literal below (line widths, blur radii, wave amplitudes) so the
+    // result is geometrically identical to the old 800px render, just not oversampled.
+    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    const S = Math.min(800, Math.max(64, Math.round(size * dpr)))
+    const K = S / 800
+    cv.width = S
+    cv.height = S
     const cx = cv.getContext("2d")
     if (!cx) return
     const t0 = performance.now()
     let raf = 0
 
     const draw = (now: number) => {
+      // The kiosk sits idle for hours; don't burn frames the compositor will never show.
+      if (document.hidden) { raf = requestAnimationFrame(draw); return }
       const w = cv.width, h = cv.height, R = Math.min(w, h) * 0.27
       const time = (now - t0) / 1000
       const s = stateRef.current
       const col = COL[s] || COL.idle
-      const amp = s === "speaking" ? 26 : s === "listening" ? 18 : s === "thinking" ? 12 : 7
+      const amp = (s === "speaking" ? 26 : s === "listening" ? 18 : s === "thinking" ? 12 : 7) * K
       const sp = s === "idle" ? 1 : 2.4
       cx.clearRect(0, 0, w, h)
       cx.save()
@@ -59,9 +70,9 @@ export default function CanvasOrb({
       }
       cx.closePath()
       cx.strokeStyle = col
-      cx.lineWidth = 4
+      cx.lineWidth = 4 * K
       cx.shadowColor = col
-      cx.shadowBlur = 34
+      cx.shadowBlur = 34 * K
       cx.stroke()
       for (let k = 0; k < 3; k++) {
         cx.beginPath()
@@ -69,7 +80,7 @@ export default function CanvasOrb({
         const off = time * sp * (k % 2 ? -1 : 1) * 0.6
         cx.arc(0, 0, rr, off, off + Math.PI * 1.2)
         cx.globalAlpha = 0.4 - k * 0.1
-        cx.lineWidth = 3
+        cx.lineWidth = 3 * K
         cx.stroke()
       }
       cx.globalAlpha = 1
@@ -80,7 +91,7 @@ export default function CanvasOrb({
       cx.beginPath()
       cx.arc(0, 0, R * 0.6 * pulse, 0, Math.PI * 2)
       cx.fillStyle = g
-      cx.shadowBlur = 50
+      cx.shadowBlur = 50 * K
       cx.shadowColor = col
       cx.fill()
       cx.restore()
@@ -88,7 +99,9 @@ export default function CanvasOrb({
     }
     raf = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(raf)
-  }, [])
+    // `size` matters now that it drives the backing store — with the old [] the canvas was
+    // sized once and a prop change would silently keep the stale resolution.
+  }, [size])
 
   return <canvas ref={ref} style={{ width: size, height: size }} className={className} aria-hidden />
 }

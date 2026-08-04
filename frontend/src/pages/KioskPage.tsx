@@ -184,10 +184,11 @@ export default function KioskPage() {
           continuous GPU cost on a Raspberry Pi that was already running ~2 cores hot just to draw
           the attract loop. Flip SHOW_GALAXY to true to bring it straight back — the component is
           unchanged and still supports `paused` if it should ever return on the greeting only. */}
-      {/* Back on, and on EVERY page as originally designed. `paused` stays available if it should
-          ever need to be greeting-only again — pausing is preferable to unmounting, since a
-          remount rebuilds 57,500 points and takes a fresh WebGL context. */}
-      {SHOW_GALAXY && <WaveGalaxy />}
+      {/* FIRST and LAST page only: the greeting and the Research Network finale. It is paused on
+          the faculty directory pages, where a photo grid needs the contrast and the galaxy was
+          only ever visible through two stacked scrims anyway. Paused, not unmounted — a remount
+          would rebuild 57,500 points and take a fresh WebGL context every cycle. */}
+      {SHOW_GALAXY && <WaveGalaxy paused={sleeping && !graphStep} />}
       {/* The page's robot rides along on every page EXCEPT the Research Network finale, which
           draws its own robot behind the graph — two at anchor="left" overlapped. Hidden via dim
           rather than unmounted, so the Spline scene never reloads and the digital mouse keeps
@@ -201,13 +202,12 @@ export default function KioskPage() {
           every cycle, leaking a WebGL context each time until the page went blank. This robot is
           simply re-dressed for that page instead: dim 0.95 and z -1 are the values the finale was
           hand-tuned with, driven by graphStep through onGraphChange. */}
-      <SplineRobot
-        ambient
-        anchor="left"
-        scrim={false}
-        dim={graphStep ? 0.95 : 1}
-        z={graphStep ? -1 : 1}
-      />
+      {/* z stays at 1 on EVERY page. The finale's old robot used z -1, but that worked only
+          because it lived inside the screensaver's `isolate` stacking context. Rendered from the
+          page instead, a negative z-index puts it behind this container's own opaque background
+          and it disappears entirely — which is exactly what happened. At z 1 it sits above the
+          galaxy and shows through the screensaver's translucent scrim, as on every other page. */}
+      <SplineRobot ambient anchor="left" scrim={false} dim={graphStep ? 0.95 : 1} z={1} />
 
       {/* Greeting page only: with the robot's vignette gone the galaxy was at full strength, so a
           flat 35% veil takes it to ~65% — enough to settle the backdrop behind the text without

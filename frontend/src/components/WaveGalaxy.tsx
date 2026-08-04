@@ -48,7 +48,13 @@ const ORBIT_SPEED = 0.055  // radians/sec — one lap ≈ 1.9 min
 // screen instead of hugging the middle/top with dead space beneath it.
 const LOOK_Y = 10
 
-export default function WaveGalaxy() {
+/**
+ * `paused` hides the galaxy AND stops it rendering. Deliberately a pause, not an unmount:
+ * unmounting would rebuild 57,500 points and create a fresh WebGL context on every attract
+ * cycle, which is precisely the context churn that made the wave vanish on long runs.
+ * display:none also takes it out of the compositor, so a hidden galaxy costs nothing at all.
+ */
+export default function WaveGalaxy({ paused = false }: { paused?: boolean } = {}) {
   const hostRef = useRef<HTMLDivElement>(null)
   // Bumped to tear this effect down and rebuild the whole scene on a fresh context. A wall kiosk
   // runs for days, and browsers DO reclaim WebGL contexts under memory pressure. Waiting for the
@@ -59,6 +65,10 @@ export default function WaveGalaxy() {
   // scene, so the rebuild uses FEWER points — the backdrop degrades gracefully to whatever the
   // hardware can actually hold, instead of looking perfect for an hour and then disappearing.
   const lossesRef = useRef(0)
+  // Read through a ref inside the render loop so toggling pause never tears the scene down and
+  // rebuilds it — the whole point is to avoid that rebuild.
+  const pausedRef = useRef(paused)
+  pausedRef.current = paused
 
   useEffect(() => {
     const host = hostRef.current
@@ -229,8 +239,9 @@ export default function WaveGalaxy() {
     let last = 0
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick)
-      // Pause work when the tab is hidden (the kiosk sits idle for hours).
-      if (document.hidden) return
+      // Pause work when the tab is hidden (the kiosk sits idle for hours) or when the galaxy is
+      // hidden behind a screensaver page that no longer shows it.
+      if (document.hidden || pausedRef.current) return
       if (now - last < FRAME_MS) return
       last = now
       const t = (now - t0) / 1000
@@ -261,5 +272,14 @@ export default function WaveGalaxy() {
   }, [gen])
 
   // z-0: above the CSS star/nebula backdrop, behind the Spline robot (z-1) and all UI (z-10).
-  return <div ref={hostRef} aria-hidden className="pointer-events-none fixed inset-0 z-0" />
+  // display:none while paused removes the canvas from the compositor too, so a hidden galaxy
+  // costs nothing — not a draw, not a composite — while keeping its context and buffers alive.
+  return (
+    <div
+      ref={hostRef}
+      aria-hidden
+      className="pointer-events-none fixed inset-0 z-0"
+      style={{ display: paused ? "none" : undefined }}
+    />
+  )
 }

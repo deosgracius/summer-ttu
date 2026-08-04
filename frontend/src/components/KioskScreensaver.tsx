@@ -22,6 +22,24 @@ interface Page { key: string; title: string; subtitle?: string; office: boolean;
 const ACCENT: Record<string, string> = { faculty: "#38bdf8", instructors: "#22d3ee", assistant: "#a78bfa", staff: "#f59e0b" }
 const PAGE_MS = 15000
 const GRAPH_MS = 72000   // the 3D "second brain" finale after Staff (1.2 min)
+
+// Master switch for the Research Network finale. OFF, for two measured reasons:
+//
+// 1. COST. It held 72s of a ~200s cycle (37% of the loop) and carried essentially all of the
+//    load above 3.5 on the Raspberry Pi kiosk — a force-graph with ~35 photo billboards plus a
+//    full-screen Spline robot, both rendering at once. Directory pages bottomed at 3.46 load;
+//    this page pushed it to ~5.5.
+//
+// 2. IT WENT BLANK. This branch mounts a SECOND spline-viewer and unmounts it every cycle, and
+//    a Spline context is not ours to release (renderer.forceContextLoss covers our own three.js
+//    scenes, not a third-party web component). Chromium allows ~16 live WebGL contexts, so after
+//    roughly an hour the kiosk exhausted them and this page rendered EMPTY — no graph, no robot,
+//    only the 2D orb, which is the giveaway. A fresh reload always looked fine, which is why it
+//    was easy to miss.
+//
+// Flip to true to restore it — but fix the remount first: hoist the robot out of this branch, or
+// drive the page's existing one via onGraphChange, so no context is created per cycle.
+const SHOW_GRAPH: boolean = false
 let CACHE: Dir | null = null
 // Photos that have finished decoding, kept across screensaver mounts so a page's whole grid can be
 // revealed at once (all photos live at the same time) instead of popping in one by one.
@@ -154,10 +172,13 @@ export default function KioskScreensaver({ onCycleEnd, onGraphChange }: { onCycl
     return out
   }, [data])
 
-  // Steps = each directory page, plus a final 3D "second brain" graph after Staff.
-  const stepCount = pages.length ? pages.length + 1 : 0
+  // Steps = each directory page, plus (when SHOW_GRAPH) a final 3D "second brain" graph.
+  const stepCount = pages.length ? pages.length + (SHOW_GRAPH ? 1 : 0) : 0
   const step = stepCount ? idx % stepCount : 0
-  const onGraph = stepCount > 0 && step === pages.length
+  const onGraph = SHOW_GRAPH && stepCount > 0 && step === pages.length
+  // Whichever step ends the cycle and hands control back to the greeting. With the graph on that
+  // is the graph; with it off it is simply the last directory page.
+  const isLastStep = stepCount > 0 && step === stepCount - 1
 
   // Tell the page when the Research Network finale is showing. The finale draws its OWN robot
   // (positioned and dimmed for the graph), so the page hides its always-on robot while this is
@@ -172,13 +193,13 @@ export default function KioskScreensaver({ onCycleEnd, onGraphChange }: { onCycl
   // hand control back to the idle "Hi, I'm Summer" page (via onCycleEnd) instead of looping straight
   // to Faculty — the page shows it for a beat, then re-arms the screensaver at Faculty.
   useEffect(() => {
-    if (stepCount <= 1) return
+    if (stepCount < 1) return
     const t = window.setTimeout(() => {
-      if (onGraph && onCycleEnd) onCycleEnd()
+      if (isLastStep && onCycleEnd) onCycleEnd()
       else setIdx((i) => (i + 1) % stepCount)
     }, onGraph ? GRAPH_MS : PAGE_MS)
     return () => window.clearTimeout(t)
-  }, [idx, stepCount, onGraph, onCycleEnd])
+  }, [idx, stepCount, onGraph, isLastStep, onCycleEnd])
 
   const page = !onGraph && pages.length ? pages[step] : null
 

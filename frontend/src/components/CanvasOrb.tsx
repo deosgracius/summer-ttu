@@ -16,6 +16,10 @@ const COL = {
 } as const
 export type OrbState = keyof typeof COL
 
+// 30fps cap. Every value the orb draws is derived from elapsed time, so drawing half as often
+// leaves the pulse and wave running at exactly the tuned speed — it just costs half as much.
+const FRAME_MS = 1000 / 30
+
 export default function CanvasOrb({
   size = 160,
   state = "idle",
@@ -48,9 +52,13 @@ export default function CanvasOrb({
     const t0 = performance.now()
     let raf = 0
 
+    let last = 0
     const draw = (now: number) => {
+      raf = requestAnimationFrame(draw)
       // The kiosk sits idle for hours; don't burn frames the compositor will never show.
-      if (document.hidden) { raf = requestAnimationFrame(draw); return }
+      if (document.hidden) return
+      if (now - last < FRAME_MS) return
+      last = now
       const w = cv.width, h = cv.height, R = Math.min(w, h) * 0.27
       const time = (now - t0) / 1000
       const s = stateRef.current
@@ -95,7 +103,9 @@ export default function CanvasOrb({
       cx.shadowColor = col
       cx.fill()
       cx.restore()
-      raf = requestAnimationFrame(draw)
+      // NB: the next frame is scheduled at the TOP of draw(), before the early returns, so the
+      // loop keeps running while hidden or frame-capped. Scheduling here as well would queue
+      // two callbacks per frame.
     }
     raf = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(raf)

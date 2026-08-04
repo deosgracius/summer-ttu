@@ -105,6 +105,12 @@ function glowSprite(color: string, size: number) {
   sp.scale.set(size, size, 1); return sp
 }
 
+// The attract loop is ambient motion — a slow camera orbit, a drifting galaxy, a pulsing orb.
+// None of it benefits from 60fps, and on a Raspberry Pi the kiosk cannot deliver 60fps across
+// three WebGL scenes anyway. Capping at 30 halves the per-frame cost of every renderer at once,
+// which is the single largest lever left that does not change how the kiosk looks.
+const FRAME_MS = 1000 / 30
+
 let CACHE: Any = null
 
 // Decoded headshots and the baked 600x740 face textures live at MODULE scope so they survive
@@ -183,7 +189,10 @@ export default function FacultyGraph3D() {
       })
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const G = (new ForceGraph3D(elRef.current) as any)
+      // antialias off: MSAA does nothing for the interiors of the ~35 alpha-blended photo
+      // billboards that dominate the shaded area — it only smooths the thin link cylinders.
+      // alpha MUST stay true, or the canvas turns opaque and hides the robot behind it.
+      const G = (new ForceGraph3D(elRef.current, { rendererConfig: { antialias: false, alpha: true } }) as any)
         // Transparent canvas so a backdrop (the robot) shows through behind the graph; the
         // dark base is painted by the finale container's bg-[#060a12].
         .backgroundColor("rgba(6,10,18,0)")
@@ -220,6 +229,9 @@ export default function FacultyGraph3D() {
         .linkDirectionalParticleWidth(4)
         .linkDirectionalParticleSpeed(0.005)
       gRef.current = G
+      // The graph is a slowly orbiting field of photo billboards; rendering it above 1x adds
+      // pixels nobody can resolve at hallway viewing distance.
+      try { G.renderer().setPixelRatio(1) } catch { /* ignore */ }
       try { const ctl = G.controls(); if (ctl) ctl.enabled = false } catch { /* ignore */ }
       // Fog fades distant faces into the background for depth.
       try { G.scene().fog = new THREE.Fog(0x060a12, 2400, 5200) } catch { /* ignore */ }
@@ -233,14 +245,23 @@ export default function FacultyGraph3D() {
         // the whole graph up so the dense clusters clear the bottom wake-prompt band.
         const dist = 2200, SHIFT = -260   // lifts the whole graph up in view (fills the top space)
         const ELEV = 0.72, H = Math.sin(ELEV) * dist, Rr = Math.cos(ELEV) * dist
-        let a = Math.PI * 0.1
-        const orbit = () => {
+        const A0 = Math.PI * 0.1
+        // The orbit used to accumulate 0.0009 rad PER FRAME, so it silently ran at whatever
+        // speed the display happened to manage — and capping the frame rate would have halved
+        // it. Derive the angle from elapsed time instead: 0.0009/frame at 60fps is the same
+        // 0.054 rad/s, so the graph turns at exactly the tuned speed at any frame rate.
+        const RATE = 0.0009 * 60
+        const t0 = performance.now()
+        let last = 0
+        const orbit = (now: number) => {
           if (cancelled) return
-          a += 0.0009   // slow, readable orbit
-          G.cameraPosition({ x: Math.sin(a) * Rr, y: H + SHIFT, z: Math.cos(a) * Rr }, { x: 0, y: SHIFT, z: 0 })
           rafRef.current = requestAnimationFrame(orbit)
+          if (now - last < FRAME_MS) return
+          last = now
+          const a = A0 + ((now - t0) / 1000) * RATE
+          G.cameraPosition({ x: Math.sin(a) * Rr, y: H + SHIFT, z: Math.cos(a) * Rr }, { x: 0, y: SHIFT, z: 0 })
         }
-        orbit()
+        rafRef.current = requestAnimationFrame(orbit)
       }, 60)
     }
 

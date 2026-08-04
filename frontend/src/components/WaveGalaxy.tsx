@@ -27,6 +27,10 @@ import * as THREE from "three"
 // WebGL context loss under exactly this pressure. That is now self-healing, but if the backdrop
 // starts dropping out on the display hardware, this number is the first thing to bring back down.
 const COUNT = 57500        // points in the galaxy — denser field = a stronger, glowier wave
+// 30fps cap for the ambient backdrop. The camera path and the shader are both driven by
+// elapsed TIME, not by frame count, so drawing half as often changes nothing about how fast
+// the galaxy drifts — it just stops asking a Raspberry Pi for frames it cannot deliver.
+const FRAME_MS = 1000 / 30
 // The disc is deliberately far WIDER than the camera frustum, so the spiral bleeds off every edge
 // and fills the whole screen instead of sitting as a blob in the middle.
 const OUTER = 90           // disc radius
@@ -222,15 +226,17 @@ export default function WaveGalaxy() {
 
     let raf = 0
     const t0 = performance.now()
+    let last = 0
     const tick = (now: number) => {
-      // Pause work when the tab is hidden (the kiosk sits idle for hours).
-      if (!document.hidden) {
-        const t = (now - t0) / 1000
-        uniforms.uTime.value = t
-        orbit(t)
-        renderer.render(scene, camera)
-      }
       raf = requestAnimationFrame(tick)
+      // Pause work when the tab is hidden (the kiosk sits idle for hours).
+      if (document.hidden) return
+      if (now - last < FRAME_MS) return
+      last = now
+      const t = (now - t0) / 1000
+      uniforms.uTime.value = t
+      orbit(t)
+      renderer.render(scene, camera)
     }
     if (reduce) { orbit(0); renderer.render(scene, camera) } // one static frame, no animation
     else raf = requestAnimationFrame(tick)

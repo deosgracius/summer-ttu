@@ -33,6 +33,10 @@ const EXAMPLES = [
 ]
 
 const IDLE_RESET_MS = 60_000 // clear the screen for the next person after a minute idle
+// Master switch for the wave galaxy backdrop. OFF: on the Raspberry Pi kiosk its 57,500 animated
+// points were the biggest single continuous cost, and the page still needs to fit inside 4 cores
+// alongside the Spline robot and the faculty graph. One word to restore.
+const SHOW_GALAXY: boolean = false
 // The attract loop OPENS on the idle "Hi, I'm Summer" greeting and holds it this long before
 // dropping into the directory screensaver — and returns to it after the Research Network finale.
 // So each cycle reads: greeting (36s) → directory pages → Research Network → back to the greeting.
@@ -176,7 +180,11 @@ export default function KioskPage() {
     <div className="summer-bg min-h-svh bg-[#060a12] text-foreground flex flex-col items-center px-4 py-8">
       <SpaceBackground />
       {/* Wave galaxy: a vast disc of blue/cyan points rippling outward, behind the robot. */}
-      <WaveGalaxy />
+      {/* Galaxy OFF on the kiosk. 57,500 animated points behind every page was the largest single
+          continuous GPU cost on a Raspberry Pi that was already running ~2 cores hot just to draw
+          the attract loop. Flip SHOW_GALAXY to true to bring it straight back — the component is
+          unchanged and still supports `paused` if it should ever return on the greeting only. */}
+      {SHOW_GALAXY && <WaveGalaxy paused={sleeping} />}
       {/* The page's robot rides along on every page EXCEPT the Research Network finale, which
           draws its own robot behind the graph — two at anchor="left" overlapped. Hidden via dim
           rather than unmounted, so the Spline scene never reloads and the digital mouse keeps
@@ -195,11 +203,12 @@ export default function KioskPage() {
 
       {/* Sleep-mode attract loop: an auto-orbiting 3D showcase of the ECE faculty, shown while
           the kiosk is dormant. Say "Hey Summer" (mic keeps listening beneath it) or tap to begin. */}
-      {/* Translucent, not opaque: the wave galaxy (z-0) keeps drifting behind the screensaver,
-          so it's the backdrop of EVERY kiosk page, not just the greeting. */}
-      {/* The Research Network finale gets a lighter scrim than the directory pages, so ~25% more
-          of the galaxy comes through there (45% dark -> 30% dark is 0.55 -> 0.70 pass-through).
-          The directory pages keep the heavier scrim, where photos and names need the contrast. */}
+      {/* The galaxy is now GREETING-ONLY (see WaveGalaxy above) — it is paused and hidden while
+          the screensaver is up, because 57,500 animated points cost real frames on the Pi and on
+          these pages they sat behind a robot, a photo grid and a vignette anyway.
+          The scrims below still differ per page: they set how strongly the robot reads through,
+          so the finale stays lighter (30%) than the directory pages (45%), where photos and names
+          need the contrast. Values left as tuned. */}
       {sleeping && (
         <div className={`fixed inset-0 z-40 ${graphStep ? "bg-[#060a12]/30" : "bg-[#060a12]/45"}`} onClick={() => { primeAudio(); goFullscreen(); window.clearTimeout(greetTimer.current); setDismissed(true); resetIdle() }}>
           <KioskScreensaver onCycleEnd={enterAttract} onGraphChange={setGraphStep} />

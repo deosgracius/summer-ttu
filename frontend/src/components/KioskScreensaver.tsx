@@ -137,16 +137,38 @@ export default function KioskScreensaver({ onCycleEnd, onGraphChange }: { onCycl
     if (!data?.sections) return
     let alive = true
     const mark = (u: string) => { DECODED.add(u); if (alive) setDecoded((prev) => (prev.has(u) ? prev : new Set(prev).add(u))) }
-    for (const s of data.sections) for (const m of s.members) if (m.photo) {
-      const u = m.photo
-      if (DECODED.has(u)) continue
+    const load = (u: string) => {
+      if (DECODED.has(u)) return
       const im = new Image()
       im.src = u
       const settle = () => mark(u) // mark on success OR error, so one bad photo never blocks a page
       if (im.decode) im.decode().then(settle).catch(settle)
       else { im.onload = settle; im.onerror = settle }
     }
-    return () => { alive = false }
+    const all: string[] = []
+    for (const s of data.sections) for (const m of s.members) if (m.photo) all.push(m.photo)
+
+    // TWO PHASES. All 48 headshots total ~2.9 MB, but the first page reveals maybe 18 of them.
+    // Loading the whole set at once put ~2.2 MB of avoidable transfer and decode on the critical
+    // path of the FIRST reveal — the stall when the screensaver first appears. Phase 1 fetches
+    // only what page one needs; phase 2 takes the rest once the browser is idle, and PAGE_MS is
+    // 15s, so it has a large head start on the page that will actually want them.
+    const FIRST_REVEAL = 18
+    all.slice(0, FIRST_REVEAL).forEach(load)
+
+    const rest = () => { if (alive) all.slice(FIRST_REVEAL).forEach(load) }
+    const w = window as unknown as {
+      requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number
+      cancelIdleCallback?: (h: number) => void
+    }
+    const usedIdle = typeof w.requestIdleCallback === "function"
+    const handle = usedIdle ? w.requestIdleCallback!(rest, { timeout: 3000 }) : window.setTimeout(rest, 1200)
+
+    return () => {
+      alive = false
+      if (usedIdle && typeof w.cancelIdleCallback === "function") w.cancelIdleCallback(handle)
+      else window.clearTimeout(handle)
+    }
   }, [data])
 
   // Flatten the sections into pages of at most PAGE_SIZE members each.

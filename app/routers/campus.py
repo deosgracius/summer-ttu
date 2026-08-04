@@ -68,8 +68,15 @@ def campus_photo(photo_id: int, db: Session = Depends(get_db)):
                              "Cross-Origin-Resource-Policy": "cross-origin",
                              # Uploaded headshots are validated to be real images, but never let a
                              # browser MIME-sniff the bytes into anything else (defense-in-depth).
-                             "X-Content-Type-Options": "nosniff",
-                             "Vary": "Origin"})
+                             "X-Content-Type-Options": "nosniff"})
+                    # NOTE: deliberately NO "Vary: Origin". Access-Control-Allow-Origin above is
+                    # the constant "*" — it never varies by Origin — so the header bought nothing
+                    # and actively hurt: the kiosk screensaver preloads photos with a plain
+                    # <img> (no Origin header) while the Research Network graph loads the same
+                    # URLs with crossOrigin="anonymous" (which sends one). Vary split those into
+                    # two separate cache entries, so every face was downloaded TWICE per session
+                    # — roughly 1.4-2.3 MB of avoidable transfer, and a visible stall entering
+                    # the finale while it re-fetched faces it already had.
 
 
 @router.get("/knowledge-graph")

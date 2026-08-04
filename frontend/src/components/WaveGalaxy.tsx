@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import * as THREE from "three"
+import { GALAXY_COUNT as COUNT, GALAXY_SIZE_BOOST, FRAME_MS } from "@/lib/device"
 
 /**
  * Wave galaxy — a vast spiral galaxy of glowing blue/cyan points over deep black, with concentric
@@ -26,11 +27,11 @@ import * as THREE from "three"
 // It is also the single biggest driver of GPU load — the grey-backdrop failure this kiosk hit was
 // WebGL context loss under exactly this pressure. That is now self-healing, but if the backdrop
 // starts dropping out on the display hardware, this number is the first thing to bring back down.
-const COUNT = 57500        // points in the galaxy — denser field = a stronger, glowier wave
-// 30fps cap for the ambient backdrop. The camera path and the shader are both driven by
-// elapsed TIME, not by frame count, so drawing half as often changes nothing about how fast
-// the galaxy drifts — it just stops asking a Raspberry Pi for frames it cannot deliver.
-const FRAME_MS = 1000 / 30
+// Density and frame rate come from the shared low-power profile (see @/lib/device): 57,500 points
+// on capable hardware — the tuned figure, raised deliberately four times — and 18,000 on the Pi
+// kiosk, with the point size boosted so the wave still reads bright and full rather than sparse.
+// Both the camera path and the shader are driven by elapsed TIME, so the frame cap changes how
+// often we draw, never how fast the galaxy drifts.
 // The disc is deliberately far WIDER than the camera frustum, so the spiral bleeds off every edge
 // and fills the whole screen instead of sitting as a blob in the middle.
 const OUTER = 90           // disc radius
@@ -153,7 +154,7 @@ export default function WaveGalaxy({ paused = false }: { paused?: boolean } = {}
     geo.setAttribute("aRand", new THREE.BufferAttribute(rand, 1))
     geo.setAttribute("aStar", new THREE.BufferAttribute(star, 1))
 
-    const uniforms = { uTime: { value: 0 }, uSize: { value: Math.min(window.innerHeight, 1100) * 0.075 } }
+    const uniforms = { uTime: { value: 0 }, uSize: { value: Math.min(window.innerHeight, 1100) * 0.075 * GALAXY_SIZE_BOOST } }
 
     const mat = new THREE.ShaderMaterial({
       uniforms,
@@ -217,7 +218,7 @@ export default function WaveGalaxy({ paused = false }: { paused?: boolean } = {}
       camera.aspect = window.innerWidth / window.innerHeight
       camera.updateProjectionMatrix()
       renderer.setSize(window.innerWidth, window.innerHeight)
-      uniforms.uSize.value = Math.min(window.innerHeight, 1100) * 0.075
+      uniforms.uSize.value = Math.min(window.innerHeight, 1100) * 0.075 * GALAXY_SIZE_BOOST
     }
     window.addEventListener("resize", onResize)
 

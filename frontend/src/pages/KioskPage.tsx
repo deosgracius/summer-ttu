@@ -36,7 +36,7 @@ const IDLE_RESET_MS = 60_000 // clear the screen for the next person after a min
 // Master switch for the wave galaxy backdrop. OFF: on the Raspberry Pi kiosk its 57,500 animated
 // points were the biggest single continuous cost, and the page still needs to fit inside 4 cores
 // alongside the Spline robot and the faculty graph. One word to restore.
-const SHOW_GALAXY: boolean = true
+const SHOW_GALAXY: boolean = false
 // The attract loop OPENS on the idle "Hi, I'm Summer" greeting and holds it this long before
 // dropping into the directory screensaver — and returns to it after the Research Network finale.
 // So each cycle reads: greeting (36s) → directory pages → Research Network → back to the greeting.
@@ -202,12 +202,11 @@ export default function KioskPage() {
           every cycle, leaking a WebGL context each time until the page went blank. This robot is
           simply re-dressed for that page instead: dim 0.95 and z -1 are the values the finale was
           hand-tuned with, driven by graphStep through onGraphChange. */}
-      {/* z stays at 1 on EVERY page. The finale's old robot used z -1, but that worked only
-          because it lived inside the screensaver's `isolate` stacking context. Rendered from the
-          page instead, a negative z-index puts it behind this container's own opaque background
-          and it disappears entirely — which is exactly what happened. At z 1 it sits above the
-          galaxy and shows through the screensaver's translucent scrim, as on every other page. */}
-      <SplineRobot ambient anchor="left" scrim={false} dim={graphStep ? 0.95 : 1} z={1} />
+      {/* PAGE 1 ONLY. dim 0 compiles to display:none (see SplineRobot), so the directory pages and
+          the Research Network stop paying for the Spline scene entirely rather than merely hiding
+          it. Page 1 is also the conversation surface — it is what shows while someone is talking
+          to Summer — so this is the one screen where the robot earns its cost. */}
+      <SplineRobot ambient anchor="left" scrim={false} dim={sleeping ? 0 : 1} z={1} />
 
       {/* Greeting page only: with the robot's vignette gone the galaxy was at full strength, so a
           flat 35% veil takes it to ~65% — enough to settle the backdrop behind the text without

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { api } from "@/lib/api"
 import FacultyGraph3D from "@/components/FacultyGraph3D"
 import SummerOrb from "@/components/SummerOrb"
-import SplineRobot from "@/components/SplineRobot"
 import { officeHoursStatus } from "@/lib/officeHours"
 
 /**
@@ -39,7 +38,7 @@ const GRAPH_MS = 72000   // the 3D "second brain" finale after Staff (1.2 min)
 //
 // Flip to true to restore it — but fix the remount first: hoist the robot out of this branch, or
 // drive the page's existing one via onGraphChange, so no context is created per cycle.
-const SHOW_GRAPH: boolean = false
+const SHOW_GRAPH: boolean = true
 let CACHE: Dir | null = null
 // Photos that have finished decoding, kept across screensaver mounts so a page's whole grid can be
 // revealed at once (all photos live at the same time) instead of popping in one by one.
@@ -240,7 +239,12 @@ export default function KioskScreensaver({ onCycleEnd, onGraphChange }: { onCycl
           zIndex: -2, // one layer BELOW the robot (-1), still above this container's background
           background: "radial-gradient(70% 90% at 22% 55%, rgba(6,10,18,0.85) 0%, rgba(6,10,18,0.5) 45%, rgba(6,10,18,0) 75%)",
         }} />
-        <SplineRobot anchor="left" scrim={false} dim={0.95} z={-1} />
+        {/* NO robot mounted here any more. This branch used to mount a SECOND spline-viewer and
+            unmount it on every attract cycle, and a Spline context is not ours to release — that
+            leaked one WebGL context per cycle until Chromium refused to grant more, at which
+            point this page rendered EMPTY (no graph, no robot, only the 2D orb) after about an
+            hour. The page's own robot is permanently mounted and is driven to this page's
+            appearance instead, via the onGraphChange plumbing below. */}
         <FacultyGraph3D />
         {/* Vignette: darken the edges for depth */}
         <div className="pointer-events-none absolute inset-0 z-[1]" aria-hidden

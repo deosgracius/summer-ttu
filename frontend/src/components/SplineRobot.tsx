@@ -91,12 +91,28 @@ export default function SplineRobot({ ambient = false, anchor = "center", scrim 
     // Broadcast a position into EVERY robot on the page, not just this one. On the kiosk's
     // Research Network there are two robots (the hidden main-view robot that owns the digital
     // mouse, plus the visible backdrop robot), so the single digital mouse can drive them both.
-    const feedAll = (x, y) => {
-      const o = { clientX: x, clientY: y, bubbles: true, cancelable: true, view: window }
+    // PERF: this used to querySelectorAll the whole document AND walk every shadow root on
+    // EVERY animation frame. The set of viewers is stable for long stretches, so cache it and
+    // rescan occasionally; a disconnected canvas forces an immediate rescan.
+    let canvases = []
+    let lastScan = -1e9
+    const viewerCanvases = (now) => {
+      if (now - lastScan < 2000 && canvases.length) return canvases
+      lastScan = now
+      const found = []
       document.querySelectorAll("spline-viewer").forEach((sv2) => {
-        let k = null
-        try { k = sv2.shadowRoot ? sv2.shadowRoot.querySelector("canvas") : null } catch { k = null }
-        if (!k) return
+        try {
+          const k = sv2.shadowRoot ? sv2.shadowRoot.querySelector("canvas") : null
+          if (k) found.push(k)
+        } catch { /* ignore */ }
+      })
+      canvases = found
+      return canvases
+    }
+    const feedAll = (x, y, now) => {
+      const o = { clientX: x, clientY: y, bubbles: true, cancelable: true, view: window }
+      viewerCanvases(now).forEach((k) => {
+        if (!k.isConnected) { lastScan = -1e9; return }
         try { k.dispatchEvent(new PointerEvent("pointermove", { pointerType: "mouse", isPrimary: true, ...o })) } catch { /* ignore */ }
         try { k.dispatchEvent(new MouseEvent("mousemove", o)) } catch { /* ignore */ }
       })
@@ -142,16 +158,31 @@ export default function SplineRobot({ ambient = false, anchor = "center", scrim 
       }
       pickTarget()
 
+      // PERF: this loop ran uncapped at 60fps and called feedAll on EVERY frame. Each feedAll
+      // dispatches synthetic pointer events into the Spline canvas, and Spline answers each one
+      // by raycasting the 3D scene to re-aim the robot's head — so page 1 was asking a 3D engine
+      // for a full hit-test 60 times a second, forever. That is the intermittent lag on the
+      // greeting page. The dot drifts slowly; 30fps is indistinguishable, and the robot's gaze
+      // does not need re-aiming more than ~20 times a second.
+      const DOT_MS = 1000 / 30
+      const FEED_MS = 1000 / 20
+      let lastDot = 0
+      let lastFeed = 0
       const tick = (now) => {
-        if (!reduce && now - lastReal > IDLE_MS) {
-          if (!digital) { digital = true; dot.style.opacity = "1"; pickTarget() }
-          vx += (tx - vx) * 0.022   // ease toward the target for calm, organic drift
-          vy += (ty - vy) * 0.022
-          if (Math.hypot(tx - vx, ty - vy) < 26) pickTarget()
-          dot.style.transform = `translate(${vx}px, ${vy}px)`
-          feedAll(vx, vy)   // drive every robot on the page, so the backdrop robot follows too
-        }
         raf = requestAnimationFrame(tick)
+        if (reduce || now - lastReal <= IDLE_MS) return
+        if (now - lastDot < DOT_MS) return
+        // Ease by ELAPSED TIME, not per frame, so capping the rate does not slow the drift:
+        // 0.022 per frame at 60fps is the tuned speed, and this reproduces it at any rate.
+        const frames = Math.min(4, (now - lastDot) / (1000 / 60))
+        lastDot = now
+        if (!digital) { digital = true; dot.style.opacity = "1"; pickTarget() }
+        const k = 1 - Math.pow(1 - 0.022, frames)
+        vx += (tx - vx) * k
+        vy += (ty - vy) * k
+        if (Math.hypot(tx - vx, ty - vy) < 26) pickTarget()
+        dot.style.transform = `translate(${vx}px, ${vy}px)`
+        if (now - lastFeed >= FEED_MS) { lastFeed = now; feedAll(vx, vy, now) }
       }
       raf = requestAnimationFrame(tick)
     }

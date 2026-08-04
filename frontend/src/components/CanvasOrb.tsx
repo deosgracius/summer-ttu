@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react"
+import { FRAME_MS } from "@/lib/device"
 
 /**
  * Summer's orb — a faithful reproduction of the original from
@@ -16,9 +17,9 @@ const COL = {
 } as const
 export type OrbState = keyof typeof COL
 
-// 30fps cap. Every value the orb draws is derived from elapsed time, so drawing half as often
-// leaves the pulse and wave running at exactly the tuned speed — it just costs half as much.
-const FRAME_MS = 1000 / 30
+// Frame cap from the shared low-power profile (see @/lib/device). Every value the orb draws is
+// derived from elapsed time, so drawing less often leaves the pulse and wave running at exactly
+// the tuned speed — it just costs less.
 
 export default function CanvasOrb({
   size = 160,

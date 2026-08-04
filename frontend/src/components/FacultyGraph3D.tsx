@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react"
 import ForceGraph3D from "3d-force-graph"
 import * as THREE from "three"
 import { api } from "@/lib/api"
+import { FRAME_MS, LINK_PARTICLES } from "@/lib/device"
 
 /**
  * The "second brain" finale of the kiosk sleep loop: a slowly auto-orbiting 3D graph of ALL
@@ -105,11 +106,8 @@ function glowSprite(color: string, size: number) {
   sp.scale.set(size, size, 1); return sp
 }
 
-// The attract loop is ambient motion — a slow camera orbit, a drifting galaxy, a pulsing orb.
-// None of it benefits from 60fps, and on a Raspberry Pi the kiosk cannot deliver 60fps across
-// three WebGL scenes anyway. Capping at 30 halves the per-frame cost of every renderer at once,
-// which is the single largest lever left that does not change how the kiosk looks.
-const FRAME_MS = 1000 / 30
+// Frame cap and link-particle count come from the shared low-power profile (see @/lib/device),
+// so every renderer on the page draws on the same schedule.
 
 let CACHE: Any = null
 
@@ -225,7 +223,7 @@ export default function FacultyGraph3D() {
         })
         .linkColor((l: Any) => hexA(l.color || "#5b6b8c", 1))
         .linkWidth(7)
-        .linkDirectionalParticles(3)
+        .linkDirectionalParticles(LINK_PARTICLES)
         .linkDirectionalParticleWidth(4)
         .linkDirectionalParticleSpeed(0.005)
       gRef.current = G

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useEffect, useRef } from "react"
+import { FRAME_MS, LOW_POWER } from "@/lib/device"
 
 /**
  * Summer's 3D robot — the exact Spline scene from the original summer_app
@@ -164,8 +165,11 @@ export default function SplineRobot({ ambient = false, anchor = "center", scrim 
       // for a full hit-test 60 times a second, forever. That is the intermittent lag on the
       // greeting page. The dot drifts slowly; 30fps is indistinguishable, and the robot's gaze
       // does not need re-aiming more than ~20 times a second.
-      const DOT_MS = 1000 / 30
-      const FEED_MS = 1000 / 20
+      // On the Pi these drop further: the dot follows the shared attract-loop cap, and the robot's
+      // gaze is re-aimed 12x/sec instead of 20. Each re-aim makes Spline raycast the 3D scene, so
+      // this is the single most expensive thing page 1 does per frame.
+      const DOT_MS = FRAME_MS
+      const FEED_MS = 1000 / (LOW_POWER ? 12 : 20)
       let lastDot = 0
       let lastFeed = 0
       const tick = (now) => {

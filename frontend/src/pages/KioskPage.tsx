@@ -193,7 +193,12 @@ export default function KioskPage() {
           82% at the edges ABOVE the galaxy (z=2 vs z=0), which is exactly why the wave looked flat
           on the greeting but vivid on the Research Network page (whose robot already sets
           scrim={false}). Off here too, so the galaxy reads the same on every page. */}
-      <SplineRobot ambient anchor="left" dim={graphStep ? 0 : 1} scrim={false} />
+      {/* FIRST PAGE ONLY. The Research Network finale (the last page) mounts its own robot in
+          KioskScreensaver, so this one stays hidden there — and it is now hidden on the faculty
+          directory pages too, where it rendered a full-screen 3D scene behind a photo grid and
+          two stacked scrims. dim 0 means display:none (see SplineRobot), so those pages stop
+          paying for it entirely rather than just hiding it. */}
+      <SplineRobot ambient anchor="left" dim={sleeping ? 0 : 1} scrim={false} />
 
       {/* Greeting page only: with the robot's vignette gone the galaxy was at full strength, so a
           flat 35% veil takes it to ~65% — enough to settle the backdrop behind the text without

@@ -38,7 +38,7 @@ const GRAPH_MS = 72000   // the 3D "second brain" finale after Staff (1.2 min)
 //
 // Flip to true to restore it — but fix the remount first: hoist the robot out of this branch, or
 // drive the page's existing one via onGraphChange, so no context is created per cycle.
-const SHOW_GRAPH: boolean = true
+const SHOW_GRAPH: boolean = false
 let CACHE: Dir | null = null
 // Photos that have finished decoding, kept across screensaver mounts so a page's whole grid can be
 // revealed at once (all photos live at the same time) instead of popping in one by one.

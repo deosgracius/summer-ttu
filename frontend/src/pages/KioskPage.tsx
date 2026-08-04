@@ -36,7 +36,7 @@ const IDLE_RESET_MS = 60_000 // clear the screen for the next person after a min
 // Master switch for the wave galaxy backdrop. OFF: on the Raspberry Pi kiosk its 57,500 animated
 // points were the biggest single continuous cost, and the page still needs to fit inside 4 cores
 // alongside the Spline robot and the faculty graph. One word to restore.
-const SHOW_GALAXY: boolean = false
+const SHOW_GALAXY: boolean = true
 // The attract loop OPENS on the idle "Hi, I'm Summer" greeting and holds it this long before
 // dropping into the directory screensaver — and returns to it after the Research Network finale.
 // So each cycle reads: greeting (36s) → directory pages → Research Network → back to the greeting.
@@ -184,7 +184,10 @@ export default function KioskPage() {
           continuous GPU cost on a Raspberry Pi that was already running ~2 cores hot just to draw
           the attract loop. Flip SHOW_GALAXY to true to bring it straight back — the component is
           unchanged and still supports `paused` if it should ever return on the greeting only. */}
-      {SHOW_GALAXY && <WaveGalaxy paused={sleeping} />}
+      {/* Back on, and on EVERY page as originally designed. `paused` stays available if it should
+          ever need to be greeting-only again — pausing is preferable to unmounting, since a
+          remount rebuilds 57,500 points and takes a fresh WebGL context. */}
+      {SHOW_GALAXY && <WaveGalaxy />}
       {/* The page's robot rides along on every page EXCEPT the Research Network finale, which
           draws its own robot behind the graph — two at anchor="left" overlapped. Hidden via dim
           rather than unmounted, so the Spline scene never reloads and the digital mouse keeps
@@ -193,12 +196,18 @@ export default function KioskPage() {
           82% at the edges ABOVE the galaxy (z=2 vs z=0), which is exactly why the wave looked flat
           on the greeting but vivid on the Research Network page (whose robot already sets
           scrim={false}). Off here too, so the galaxy reads the same on every page. */}
-      {/* FIRST PAGE ONLY. The Research Network finale (the last page) mounts its own robot in
-          KioskScreensaver, so this one stays hidden there — and it is now hidden on the faculty
-          directory pages too, where it rendered a full-screen 3D scene behind a photo grid and
-          two stacked scrims. dim 0 means display:none (see SplineRobot), so those pages stop
-          paying for it entirely rather than just hiding it. */}
-      <SplineRobot ambient anchor="left" dim={sleeping ? 0 : 1} scrim={false} />
+      {/* ONE robot for the whole kiosk, mounted permanently and never remounted — that is the
+          point. The Research Network used to mount its own second spline-viewer and unmount it
+          every cycle, leaking a WebGL context each time until the page went blank. This robot is
+          simply re-dressed for that page instead: dim 0.95 and z -1 are the values the finale was
+          hand-tuned with, driven by graphStep through onGraphChange. */}
+      <SplineRobot
+        ambient
+        anchor="left"
+        scrim={false}
+        dim={graphStep ? 0.95 : 1}
+        z={graphStep ? -1 : 1}
+      />
 
       {/* Greeting page only: with the robot's vignette gone the galaxy was at full strength, so a
           flat 35% veil takes it to ~65% — enough to settle the backdrop behind the text without

@@ -178,6 +178,12 @@ export default function SplineRobot({ ambient = false, anchor = "center", scrim 
           zIndex: z,
           pointerEvents: "none",
           opacity: dim,
+          // `opacity: 0` still composites a full-screen layer AND leaves the Spline runtime
+          // rendering its scene every frame — invisible work the GPU/CPU still pays for. On the
+          // Research Network step the page holds TWO of these (this one at dim 0, the
+          // screensaver's at 0.95), so a whole 3D scene was being drawn for nobody. display:none
+          // takes it out of the render tree entirely. Zero visual delta: dim 0 is already unseen.
+          display: dim === 0 ? "none" : undefined,
           transform: anchor === "right" ? "translateX(30vw)" : anchor === "left" ? "translateX(-30vw)" : undefined,
         }}
       />

@@ -64,7 +64,9 @@ function faceTexture(img: HTMLImageElement | null, name: string, color: string) 
   x.fillStyle = "rgba(8,12,22,0.82)"; roundRect(x, (W - tw) / 2, ny - 46, tw, 88, 24); x.fill()
   x.lineWidth = 3; x.strokeStyle = hexA(color, 0.9); x.stroke()
   x.fillStyle = "#f4f8ff"; x.fillText(name || "", W / 2, ny)
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t
+  // anisotropy 1, not 8: anisotropic filtering only helps textures viewed at a grazing angle,
+  // and these are camera-facing billboards — it was pure cost for no visible difference.
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 1; return t
 }
 // Hub label: research-area name with its faculty count beneath, on a transparent plate.
 function hubLabel(text: string, color: string, count: number) {
@@ -105,6 +107,27 @@ function glowSprite(color: string, size: number) {
 
 let CACHE: Any = null
 
+// Decoded headshots and the baked 600x740 face textures live at MODULE scope so they survive
+// the graph unmounting at the end of every attract cycle. They used to be scoped inside the
+// effect, so roughly every 168 seconds the kiosk re-decoded ~40 JPEGs and re-rasterised ~15.5M
+// canvas pixels to rebuild textures byte-identical to the ones it had just discarded — a
+// several-hundred-millisecond stall at the most visible transition on the wall, forever.
+const imgCache = new Map<string, HTMLImageElement>()
+const texCache = new Map<string, THREE.CanvasTexture>()
+
+// Textures are keyed by everything faceTexture() draws with, including whether a photo was
+// available — the initials placeholder and the real headshot must not share an entry.
+// A texture disposed by the library's _destructor stays reusable: the source canvas survives,
+// so three.js simply re-uploads it, and we still skip the expensive canvas rasterisation.
+function cachedFaceTexture(img: HTMLImageElement | null, name: string, color: string, photo?: string) {
+  const key = `${photo || ""}|${name}|${color}|${img ? "img" : "initials"}`
+  const hit = texCache.get(key)
+  if (hit) return hit
+  const t = faceTexture(img, name, color)
+  texCache.set(key, t)
+  return t
+}
+
 export default function FacultyGraph3D() {
   const elRef = useRef<HTMLDivElement>(null)
   const gRef = useRef<Any>(null)
@@ -113,7 +136,6 @@ export default function FacultyGraph3D() {
 
   useEffect(() => {
     let cancelled = false
-    const imgCache = new Map<string, HTMLImageElement>()  // preloaded faces, so they all appear at once
     function build(data: Any) {
       if (cancelled || !elRef.current || !data?.profs?.length) return
       const profs: Any[] = data.profs
@@ -180,11 +202,14 @@ export default function FacultyGraph3D() {
             return g
           }
           const pre = n.photo ? imgCache.get(n.photo) : undefined
-          const mat = new THREE.SpriteMaterial({ map: faceTexture(pre || null, n.name, n.color), depthWrite: false, transparent: true })
+          const mat = new THREE.SpriteMaterial({ map: cachedFaceTexture(pre || null, n.name, n.color, n.photo), depthWrite: false, transparent: true })
           const sprite = new THREE.Sprite(mat); sprite.scale.set(165 * (600 / 740), 165, 1)
           if (n.photo && !pre) {
             const im = new Image(); im.crossOrigin = "anonymous"
-            im.onload = () => { mat.map = faceTexture(im, n.name, n.color); mat.needsUpdate = true }
+            im.onload = () => {
+              imgCache.set(n.photo, im)   // so the next cycle starts from the decoded image
+              mat.map = cachedFaceTexture(im, n.name, n.color, n.photo); mat.needsUpdate = true
+            }
             im.src = n.photo
           }
           return sprite
@@ -241,6 +266,10 @@ export default function FacultyGraph3D() {
       cancelled = true
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
       window.removeEventListener("resize", fitRef.current)
+      // Same as WaveGalaxy: the library's _destructor calls renderer.dispose()/composer.dispose(),
+      // neither of which releases the GL context. The graph mounts and unmounts on every attract
+      // cycle, so without this the kiosk leaks one context per cycle for as long as it runs.
+      try { gRef.current?.renderer?.()?.forceContextLoss?.() } catch { /* ignore */ }
       try { gRef.current?._destructor?.() } catch { /* ignore */ }
       gRef.current = null
     }

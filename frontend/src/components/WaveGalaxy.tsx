@@ -243,7 +243,13 @@ export default function WaveGalaxy() {
       canvas.removeEventListener("webglcontextrestored", onRestored)
       geo.dispose()
       mat.dispose()
-      renderer.dispose() // frees the GPU context, so remounts can't pile them up
+      // dispose() does NOT release the GL context — it only frees three's own objects. Without
+      // an explicit forceContextLoss the browser keeps the context alive until it decides to
+      // reclaim one under pressure, which is exactly the "wave disappears after a long run"
+      // failure: contexts accumulate every attract cycle until Chromium drops one. Listeners are
+      // removed above, so the loss event this fires cannot trip the 4s rebuild watchdog.
+      try { renderer.forceContextLoss() } catch { /* not all drivers expose the extension */ }
+      renderer.dispose()
       if (canvas.parentNode === host) host.removeChild(canvas)
     }
   }, [gen])

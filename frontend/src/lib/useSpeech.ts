@@ -231,6 +231,25 @@ export function useSpeech() {
   // True while a back-and-forth is actively going: a follow-up may skip the wake word only now.
   const inFollowup = () => Date.now() - Math.max(lastTurn.current, spokeEndAt.current) < FOLLOWUP_GRACE_MS
 
+  // THE WAIT BETWEEN A QUESTION AND ITS ANSWER.
+  //
+  // A reply takes 3-7 seconds end to end — measured on this kiosk: 0.5s end-of-turn silence,
+  // 0.7-3.0s for Whisper, 0.35s for the lookup, then 1.1-2.9s to synthesize the speech. lastTurn
+  // is stamped the moment the question is SENT, so inFollowup() is true for that entire wait,
+  // which means any transcript arriving during it was accepted as a follow-up question with no
+  // wake word required. The detector fires on room noise several times a minute and Whisper never
+  // returns "nothing" — it returns its best guess at what such audio precedes. So a cough, a
+  // passing conversation, or the student saying "hello?" while waiting became an invented
+  // question, and Summer answered it. That is the delay "creating hallucinations": the pause is
+  // not producing them, it is the window in which unguarded audio is treated as speech to her.
+  //
+  // So the wait is treated exactly like her talking: the same raised detection bar, and nothing
+  // without the wake word gets through. The cap exists so a failed request cannot deafen her.
+  const awaitingAnswer = useRef(0)
+  const ANSWER_WAIT_MAX_MS = 15000
+  const isAwaitingAnswer = () =>
+    awaitingAnswer.current > 0 && Date.now() - awaitingAnswer.current < ANSWER_WAIT_MAX_MS
+
   // Set when somebody says "Summer" WITHOUT a question and she answers "Go ahead, I'm listening".
   // She has just invited a question, so she has to be willing to wait for one — noticeably longer
   // than the gap allowed between turns of a conversation already in flight. Without this the
@@ -394,6 +413,7 @@ export function useSpeech() {
     }
     const myTurn = ++speakSeq.current
     speaking.current = true
+    awaitingAnswer.current = 0   // the wait is over — she is answering; speaking.current guards now
     setIsSpeaking(true)
     clearConvoTimer() // don't let the idle countdown fire while Summer is talking
     currentSpeech.current = clean.toLowerCase()
@@ -538,6 +558,7 @@ export function useSpeech() {
   function disengage() {
     engaged.current = false
     awaitingQ.current = 0     // no longer waiting on a question
+    awaitingAnswer.current = 0 // and not waiting on an answer either
     vstate.current = "ambient"
     clearConvoTimer()
     setHeard("")
@@ -807,17 +828,22 @@ export function useSpeech() {
         const a = pickAck(); setHeard(a); speak(a); resetConvoTimer(); return
       }
       awaitingQ.current = 0
+      awaitingAnswer.current = Date.now()          // the wait starts here — guard it
       resetConvoTimer(); lastTurn.current = Date.now(); onCmd.current(after); return
     }
     // ENGAGED: a follow-up skips the wake word only while a back-and-forth is actively going
     // (within FOLLOWUP_GRACE_MS of the last turn / reply); after that lull the wake word is
     // required again, so nearby talk during a pause is heard but not answered.
     if (!WAKE.test(raw) && !inFollowup() && !awaitingQuestion()) return
+    // Summer is still fetching or synthesizing the previous answer. Anything arriving now that
+    // is not addressed to her by name is noise from the wait, not a new question.
+    if (!WAKE.test(raw) && isAwaitingAnswer()) return
     const cmd = raw.replace(WAKE_LEAD, "").trim()
     if (cmd.length < 2) return
     if (FILLER.test(cmd)) { resetConvoTimer(); return }   // "uh", a cough — keep waiting
     if (ENDRE.test(cmd) && cmd.split(/\s+/).length <= 4) { disengage(); return }
     awaitingQ.current = 0                                  // the awaited question arrived
+    awaitingAnswer.current = Date.now()                    // the wait starts here — guard it
     resetConvoTimer(); lastTurn.current = Date.now(); onCmd.current(cmd)
   }
 
@@ -886,7 +912,14 @@ export function useSpeech() {
   // then matched the directory perfectly and made Summer volunteer a stranger's office, hours
   // and photograph in answer to nothing at all. The old guard was a byte count, and every capture
   // carries a WebM header plus ~1.6s of pre-roll, so a door slam always cleared it comfortably.
-  const MIN_VOICED_MS = 300
+  // Dormant, the ONLY utterance worth sending is one that could contain "Summer" — so it has to
+  // be long enough to hold a wake word and a question. Measured on the live kiosk, a 300ms floor
+  // let corridor noise through at about five uploads a minute with nobody speaking: every one was
+  // correctly discarded, but each cost a Whisper call and each was a chance for Whisper to invent
+  // a name. Mid-conversation the floor stays low, because a real follow-up can be two words
+  // ("his office?") and must not be dropped.
+  const MIN_VOICED_DORMANT_MS = 550
+  const MIN_VOICED_ENGAGED_MS = 250
   const voicedFrames = useRef(0)
 
   function serverStartRec() {
@@ -913,9 +946,10 @@ export function useSpeech() {
     const blob = new Blob(parts, { type })
     const voicedMs = voicedFrames.current * VAD_MS
     voicedFrames.current = 0
-    // Silence in, silence out. See MIN_VOICED_MS: without this, room tone reaches Whisper and
-    // comes back as a real professor's name.
-    if (voicedMs < MIN_VOICED_MS || blob.size < 1600) return
+    // Silence in, silence out. Without this, room tone reaches Whisper and comes back as a real
+    // professor's name. The floor is higher while dormant — see MIN_VOICED_DORMANT_MS.
+    const floorMs = engaged.current ? MIN_VOICED_ENGAGED_MS : MIN_VOICED_DORMANT_MS
+    if (voicedMs < floorMs || blob.size < 1600) return
     try {
       const text = (await transcribeBlob(blob)).trim()
       // Final self-reply guard: drop anything that is Summer's OWN voice leaking through.
@@ -982,7 +1016,10 @@ export function useSpeech() {
       }
       // While Summer is speaking, demand clearly-louder energy so a bit of echo leaking past
       // the canceller doesn't make her interrupt herself; a real barge-in is louder than leak.
-      const bar = (speaking.current || VOICE.speaking) ? thresh + 14 : thresh
+      // The same bar applies while she is still WORKING on an answer: that wait is several
+      // seconds long, and quiet room noise captured in it used to be transcribed into an
+      // invented question and answered.
+      const bar = (speaking.current || VOICE.speaking || isAwaitingAnswer()) ? thresh + 14 : thresh
       if (max > bar) {
         loudRun++
         if (serverRecording.current) voicedFrames.current++   // real energy INSIDE the capture
@@ -1032,6 +1069,14 @@ export function useSpeech() {
     setHeard('Listening — say "Summer"')
     serverStartContinuous()   // recorder runs from now on, so the pre-roll always exists
     serverListen(stream)
+    // Warm the acknowledgement audio NOW, not on a first touch. prewarmAcks only FETCHES and
+    // caches — it plays nothing — so it never needed a user gesture, but it was only reachable
+    // through primeAudio(), which fires on the first pointerdown or keypress. A wall kiosk is
+    // never touched. While hands-free had to be switched on by hand the click happened to warm
+    // it; now that it arms itself, nothing did, and every "Hey Summer" paid a live 1.1-2.9s
+    // synthesis round-trip before she said "Yes?" — which is precisely the difference between
+    // her feeling instant and her feeling slow to wake.
+    prewarmAcks()
   }
 
   function stopServerWake() {

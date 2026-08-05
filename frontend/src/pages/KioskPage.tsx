@@ -36,6 +36,30 @@ const IDLE_RESET_MS = 60_000 // clear the screen for the next person after a min
 // Master switch for the wave galaxy backdrop. OFF: on the Raspberry Pi kiosk its 57,500 animated
 // points were the biggest single continuous cost, and the page still needs to fit inside 4 cores
 // alongside the Spline robot and the faculty graph. One word to restore.
+/**
+ * What Summer SAYS OUT LOUD, as opposed to what the screen shows.
+ *
+ * She used to speak the entire answer. Asking "who is Derek Johnston" produced ~600 characters
+ * that included every course he teaches AND their prerequisites — read aloud, in a hallway. That
+ * is wrong for the room (nobody standing at a wall display wants a course catalogue recited) and
+ * it is expensive: that single answer exhausted the ElevenLabs quota, which trips a 15-minute
+ * breaker, which is why the kiosk then went completely silent.
+ *
+ * The screen still shows everything. This is only what reaches the speaker.
+ */
+function speakable(reply: string): string {
+  let t = (reply || "").trim()
+  // These tails are reference detail — they belong on screen, never in the air.
+  t = t.split(/\s*Teaching:\s*/i)[0]
+  t = t.split(/\s*As of \d{4}-\d{2}-\d{2}/i)[0]
+  t = t.replace(/\s+/g, " ").trim()
+  if (t.length <= 240) return t
+  // Otherwise end on a sentence rather than mid-word.
+  const cut = t.slice(0, 240)
+  const stop = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "))
+  return (stop > 60 ? cut.slice(0, stop + 1) : cut).trim()
+}
+
 const SHOW_GALAXY: boolean = false
 // The attract loop OPENS on the idle "Hi, I'm Summer" greeting and holds it this long before
 // dropping into the directory screensaver — and returns to it after the Research Network finale.
@@ -163,7 +187,7 @@ export default function KioskPage() {
       const res = await api.post<{ reply: string; person?: Person }>("/kiosk/ask", { question: text, history })
       const reply = res.reply || "(no answer)"
       setTurns((t) => [...t, { q: text, a: reply, person: res.person }])
-      if (!muted) speak(reply) // read the answer aloud for the hallway
+      if (!muted) speak(speakable(reply)) // say the short version; the screen shows all of it
     } catch {
       setTurns((t) => [...t, { q: text, a: "Sorry — I couldn't reach the system. Please try again." }])
     } finally {

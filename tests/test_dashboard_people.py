@@ -84,18 +84,33 @@ def test_action_guard_allows_lookups():
 
 
 # --- concise-by-default card, with grouped courses ------------------------
-def test_concise_card_has_email_and_courses(db):
+def test_concise_card_has_email_but_not_courses(db):
+    """A profile answer is name, title, office, hours, email — and stops there.
+
+    It used to append every course the person teaches AND their prerequisites, which on the
+    hallway kiosk meant ~475 characters read aloud to somebody who asked a one-line question.
+    Courses are still available; they just have to be asked for (see the teaching test below).
+    """
     ans = cs.person_answer(db, "who is Derek Johnston")
     assert "Email: derek.a.johnston@ttu.edu" in ans
-    # Courses are grouped from the imported registrar sections, asterisks stripped.
-    assert "ECE 3333 RF Communications Project Lab" in ans
-    assert "ECE 3334 Digital Communications Project Lab" in ans
-    assert "3334***" not in ans
+    assert "ECE 3333" not in ans, "an unasked-for course list is back in the profile answer"
+    assert "Teaching:" not in ans
+
+
+def test_courses_still_answered_when_asked(db):
+    """Removing courses from the profile must not remove the ability to ask about them."""
+    ans = cs.person_answer(db, "what does Derek Johnston teach")
+    assert "ECE 3333" in ans
+    assert "3334***" not in ans, "registrar asterisks must still be stripped"
 
 
 def test_instructor_name_variants_all_grouped(db):
-    # "Derek Johnston", "Johnston, Derek", and "Derek A Johnston" are the same person.
-    ans = cs.person_answer(db, "Derek Johnston")
+    """'Derek Johnston', 'Johnston, Derek' and 'Derek A Johnston' are one person.
+
+    Observed through the teaching answer, since that is where the grouped sections surface now
+    that the profile card no longer lists them.
+    """
+    ans = cs.person_answer(db, "what courses does Derek Johnston teach")
     for code in ("ECE 3333", "ECE 3334", "ECE 3335"):
         assert code in ans, code
 

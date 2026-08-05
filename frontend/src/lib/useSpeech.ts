@@ -200,13 +200,16 @@ export function useSpeech() {
   // another end phrase in ENDRE), OR when there's no further question for 8 seconds. Until
   // then it stays open, so you can keep asking — "who is in 216?" … "what about 212?" —
   // without repeating the wake word each time.
-  const CONVO_IDLE_MS = 8000
+  // 7s of no further question ends the conversation and hands the screen back to the greeting.
+  const CONVO_IDLE_MS = 7000
   // The window in which a follow-up may skip the wake word. Kept equal to CONVO_IDLE_MS so
   // the two rules agree: for as long as the conversation is alive, follow-ups are answered;
   // once it lapses she's dormant again and the wake word starts a fresh one. (Both are
   // measured from your last turn OR Summer's last reply, so a long answer doesn't eat the
   // window.)
-  const FOLLOWUP_GRACE_MS = 8000
+  // Matches CONVO_IDLE_MS: while a back-and-forth is alive a follow-up needs no wake word, and
+  // that window closes at the same moment the conversation itself does.
+  const FOLLOWUP_GRACE_MS = 7000
   // Keep the just-spoken text as an echo reference for a beat after the audio ends, so
   // the recognizer's lagged tail of Summer's OWN voice is dropped, not answered. The
   // clear is unconditional (guarded only by "text unchanged") — it can never stick.
@@ -863,7 +866,7 @@ export function useSpeech() {
           // have finished speaking. 1100ms was noticeably sluggish on the kiosk. 650ms still
           // comfortably clears the natural gaps inside a sentence ("who is... Derek Johnston")
           // while cutting roughly half a second off every single reply.
-          serverSilence.current = window.setTimeout(serverStopRec, 650)
+          serverSilence.current = window.setTimeout(serverStopRec, 500)
         }
       }
       serverRaf.current = requestAnimationFrame(tick)

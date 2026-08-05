@@ -140,8 +140,9 @@ async def kiosk_tts(data: KioskTTS, request: Request, db: Session = Depends(get_
     text = (data.text or "").strip()[:800]
     if not text:
         raise HTTPException(400, "text required")
+    vid = appsettings.get(db, "voice_id", voice.DEFAULT_VOICE)
     try:
-        audio = await voice.tts(text, appsettings.get(db, "voice_id", voice.DEFAULT_VOICE))
+        audio = await voice.tts(text, vid)
     except voice.TTSUnavailable:
         # ElevenLabs is out of quota / rate-limited. Do NOT go straight to 204: the browser
         # fallback that 204 assumes does not exist on the kiosk hardware — Debian's Chromium
@@ -150,8 +151,13 @@ async def kiosk_tts(data: KioskTTS, request: Request, db: Session = Depends(get_
         if voice.tts_openai_enabled():
             try:
                 audio = await run_in_threadpool(voice.tts_openai, text)
+                # Name the voice so the client can tell this is NOT the usual one and drop its
+                # cached acknowledgements — otherwise a conversation is half one voice, half
+                # the other, for as long as the page stays loaded.
+                import os as _os
                 return Response(content=audio, media_type="audio/mpeg",
-                                headers={"Cache-Control": "no-store"})
+                                headers={"Cache-Control": "no-store",
+                                         "X-TTS-Voice": f"openai:{_os.getenv('OPENAI_TTS_VOICE', 'nova')}"})
             except Exception as e:  # noqa
                 import logging
                 logging.getLogger("summer").warning("openai tts fallback failed: %s", e)
@@ -166,4 +172,5 @@ async def kiosk_tts(data: KioskTTS, request: Request, db: Session = Depends(get_
         # rejected key) — never a credential, which is only ever sent in a request header.
         # Without this a kiosk that has gone silent is undiagnosable without server log access.
         raise HTTPException(502, f"TTS failed: {str(e)[:200]}")
-    return Response(content=audio, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})
+    return Response(content=audio, media_type="audio/mpeg",
+                    headers={"Cache-Control": "no-store", "X-TTS-Voice": f"elevenlabs:{vid}"})

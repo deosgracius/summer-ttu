@@ -3,6 +3,7 @@ import { api } from "@/lib/api"
 import FacultyGraph3D from "@/components/FacultyGraph3D"
 import SummerOrb from "@/components/SummerOrb"
 import { officeHoursStatus } from "@/lib/officeHours"
+import { photoSuppressed } from "@/lib/photoPolicy"
 
 /**
  * Kiosk sleep-mode attract loop: a directory slideshow. It pages through the department's
@@ -132,11 +133,13 @@ function Card({ m, w, showOffice, doctor, accent }: { m: Member; w: number; show
   return (
     <div style={{ width: w }} className="flex flex-col items-center">
       <div style={{ width: w, height: w }} className="overflow-hidden rounded-2xl bg-[#0f1626] shadow-lg shadow-black/40 ring-1 ring-white/10">
-        {m.photo && !broken ? (
+        {m.photo && !broken && !photoSuppressed(m.name) ? (
           <img src={sized(m.photo)} alt={display} onError={() => setBroken(true)} className="h-full w-full object-cover"
             style={{ objectPosition: facePosition(m), filter: photoFilter(m) }} />
         ) : (
-          <div className="grid h-full w-full place-items-center font-semibold text-white/70" style={{ fontSize: w * 0.28 }}>{initials(m.name)}</div>
+          <div className="grid h-full w-full place-items-center font-semibold text-white/70" style={{ fontSize: w * 0.28 }}>
+            {photoSuppressed(m.name) ? "?" : initials(m.name)}
+          </div>
         )}
       </div>
       <div className="mt-2 w-full px-1 text-center leading-tight">
@@ -189,7 +192,9 @@ export default function KioskScreensaver({ onCycleEnd, onGraphChange }: { onCycl
       else { im.onload = settle; im.onerror = settle }
     }
     const all: string[] = []
-    for (const s of data.sections) for (const m of s.members) if (m.photo) all.push(m.photo)
+    // Skip photos we will not render — no point spending a Pi's bandwidth and decode time on an
+    // image the square is going to replace with a question mark.
+    for (const s of data.sections) for (const m of s.members) if (m.photo && !photoSuppressed(m.name)) all.push(m.photo)
 
     // TWO PHASES. All 48 headshots total ~2.9 MB, but the first page reveals maybe 18 of them.
     // Loading the whole set at once put ~2.2 MB of avoidable transfer and decode on the critical
@@ -327,7 +332,9 @@ export default function KioskScreensaver({ onCycleEnd, onGraphChange }: { onCycl
   }
   if (!page) return <div className="absolute inset-0 bg-[#060a12]/45" />
   // Reveal the grid only once EVERY photo on this page has decoded, so they all appear together.
-  const pageReady = page.members.every((m) => !m.photo || decoded.has(m.photo))
+  // Suppressed photos are never preloaded, so they must be excluded here too — otherwise this
+  // waits forever for an image that was deliberately never fetched, and the page never appears.
+  const pageReady = page.members.every((m) => !m.photo || photoSuppressed(m.name) || decoded.has(m.photo))
   const accent = ACCENT[page.key] || "#38bdf8"
   const cols = page.cols
 

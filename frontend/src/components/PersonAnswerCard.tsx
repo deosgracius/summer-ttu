@@ -1,4 +1,5 @@
 import { MapPin, Mail } from "lucide-react"
+import { photoSuppressed } from "@/lib/photoPolicy"
 
 export interface AnswerPerson {
   name: string
@@ -15,7 +16,8 @@ export interface AnswerPerson {
  * line. Summer's spoken answer is shown beneath it in the captions band (AnswerCaptions).
  */
 export default function PersonAnswerCard({ person }: { person: AnswerPerson }) {
-  const hasPhoto = !!person.photo && /^(https?:\/\/|\/)/.test(person.photo)
+  const suppressed = photoSuppressed(person.name)
+  const hasPhoto = !suppressed && !!person.photo && /^(https?:\/\/|\/)/.test(person.photo)
   const initials = (person.name || "")
     .trim()
     .split(/\s+/)
@@ -38,7 +40,7 @@ export default function PersonAnswerCard({ person }: { person: AnswerPerson }) {
             />
           ) : (
             <div className="grid h-64 w-full place-items-center bg-muted text-6xl font-semibold text-muted-foreground sm:h-full">
-              {initials || "?"}
+              {suppressed ? "?" : initials || "?"}
             </div>
           )}
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/40 to-transparent sm:bg-gradient-to-r sm:from-transparent sm:to-black/10" />

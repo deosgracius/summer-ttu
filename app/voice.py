@@ -29,21 +29,22 @@ _blocked_until = 0.0
 # environment (ELEVENLABS_VOICE_ID) and this literal is the same id, so a missing or
 # mistyped env var cannot silently fall back to a stranger's voice.
 DEFAULT_VOICE = os.getenv("ELEVENLABS_VOICE_ID", "uYXf8XasLslADfZ2MB4u").strip()
-# Turbo, not Multilingual v2 and not Flash.
+# Multilingual v2 — the model the voice was CHOSEN on.
 #
-# The provider's own latency export for this workspace measured Multilingual v2 at 6.75s median
-# and 9.36s at p95 — slower than the OpenAI fallback it exists to improve on, and the largest
-# single component of "she thinks for a long time" on the kiosk.
+# A model is not neutral about a voice. The same voice id rendered by Flash came back flatter,
+# and Turbo was still not right: both were heard on the wall as Summer having been given somebody
+# else's voice, even though the id never changed. A voice picked by listening to it on
+# Multilingual v2 only sounds like itself on Multilingual v2, so that is what we send.
 #
-# Flash fixed the speed and cost half the credits, but a model is not neutral about a voice: the
-# SAME voice id rendered by Flash came back noticeably flatter, and was heard on the wall as
-# Summer having been given somebody else's voice. The voice is chosen deliberately here, so
-# losing its character is a real regression even when the id is untouched.
+# It is the slower model, and the latency is real — but the fix for that belongs where the time
+# is actually spent, not in quietly substituting the voice. Replies are already synthesized one
+# sentence at a time and played while the next is still generating, so what a student waits for
+# is the FIRST sentence, not the whole answer; keeping that first sentence short is what makes
+# this model feel responsive. See MAX_FIRST_CHUNK in useSpeech.ts.
 #
-# Turbo is the honest middle: close to Flash on latency, close to Multilingual v2 on how the
-# voice actually sounds. Override with ELEVENLABS_MODEL — eleven_multilingual_v2 for maximum
-# fidelity at ~6.75s, eleven_flash_v2_5 for maximum speed at half the credits.
-DEFAULT_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_turbo_v2_5").strip()
+# Override with ELEVENLABS_MODEL if speed ever has to win: eleven_turbo_v2_5, or
+# eleven_flash_v2_5 for half the credits.
+DEFAULT_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_multilingual_v2").strip()
 
 # NOTE ON LANGUAGE SWITCHING (removed deliberately — do not reintroduce).
 # This module used to hold a pool of extra voice ids and swap to one of them whenever
@@ -120,7 +121,12 @@ def transcribe(audio: bytes, filename: str = "audio.webm", prompt: str | None = 
     if not key:
         raise RuntimeError("OpenAI not configured for transcription")
     client = openai.OpenAI(api_key=key)
-    model = os.getenv("STT_MODEL", "whisper-1")
+    # gpt-4o-mini-transcribe, not whisper-1. Measured on this kiosk, transcription was 0.7-3.0s
+    # of the wait between a student finishing a sentence and Summer starting to answer — the
+    # largest single piece after speech synthesis. The mini model is materially faster and
+    # cheaper, and is at least as accurate on short spoken questions, which is all this kiosk
+    # ever sends it. Override with STT_MODEL to go back to whisper-1.
+    model = os.getenv("STT_MODEL", "gpt-4o-mini-transcribe")
     kwargs = {"model": model, "file": (filename, audio)}
     if prompt:
         kwargs["prompt"] = prompt[:900]

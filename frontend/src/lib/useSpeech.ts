@@ -303,10 +303,23 @@ export function useSpeech() {
 
   // Synthesize the acknowledgment phrases once and cache the audio, so being called back
   // ("Yes?") is instant. Idempotent + best-effort (falls back to a live synth if it fails).
-  function prewarmAcks() {
+  // ONE AT A TIME. This used to fire all five acknowledgements simultaneously, which is five
+  // concurrent requests against a TTS plan that allows about three. The provider's own usage
+  // export for this workspace shows the result: 181 rate-limit responses against 353 successes
+  // in a week. Each 429 latches the circuit breaker, and every reply for the next stretch comes
+  // back in the fallback voice — which is exactly what "you changed the voice again" was.
+  //
+  // Warming is not urgent: the first ack only has to be ready before somebody says "Summer".
+  // Sequential, and it stops at the first failure rather than hammering a provider that has
+  // just told us to slow down.
+  async function prewarmAcks() {
     for (const a of ACKS) {
       if (_ACK_CACHE.has(a)) continue
-      synthChunk(a).then((u) => URL.revokeObjectURL(u)).catch(() => {})
+      try {
+        URL.revokeObjectURL(await synthChunk(a))
+      } catch {
+        return   // rate-limited or offline — leave the rest; a live synth still works
+      }
     }
   }
 

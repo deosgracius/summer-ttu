@@ -1069,6 +1069,14 @@ export function useSpeech() {
     setHeard('Listening — say "Summer"')
     serverStartContinuous()   // recorder runs from now on, so the pre-roll always exists
     serverListen(stream)
+    // Warm the acknowledgement audio NOW, not on a first touch. prewarmAcks only FETCHES and
+    // caches — it plays nothing — so it never needed a user gesture, but it was only reachable
+    // through primeAudio(), which fires on the first pointerdown or keypress. A wall kiosk is
+    // never touched. While hands-free had to be switched on by hand the click happened to warm
+    // it; now that it arms itself, nothing did, and every "Hey Summer" paid a live 1.1-2.9s
+    // synthesis round-trip before she said "Yes?" — which is precisely the difference between
+    // her feeling instant and her feeling slow to wake.
+    prewarmAcks()
   }
 
   function stopServerWake() {

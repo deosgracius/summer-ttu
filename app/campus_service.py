@@ -112,10 +112,71 @@ def _tokens(q: str):
 
 
 def _matches(haystack: str, query: str) -> bool:
-    """True if every whitespace token of the query appears in the haystack."""
-    h = haystack.lower()
+    """True if every token of the query matches a WORD of the haystack.
+
+    This used to be raw substring containment, which is far too loose for course codes because
+    the haystack deliberately includes the compact form ("ece2372") so that "ece 2372" and
+    "ece2372" both work. Substring matching meant "e2" was contained in ece2372, ece2301 and
+    ece2304, so a student asking about E2 — which is Advanced Electronics — got four real,
+    confidently-reported, entirely wrong courses, complete with real room numbers. A short token
+    that lands inside a course code is never evidence about that course.
+
+    So: a token must equal a whole word, or be a prefix of one and be at least 4 characters —
+    which keeps "micro" finding Microprocessor Systems while "e2" no longer finds anything.
+    """
     toks = _tokens(query)
-    return all(t in h for t in toks) if toks else True
+    if not toks:
+        return True
+    hw = set(re.findall(r"[a-z0-9]+", haystack.lower()))
+    return all(t in hw or (len(t) >= 4 and any(w.startswith(t) for w in hw)) for t in toks)
+
+
+# Students SAY course numbers, they do not spell them. Whisper writes what it hears, so
+# "ECE thirty three thirty one" and "ECE triple three one" arrive as words, and every downstream
+# matcher looks for digits. This turns the spoken forms back into a number before anything tries
+# to match it. It only ever ADDS a digit form alongside the original text — it never removes
+# anything and never guesses a course, so a phrase that is not a number is left untouched.
+_DIGIT_WORD = {"zero": "0", "oh": "0", "o": "0", "one": "1", "two": "2", "three": "3", "four": "4",
+               "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9"}
+_TENS_WORD = {"ten": "10", "eleven": "11", "twelve": "12", "thirteen": "13", "fourteen": "14",
+              "fifteen": "15", "sixteen": "16", "seventeen": "17", "eighteen": "18",
+              "nineteen": "19", "twenty": "20", "thirty": "30", "forty": "40", "fifty": "50",
+              "sixty": "60", "seventy": "70", "eighty": "80", "ninety": "90"}
+
+
+def spoken_number_forms(query: str) -> list[str]:
+    """Digit strings a spoken course number could have meant. Empty when there are none."""
+    words = re.findall(r"[a-z]+", (query or "").lower())
+    out, i = [], 0
+    buf = ""
+    while i < len(words):
+        w = words[i]
+        if w in ("double", "triple") and i + 1 < len(words) and words[i + 1] in _DIGIT_WORD:
+            buf += _DIGIT_WORD[words[i + 1]] * (2 if w == "double" else 3)
+            i += 2
+            continue
+        if w in _TENS_WORD:
+            # "thirty three" -> 33, "thirty" alone -> 30
+            if i + 1 < len(words) and words[i + 1] in _DIGIT_WORD and _TENS_WORD[w].endswith("0") \
+                    and int(_TENS_WORD[w]) >= 20:
+                buf += str(int(_TENS_WORD[w]) + int(_DIGIT_WORD[words[i + 1]]))
+                i += 2
+            else:
+                buf += _TENS_WORD[w]
+                i += 1
+            continue
+        if w in _DIGIT_WORD:
+            buf += _DIGIT_WORD[w]
+            i += 1
+            continue
+        if buf:
+            out.append(buf)
+            buf = ""
+        i += 1
+    if buf:
+        out.append(buf)
+    # Course numbers here are 3 or 4 digits. Anything else is a year, a room, or just counting.
+    return [n for n in out if 3 <= len(n) <= 4]
 
 
 def find_courses(db, query: str, semester: str = ""):
@@ -124,7 +185,7 @@ def find_courses(db, query: str, semester: str = ""):
         q = q.filter(models.CourseSection.semester == semester)
     # Course numbers in the query (e.g. "3312") match a section even if the rest
     # of the phrasing differs — helps when a student gives a number, not a title.
-    qnums = set(re.findall(r"\d{3,4}", query or ""))
+    qnums = set(re.findall(r"\d{3,4}", query or "")) | set(spoken_number_forms(query))
     out = []
     for c in q.order_by(models.CourseSection.subject, models.CourseSection.course).all():
         # "ece3306" (no space) and "ece 3306" both match via the compact token.
@@ -322,14 +383,32 @@ def best_answer(db, question: str, min_score: int = 1):
     formatted as plain text. NO LLM. Returns None if nothing scores. Used both as
     the evaluation baseline and as Summer's offline fallback when the model is down."""
     toks = set(_content_tokens(question))
+    # A course number that was SPOKEN arrives as words. Add the digit form so "ECE triple three
+    # one" can be answered from the schedule instead of falling through to the paid model — the
+    # digits are a distinctive whole word, so they satisfy the course gate honestly rather than
+    # by accumulating incidental matches, which is what used to return the wrong course.
+    toks |= set(spoken_number_forms(question))
     if not toks:
         return None
     best = (0, None)
 
-    def consider(haystack: str, text: str):
+    def consider(haystack: str, text: str, word_aware: bool = False):
         nonlocal best
         h = haystack.lower()
-        score = sum(1 for t in toks if t in h)
+        if word_aware:
+            # Courses only. The gate below already demands one distinctive WHOLE word, but the
+            # scorer did not match it: incidental substrings then inflated the score to the
+            # threshold and the row was returned as fact. Measured, "ECE triple three one"
+            # returned "ECE 2304 Introduction to Electrical Engineering, meets MWF 9:00 in ECE
+            # 100" — "one" scoring off "introduction", "ece" off the code. Deterministic answers
+            # deliberately bypass the provenance gate, so that wrong room was stated with no
+            # check at all. Buildings and service hours keep the old scorer, which genuinely
+            # relies on substrings ("engr" inside "engineering").
+            hw = set(re.findall(r"[a-z0-9@.]+", h))
+            score = sum(1 for t in toks
+                        if t in hw or (len(t) >= 4 and any(w.startswith(t) for w in hw)))
+        else:
+            score = sum(1 for t in toks if t in h)
         if score > best[0]:
             best = (score, text)
 
@@ -376,7 +455,8 @@ def best_answer(db, question: str, min_score: int = 1):
             continue
         consider(hay,
                  f"{c.subject} {c.course} {c.title} — meets {c.days or 'n/a'} "
-                 f"{c.times or ''} in {where}, instructor {c.instructor or 'not listed'}.")
+                 f"{c.times or ''} in {where}, instructor {c.instructor or 'not listed'}.",
+                 word_aware=True)
     for b in db.query(models.Building).all():
         consider(f"{b.name} {b.code} {b.address}",
                  f"{b.name} ({b.code}) — {b.address}, hours {b.hours_text or 'not listed'}.")

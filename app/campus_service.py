@@ -522,10 +522,15 @@ def _person_detail(db, kind: str, r, full: bool = False) -> str:
         parts.append(f"Office hours: {pol}.")
     if email:
         parts.append(f"Email: {email}.")
-    taught = _courses_taught(db, r.name)
-    if taught:
-        parts.append(taught)
+    # NOT the course list. "Who is Derek Johnston?" was answering with every course he teaches
+    # AND their prerequisites — ~475 characters read aloud in a hallway to somebody who asked a
+    # one-line question. A profile answer is: name, title, office, hours, email. Nothing else.
+    # Asking about teaching still works: _asked_field() returns "teaching" and _person_one_fact()
+    # answers it directly, so this only removes it from answers where it was never requested.
     if full:
+        taught = _courses_taught(db, r.name)
+        if taught:
+            parts.append(taught)
         # Extra detail only when the student explicitly asks for more.
         phone = getattr(r, "phone", "")
         if phone:

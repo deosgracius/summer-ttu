@@ -37,25 +37,21 @@ const IDLE_RESET_MS = 60_000 // clear the screen for the next person after a min
 // points were the biggest single continuous cost, and the page still needs to fit inside 4 cores
 // alongside the Spline robot and the faculty graph. One word to restore.
 /**
- * What Summer SAYS OUT LOUD, as opposed to what the screen shows.
+ * What Summer SAYS OUT LOUD.
  *
- * She used to speak the entire answer. Asking "who is Derek Johnston" produced ~600 characters
- * that included every course he teaches AND their prerequisites — read aloud, in a hallway. That
- * is wrong for the room (nobody standing at a wall display wants a course catalogue recited) and
- * it is expensive: that single answer exhausted the ElevenLabs quota, which trips a 15-minute
- * breaker, which is why the kiosk then went completely silent.
+ * SHE READS WHAT IS ON SCREEN. Truncating the speech while the caption showed the full text was
+ * wrong — a caption you can read but never hear is worse than a long answer. The fix belongs on
+ * the server, and is now there: a profile answer is name, title, office, hours and email, with
+ * the course list only when somebody actually asks about teaching.
  *
- * The screen still shows everything. This is only what reaches the speaker.
+ * All that remains here is stripping the provenance footer, which is a data-freshness note for
+ * the screen and reads as noise aloud, plus a hard ceiling so a pathological answer can never
+ * run away with the TTS budget. Neither should fire on a normal reply.
  */
 function speakable(reply: string): string {
-  let t = (reply || "").trim()
-  // These tails are reference detail — they belong on screen, never in the air.
-  t = t.split(/\s*Teaching:\s*/i)[0]
-  t = t.split(/\s*As of \d{4}-\d{2}-\d{2}/i)[0]
-  t = t.replace(/\s+/g, " ").trim()
-  if (t.length <= 240) return t
-  // Otherwise end on a sentence rather than mid-word.
-  const cut = t.slice(0, 240)
+  const t = (reply || "").replace(/\s*As of \d{4}-\d{2}-\d{2}[^.]*\.?\s*$/i, "").replace(/\s+/g, " ").trim()
+  if (t.length <= 700) return t
+  const cut = t.slice(0, 700)
   const stop = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "))
   return (stop > 60 ? cut.slice(0, stop + 1) : cut).trim()
 }

@@ -98,13 +98,29 @@ export default function KioskPage() {
     greetTimer.current = window.setTimeout(() => setDismissed(false), GREET_MS) // then the screensaver
   }, [])
 
+  // Straight to the directory screensaver (page 2), skipping the greeting (page 1). This is where
+  // a FINISHED conversation lands: the student who just spoke to Summer does not need to be
+  // introduced to her again, and the directory is the more useful thing to leave on screen for
+  // whoever walks past next. The greeting still opens the attract loop on boot and still bookends
+  // each full screensaver cycle — this only changes where a conversation hands back to.
+  const enterScreensaver = useCallback(() => {
+    window.clearTimeout(idleTimer.current)
+    window.clearTimeout(greetTimer.current)
+    setDismissed(false)
+  }, [])
+
+  // Did a real conversation actually happen? `awake` is false on first mount too, and we must not
+  // confuse "nobody has spoken yet" with "someone just finished speaking" — the first should open
+  // on the greeting, the second should go to page 2.
+  const hadConversation = useRef(false)
+
   function resetIdle() {
     window.clearTimeout(idleTimer.current)
     idleTimer.current = window.setTimeout(() => {
       setTurns([])
       setQuestion("")
       stopSpeaking()
-      enterAttract() // conversation went idle → reopen the attract loop on the greeting page
+      enterScreensaver() // conversation went idle → hand back to the directory (page 2)
     }, IDLE_RESET_MS)
   }
   useEffect(() => {
@@ -134,12 +150,18 @@ export default function KioskPage() {
   // When Summer drops to sleep (no one talking for CONVO_IDLE_MS ~5s), clear the
   // conversation so the screen is fresh and waiting for the next person's "Hey Summer".
   useEffect(() => {
-    if (!awake) {
-      setTurns([])
-      setQuestion("")
-      enterAttract() // voice conversation ended → reopen the attract loop on the greeting page
+    if (awake) { hadConversation.current = true; return }
+    setTurns([])
+    setQuestion("")
+    if (hadConversation.current) {
+      // A conversation just ENDED — either the student closed it ("thank you", "that's all") or
+      // it timed out. Hand back to the directory, not to the greeting.
+      hadConversation.current = false
+      enterScreensaver()
+    } else {
+      enterAttract() // first load, nobody has spoken yet → open on the greeting
     }
-  }, [awake, enterAttract])
+  }, [awake, enterAttract, enterScreensaver])
   // While a conversation is live, keep both idle screens off (the answer sits on top) and cancel
   // any pending greet→screensaver flip so it can't cut in mid-conversation.
   useEffect(() => {

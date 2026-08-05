@@ -746,6 +746,9 @@ export function useSpeech() {
   const serverRing = useRef<BlobPart[]>([])
   const serverRecording = useRef(false)
   const serverSilence = useRef<number | undefined>(undefined)
+  // Hard ceiling on a single capture. Without this the hands-free path can DEADLOCK: see the
+  // note on MAX_UTTERANCE_MS above serverStartRec().
+  const serverMaxTimer = useRef<number | undefined>(undefined)
 
   function handleTranscript(raw: string) {
     if (!raw) return
@@ -821,14 +824,36 @@ export function useSpeech() {
     try { rec.start(SLICE_MS) } catch { serverRec.current = null }
   }
 
+  // Longest single capture. This exists to break a genuine DEADLOCK, not to trim long questions.
+  //
+  // serverRecording.current is cleared in exactly one place — serverStopRec() — and during normal
+  // operation serverStopRec() has exactly one caller: the QUIET branch of the detector, which only
+  // runs when the room drops below the threshold. The threshold itself is calibrated once, in the
+  // first 18 samples after hands-free is switched on, and never revisited.
+  //
+  // So if the room's level rises after that calibration and stays up — Summer's own answer coming
+  // back through the TV at 0.90 on a device the browser's echo canceller does not reference,
+  // autoGainControl rescaling the input, a fan, a corridor of students — the quiet branch never
+  // runs again. The recording never ends, the upload never happens, and Summer goes permanently
+  // deaf while the on-screen control still reads "Hands-free on (server)". Nothing throws and
+  // nothing looks broken.
+  //
+  // The tap-to-talk path already had a 20s cap for exactly this reason; this path had none. A
+  // capture still running after 12s is not someone asking where a professor's office is, so we
+  // end it, upload what we have, and let the detector re-arm.
+  const MAX_UTTERANCE_MS = 12000
+
   function serverStartRec() {
     if (serverRecording.current) return
     serverChunks.current = []
     serverRecording.current = true     // subsequent slices now accumulate instead of ringing
+    if (serverMaxTimer.current) clearTimeout(serverMaxTimer.current)
+    serverMaxTimer.current = window.setTimeout(serverStopRec, MAX_UTTERANCE_MS)
   }
 
   async function serverStopRec() {
     if (serverSilence.current) { clearTimeout(serverSilence.current); serverSilence.current = undefined }
+    if (serverMaxTimer.current) { clearTimeout(serverMaxTimer.current); serverMaxTimer.current = undefined }
     if (!serverRecording.current) return
     serverRecording.current = false
     const type = serverRec.current?.mimeType || "audio/webm"
@@ -875,6 +900,7 @@ export function useSpeech() {
     ctx.createMediaStreamSource(stream).connect(analyser)
     const data = new Uint8Array(analyser.frequencyBinCount)
     let frames = 0, floorSum = 0, thresh = 10, loudRun = 0
+    let floorRun = 0                                 // adaptive noise floor, see below
     const tick = () => {
       if (!serverWakeOn.current) return
       // Briefing is reading — keep the loop alive but don't record or barge in (the music
@@ -886,8 +912,22 @@ export function useSpeech() {
       frames++
       if (frames <= 18) {                              // calibrate to the room's noise floor first
         floorSum += max
-        if (frames === 18) thresh = Math.max(8, Math.round(floorSum / 18) + 7)
+        if (frames === 18) { floorRun = floorSum / 18; thresh = Math.max(8, Math.round(floorRun) + 7) }
         return
+      }
+      // ADAPTIVE NOISE FLOOR. The floor used to be measured once, in the first 18 samples after
+      // hands-free was switched on, and trusted for the life of the page. That is what let a room
+      // which got LOUDER after arming pin the detector permanently above its threshold — and since
+      // the end-of-turn check only runs while the room is quiet, a pinned detector never finishes
+      // a recording and never uploads again. A hallway is not a constant: the TV plays Summer's
+      // own answers, autoGainControl rescales the input, and students walk past.
+      // So track the quietest recent level instead — drop to it at once, creep back up slowly.
+      // Only while idle: during a capture the threshold is frozen, so a long question cannot
+      // raise the bar out from under the person still asking it.
+      if (!serverRecording.current) {
+        if (max < floorRun) floorRun = max
+        else floorRun = Math.min(floorRun + 0.05, max)   // ~2 units/sec, so a raised room settles in seconds
+        thresh = Math.max(8, Math.round(floorRun) + 7)
       }
       // While Summer is speaking, demand clearly-louder energy so a bit of echo leaking past
       // the canceller doesn't make her interrupt herself; a real barge-in is louder than leak.

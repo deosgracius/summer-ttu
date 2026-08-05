@@ -19,24 +19,22 @@ _QUOTA_COOLDOWN_S = 900  # 15 minutes
 _blocked_until = 0.0
 # .strip() these: a secret pasted into a host's env UI very often carries a trailing
 # newline, which makes httpx reject the xi-api-key header as an "illegal header value".
-DEFAULT_VOICE = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM").strip()  # "Rachel" (public)
+# Summer speaks with ONE voice. This is the project's voice; it is set in the host's
+# environment (ELEVENLABS_VOICE_ID) and this literal is the same id, so a missing or
+# mistyped env var cannot silently fall back to a stranger's voice.
+DEFAULT_VOICE = os.getenv("ELEVENLABS_VOICE_ID", "uYXf8XasLslADfZ2MB4u").strip()
 DEFAULT_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_multilingual_v2").strip()
 
-# Automatic language switching: when a reply is NOT in English, speak it with a
-# voice that matches the language. English keeps the configured default voice.
-# The model (eleven_multilingual_v2) already pronounces any language; this just
-# picks an appropriate voice id. Languages without a specific id alternate across
-# the distinct ids provided.
-_VOICE_POOL = ["54Cze5LrTSyLgbO6Fhlc", "5RqXmIU9ikjifeWoXHMG", "xZlk9F7cqMNoHTEPVFUX"]
-_VOICE_BY_LANG = {
-    "fr": "54Cze5LrTSyLgbO6Fhlc",   # French
-    "zh": "54Cze5LrTSyLgbO6Fhlc",   # Chinese
-    "tl": "54Cze5LrTSyLgbO6Fhlc",   # Filipino / Tagalog
-    "tr": "5RqXmIU9ikjifeWoXHMG",   # Turkish
-    "de": "xZlk9F7cqMNoHTEPVFUX",   # German
-    "hr": "54Cze5LrTSyLgbO6Fhlc",   # Croatian
-    "ko": "54Cze5LrTSyLgbO6Fhlc",   # Korean
-}
+# NOTE ON LANGUAGE SWITCHING (removed deliberately — do not reintroduce).
+# This module used to hold a pool of extra voice ids and swap to one of them whenever
+# detect_lang() guessed the reply was not English. That produced TWO DIFFERENT VOICES inside a
+# single conversation on the kiosk: a short acknowledgement ("Yes? How can I help?") is plain
+# ASCII and kept Summer's voice, while an answer containing a person's name with a diacritic
+# tripped the heuristic and was spoken by a stranger. The triggers were that blunt — any of
+# "ä ö ü ß" was read as German, "đ" as Croatian, "ş ğ ı İ" as Turkish, all of which occur in
+# ordinary names on a university directory.
+# The swap was never necessary: eleven_multilingual_v2 pronounces every supported language with
+# whichever voice it is given. One voice, every language.
 
 
 def detect_lang(text: str) -> str:
@@ -75,9 +73,9 @@ def detect_lang(text: str) -> str:
 
 
 def voice_for_lang(lang: str) -> str:
-    if lang in _VOICE_BY_LANG:
-        return _VOICE_BY_LANG[lang]
-    return _VOICE_POOL[sum(ord(c) for c in (lang or "x")) % len(_VOICE_POOL)]
+    """Retained so any caller keeps working, but there is only one voice now — see the note at
+    the top of this module about why per-language voices were removed."""
+    return DEFAULT_VOICE
 
 
 def _key() -> str | None:
@@ -164,10 +162,10 @@ async def tts(text: str, voice_id: str | None = None, model: str | None = None) 
     if time.time() < _blocked_until:
         # Still cooling down from a recent 429 — don't call ElevenLabs at all; use browser voice.
         raise TTSUnavailable("ElevenLabs cooling down after a rate-limit")
-    # Auto-switch the voice by language: a non-English reply is spoken with the
-    # matching voice; English keeps the caller's configured/default voice.
-    lang = detect_lang(text)
-    vid = (voice_for_lang(lang) if lang != "en" else (voice_id or DEFAULT_VOICE)).strip()
+    # ONE voice, whatever the language. eleven_multilingual_v2 handles pronunciation itself, so
+    # nothing here inspects the text — that inspection is exactly what used to hand a reply to a
+    # different voice mid-conversation.
+    vid = (voice_id or DEFAULT_VOICE).strip()
     payload = {
         "text": text[:5000],
         "model_id": model or DEFAULT_MODEL,

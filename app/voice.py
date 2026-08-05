@@ -12,10 +12,16 @@ class TTSUnavailable(Exception):
     browser's built-in voice — this is expected degradation, NOT a bug to alert on."""
 
 
-# Circuit breaker: once ElevenLabs returns 429 (monthly quota used up / rate-limited), stop
-# calling it for this long. Otherwise a busy hallway kiosk hammers a rate-limited API hundreds
-# of times, floods the failure log, and adds latency before every browser-voice fallback.
-_QUOTA_COOLDOWN_S = 900  # 15 minutes
+# Circuit breaker: after a 429, stop calling ElevenLabs for this long so a busy kiosk does not
+# hammer an API that has just asked it to slow down.
+#
+# This was 900 seconds, on the assumption that a 429 meant the monthly quota was gone. The
+# provider's usage export for this workspace says otherwise: 181 rate-limit responses alongside
+# 353 successes in one week, with credits still being charged throughout. These are CONCURRENCY
+# limits — too many requests in flight at once — and that clears in seconds, not a quarter of an
+# hour. Fifteen minutes of exile after one burst is why a single crowded moment put every reply
+# for the rest of the period into the fallback voice.
+_QUOTA_COOLDOWN_S = 45
 _blocked_until = 0.0
 # .strip() these: a secret pasted into a host's env UI very often carries a trailing
 # newline, which makes httpx reject the xi-api-key header as an "illegal header value".
@@ -23,7 +29,13 @@ _blocked_until = 0.0
 # environment (ELEVENLABS_VOICE_ID) and this literal is the same id, so a missing or
 # mistyped env var cannot silently fall back to a stranger's voice.
 DEFAULT_VOICE = os.getenv("ELEVENLABS_VOICE_ID", "uYXf8XasLslADfZ2MB4u").strip()
-DEFAULT_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_multilingual_v2").strip()
+# Flash, not Multilingual v2. The provider's own latency export for this workspace measured
+# Multilingual v2 at 6.75s median, 9.36s at the 95th percentile — SLOWER than the OpenAI fallback
+# it exists to improve on, and the single largest component of the "she thinks for a long time"
+# complaint from the kiosk. Flash is built for real-time use and still covers the same languages
+# with the same voice; it also costs half as many credits per character, which matters when every
+# answer is read aloud. Override with ELEVENLABS_MODEL if the richer model is ever wanted back.
+DEFAULT_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_flash_v2_5").strip()
 
 # NOTE ON LANGUAGE SWITCHING (removed deliberately — do not reintroduce).
 # This module used to hold a pool of extra voice ids and swap to one of them whenever

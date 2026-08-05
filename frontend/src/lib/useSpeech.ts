@@ -263,6 +263,13 @@ export function useSpeech() {
   // ---- TTS: ElevenLabs first, browser fallback ----
   // Split a reply into sentence chunks so we can start speaking the first one
   // while the rest are still being synthesized (streamed speech).
+  // The FIRST chunk decides how long a student stands in silence. Everything after it is
+  // synthesized while the previous one plays, so only this one is ever waited for — and synthesis
+  // time scales with length. A first sentence like "Dr. Timothy Dallas is a Professor in
+  // Electrical and Computer Engineering" is long enough to be worth splitting; getting her
+  // talking is what makes the reply feel prompt, not how much she says first.
+  const MAX_FIRST_CHUNK = 90
+
   function splitSentences(t: string): string[] {
     const parts = t.match(/[^.!?]+[.!?]+|\S[^.!?]*$/g) || [t]
     const out: string[] = []
@@ -272,6 +279,19 @@ export function useSpeech() {
       // merge very short fragments into the previous chunk
       if (out.length && out[out.length - 1].length < 40) out[out.length - 1] += " " + s
       else out.push(s)
+    }
+    // Break an over-long opener at its last natural pause, so she starts speaking sooner. Only
+    // ever at a comma or a space — never mid-word — and only when the leading piece is long
+    // enough to stand on its own.
+    if (out.length && out[0].length > MAX_FIRST_CHUNK) {
+      const head = out[0]
+      const win = head.slice(0, MAX_FIRST_CHUNK)
+      let cut = Math.max(win.lastIndexOf(", "), win.lastIndexOf("; "), win.lastIndexOf(" — "))
+      if (cut < 30) cut = win.lastIndexOf(" ")
+      if (cut >= 30) {
+        out[0] = head.slice(0, cut + 1).trim()
+        out.splice(1, 0, head.slice(cut + 1).trim())
+      }
     }
     return out
   }
@@ -1054,7 +1074,7 @@ export function useSpeech() {
           // have finished speaking. 1100ms was noticeably sluggish on the kiosk. 650ms still
           // comfortably clears the natural gaps inside a sentence ("who is... Derek Johnston")
           // while cutting roughly half a second off every single reply.
-          serverSilence.current = window.setTimeout(serverStopRec, 500)
+          serverSilence.current = window.setTimeout(serverStopRec, 380)
         }
       }
     }

@@ -734,6 +734,8 @@ export function useSpeech() {
   const serverWakeOn = useRef(false)
   const serverStream = useRef<MediaStream | null>(null)
   const serverCtx = useRef<AudioContext | null>(null)
+  // Interval handle for the VAD loop. This used to be a requestAnimationFrame id, which tied
+  // hearing to drawing — see serverListen() for why that was fatal on the kiosk.
   const serverRaf = useRef<number | undefined>(undefined)
   const serverRec = useRef<MediaRecorder | null>(null)
   const serverChunks = useRef<BlobPart[]>([])
@@ -851,6 +853,20 @@ export function useSpeech() {
   // sustained loud energy therefore means the USER is talking. When that happens while Summer
   // is mid-sentence, we cut her off (barge-in), capture the utterance, and transcribe it.
   // isEcho() on the transcript is the final backstop against Summer answering herself.
+  //
+  // SAMPLING CLOCK. This detector used to run on requestAnimationFrame, which quietly tied
+  // Summer's HEARING to the kiosk's DRAWING. rAF only fires when the browser paints a frame, so
+  // under GPU/CPU load the ear slows down with the screen. Measured on the wall kiosk (Pi 5,
+  // fullscreen, real content) rAF was delivering 5.3 frames per second, and at that rate:
+  //   - the detector sampled ~5x/sec, seeing roughly 3% of the incoming audio;
+  //   - "3 consecutive loud frames" stopped meaning 50ms and started meaning 570ms of
+  //     unbroken loudness before recording would even begin;
+  //   - a single sample landing in the natural gap between two words scheduled the
+  //     end-of-turn stop, cutting the recording off mid-question.
+  // Whisper therefore received clipped fragments, the wake pattern never matched them, and the
+  // turn was discarded in silence — roughly five attempts in six. A timer is independent of
+  // frame rate, so Summer now hears identically whether the screen draws at 60fps or at 5.
+  const VAD_MS = 25
   function serverListen(stream: MediaStream) {
     const ctx = new AudioContext()
     serverCtx.current = ctx
@@ -863,7 +879,7 @@ export function useSpeech() {
       if (!serverWakeOn.current) return
       // Briefing is reading — keep the loop alive but don't record or barge in (the music
       // and Summer's own audio would otherwise trip the VAD).
-      if (VOICE.muted) { serverRaf.current = requestAnimationFrame(tick); return }
+      if (VOICE.muted) return
       analyser.getByteTimeDomainData(data)
       let max = 0
       for (let i = 0; i < data.length; i++) { const v = Math.abs(data[i] - 128); if (v > max) max = v }
@@ -871,7 +887,7 @@ export function useSpeech() {
       if (frames <= 18) {                              // calibrate to the room's noise floor first
         floorSum += max
         if (frames === 18) thresh = Math.max(8, Math.round(floorSum / 18) + 7)
-        serverRaf.current = requestAnimationFrame(tick); return
+        return
       }
       // While Summer is speaking, demand clearly-louder energy so a bit of echo leaking past
       // the canceller doesn't make her interrupt herself; a real barge-in is louder than leak.
@@ -894,9 +910,8 @@ export function useSpeech() {
           serverSilence.current = window.setTimeout(serverStopRec, 500)
         }
       }
-      serverRaf.current = requestAnimationFrame(tick)
     }
-    serverRaf.current = requestAnimationFrame(tick)
+    serverRaf.current = window.setInterval(tick, VAD_MS)
   }
 
   async function startServerWake(onCommand: (cmd: string) => void) {
@@ -933,7 +948,7 @@ export function useSpeech() {
     setServerWake(false)
     setWakeActive(false)
     setHeard("")
-    if (serverRaf.current) cancelAnimationFrame(serverRaf.current)
+    if (serverRaf.current) clearInterval(serverRaf.current)
     serverRaf.current = undefined
     serverStopRec()
     // The recorder now runs continuously, so it has to be stopped explicitly here — otherwise
@@ -968,7 +983,7 @@ export function useSpeech() {
   }
 
   function stopVad() {
-    if (vadRaf.current) cancelAnimationFrame(vadRaf.current)
+    if (vadRaf.current) clearInterval(vadRaf.current)
     if (silenceTimer.current) clearTimeout(silenceTimer.current)
     vadRaf.current = undefined
     silenceTimer.current = undefined
@@ -1007,7 +1022,6 @@ export function useSpeech() {
         if (frames <= 12) {
           floorSum += max
           if (frames === 12) thresh = Math.max(3, Math.round(floorSum / 12) + 4)
-          vadRaf.current = requestAnimationFrame(tick)
           return // don't detect speech while still calibrating
         }
         if (max > thresh) {
@@ -1019,9 +1033,11 @@ export function useSpeech() {
         } else if (spoke && silenceTimer.current === undefined) {
           silenceTimer.current = window.setTimeout(onSilence, 1500)
         }
-        vadRaf.current = requestAnimationFrame(tick)
       }
-      vadRaf.current = requestAnimationFrame(tick)
+      // Timer, not rAF — see the SAMPLING CLOCK note above serverListen(). Tying this to the
+      // frame rate meant the tap-to-talk auto-stop misfired on the kiosk exactly like the
+      // hands-free detector did.
+      vadRaf.current = window.setInterval(tick, VAD_MS)
     } catch {
       /* VAD optional — tap again to stop */
     }

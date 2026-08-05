@@ -859,7 +859,6 @@ export function useSpeech() {
     ctx.createMediaStreamSource(stream).connect(analyser)
     const data = new Uint8Array(analyser.frequencyBinCount)
     let frames = 0, floorSum = 0, thresh = 10, loudRun = 0
-    let sawSignal = false, deadSince = 0   // echo-cancellation watchdog state (see below)
     const tick = () => {
       if (!serverWakeOn.current) return
       // Briefing is reading — keep the loop alive but don't record or barge in (the music
@@ -869,14 +868,6 @@ export function useSpeech() {
       let max = 0
       for (let i = 0; i < data.length; i++) { const v = Math.abs(data[i] - 128); if (v > max) max = v }
       frames++
-      // Watchdog: a real microphone in a silent room still has a noise floor. A signal pinned at
-      // 0-2 for seconds on end means the stream is dead, not that the room is quiet — see
-      // aecWatchdogTripped(). Reopen without echo cancellation rather than stay deaf.
-      if (max > 3) sawSignal = true
-      if (!sawSignal) {
-        if (!deadSince) deadSince = performance.now()
-        else if (performance.now() - deadSince > 6000) { void aecWatchdogTripped(); return }
-      }
       if (frames <= 18) {                              // calibrate to the room's noise floor first
         floorSum += max
         if (frames === 18) thresh = Math.max(8, Math.round(floorSum / 18) + 7)
@@ -908,58 +899,6 @@ export function useSpeech() {
     serverRaf.current = requestAnimationFrame(tick)
   }
 
-  // Whether the current mic stream was opened WITH echo cancellation, and whether we have
-  // already fallen back — the fallback happens at most once per session.
-  const aecOn = useRef(true)
-  const aecFellBack = useRef(false)
-
-  function openMic(aec: boolean): Promise<MediaStream> {
-    aecOn.current = aec
-    return navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: aec, noiseSuppression: aec, autoGainControl: aec },
-    })
-  }
-
-  /**
-   * ECHO-CANCELLATION WATCHDOG.
-   *
-   * Chromium's echo canceller needs a reference signal from the OUTPUT device. When audio plays
-   * out of a different device than the microphone belongs to — a kiosk speaking through the TV
-   * over HDMI while listening on a USB speakerphone — it can subtract everything and hand back
-   * DIGITAL SILENCE. Measured on this hardware, same moment, same mic:
-   *
-   *     with    echoCancellation:  peak level  1   (silence)
-   *     without echoCancellation:  peak level 32   (speech)
-   *
-   * The kiosk looked completely deaf: nothing was ever uploaded, no question was ever asked,
-   * while the on-screen buttons kept working because they need no microphone.
-   *
-   * So: if the stream produces a flat, dead signal for several seconds — not a quiet room, which
-   * still has a noise floor, but literally nothing — reopen the mic without echo cancellation.
-   * Summer may then hear herself through the speaker; isEcho() on the transcript and the raised
-   * VAD threshold while she is speaking are the guards against her answering herself. A kiosk
-   * that occasionally mishears itself is enormously better than one that cannot hear at all.
-   */
-  async function aecWatchdogTripped() {
-    if (aecFellBack.current || !aecOn.current || !serverWakeOn.current) return
-    aecFellBack.current = true
-    try { serverRec.current?.state !== "inactive" && serverRec.current?.stop() } catch { /* ignore */ }
-    serverRec.current = null
-    serverHeader.current = null
-    serverRing.current = []
-    serverChunks.current = []
-    try { serverStream.current?.getTracks().forEach((t) => t.stop()) } catch { /* ignore */ }
-    try { serverCtx.current?.close() } catch { /* ignore */ }
-    if (serverRaf.current) cancelAnimationFrame(serverRaf.current)
-    serverRaf.current = undefined
-    try {
-      const s2 = await openMic(false)
-      serverStream.current = s2
-      serverStartContinuous()
-      serverListen(s2)
-    } catch { /* nothing more we can do */ }
-  }
-
   async function startServerWake(onCommand: (cmd: string) => void) {
     onCmd.current = onCommand
     if (serverWakeOn.current) return
@@ -967,11 +906,11 @@ export function useSpeech() {
     try { recRef.current?.abort() } catch { /* ignore */ }
     let stream: MediaStream
     try {
-      // Echo cancellation is normally the whole trick: the browser subtracts Summer's own audio
-      // from the mic, so the listener hears only the student — that's how it tells who is talking.
-      // It is requested first for that reason, and the watchdog below undoes it only if it turns
-      // out to have broken the microphone entirely (see openMic).
-      stream = await openMic(true)
+      // Echo cancellation is the whole trick: the browser subtracts Summer's own audio from the
+      // mic, so the listener hears only the student — that's how it tells who is talking.
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      })
     } catch {
       setHeard("Microphone blocked. Click the address-bar lock, allow the mic, then reload.")
       return

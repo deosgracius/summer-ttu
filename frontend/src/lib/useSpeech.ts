@@ -71,6 +71,12 @@ function pickAck(): string {
 // survives re-renders; bounded to the few short ack phrases.
 const _ACK_TEXTS = new Set(ACKS)
 const _ACK_CACHE = new Map<string, Blob>()
+// Which voice the cached acks were synthesized in. The kiosk page stays loaded for DAYS while
+// the TTS quota is monthly, so without this the acks stay frozen in whichever voice answered
+// first thing in the morning while every real answer for the rest of the month comes back in the
+// fallback voice — one voice for "hey Summer", a different one for the question after it. When
+// the server reports a different voice, the stale acks are dropped and re-synthesized.
+let _ACK_VOICE = ""
 
 let PENDING_YESNO: { onYes: () => void; onNo: () => void } | null = null
 export function awaitYesNo(onYes: () => void, onNo: () => void) {
@@ -264,6 +270,14 @@ export function useSpeech() {
     if (!r.ok) throw new Error("tts " + r.status)
     const blob = await r.blob()
     if (!blob.size) throw new Error("empty audio")
+    // The server names the voice it actually used. If it has changed since the acks were
+    // synthesized (quota exhausted, provider fell back), drop them so the next "hey Summer"
+    // is re-recorded in the voice the answers are now using.
+    const vid = r.headers.get("X-TTS-Voice") || ""
+    if (vid && vid !== _ACK_VOICE) {
+      _ACK_CACHE.clear()
+      _ACK_VOICE = vid
+    }
     if (_ACK_TEXTS.has(text)) _ACK_CACHE.set(text, blob) // cache the short acks for instant replay
     return URL.createObjectURL(blob)
   }
@@ -843,9 +857,22 @@ export function useSpeech() {
   // end it, upload what we have, and let the detector re-arm.
   const MAX_UTTERANCE_MS = 12000
 
+  // How much genuinely VOICED audio a capture must contain before it is worth uploading.
+  // Counted only inside the capture, never from the pre-roll ring.
+  //
+  // Whisper does not return "I heard nothing" — given near-silence it returns its best guess at
+  // what such audio usually precedes, and the backend primes it with the ECE faculty roster. The
+  // measured result on this kiosk was room tone transcribing as a REAL professor's name, which
+  // then matched the directory perfectly and made Summer volunteer a stranger's office, hours
+  // and photograph in answer to nothing at all. The old guard was a byte count, and every capture
+  // carries a WebM header plus ~1.6s of pre-roll, so a door slam always cleared it comfortably.
+  const MIN_VOICED_MS = 300
+  const voicedFrames = useRef(0)
+
   function serverStartRec() {
     if (serverRecording.current) return
     serverChunks.current = []
+    voicedFrames.current = 0
     serverRecording.current = true     // subsequent slices now accumulate instead of ringing
     if (serverMaxTimer.current) clearTimeout(serverMaxTimer.current)
     serverMaxTimer.current = window.setTimeout(serverStopRec, MAX_UTTERANCE_MS)
@@ -864,7 +891,11 @@ export function useSpeech() {
     serverRing.current = []
     serverChunks.current = []
     const blob = new Blob(parts, { type })
-    if (blob.size < 1600) return
+    const voicedMs = voicedFrames.current * VAD_MS
+    voicedFrames.current = 0
+    // Silence in, silence out. See MIN_VOICED_MS: without this, room tone reaches Whisper and
+    // comes back as a real professor's name.
+    if (voicedMs < MIN_VOICED_MS || blob.size < 1600) return
     try {
       const text = (await transcribeBlob(blob)).trim()
       // Final self-reply guard: drop anything that is Summer's OWN voice leaking through.
@@ -934,6 +965,7 @@ export function useSpeech() {
       const bar = (speaking.current || VOICE.speaking) ? thresh + 14 : thresh
       if (max > bar) {
         loudRun++
+        if (serverRecording.current) voicedFrames.current++   // real energy INSIDE the capture
         if (loudRun >= 3) {                            // sustained → it's really the user
           if (speaking.current || VOICE.speaking) stopSpeaking()   // BARGE-IN: stop and listen
           if (!serverRecording.current) serverStartRec()

@@ -398,6 +398,93 @@ def _phon(t: str) -> str:
     return re.sub(r"(.)\1+", r"\1", t)  # collapse doubled letters
 
 
+# Everyday short forms of given names, so "Tim Dallas" and "Timothy Dallas" are ONE person to
+# Summer, as they are to everyone else on campus. Written one-way (formal -> short forms) and
+# expanded into a symmetric lookup below, because that is the direction that is easy to check by
+# eye. Only genuine short forms of the SAME name belong here: two people who really are different
+# humans must never be merged, so nothing here maps across distinct names.
+_NICKNAME_GROUPS = {
+    "timothy": ["tim", "timmy"], "michael": ["mike", "mikey", "mick"],
+    "robert": ["rob", "bob", "bobby", "robbie"], "william": ["will", "bill", "billy", "willie"],
+    "david": ["dave", "davey"], "christopher": ["chris", "kit"],
+    "stephen": ["steve", "steph"], "steven": ["steve"], "richard": ["rick", "dick", "rich", "richie"],
+    "james": ["jim", "jimmy", "jamie"], "joseph": ["joe", "joey"], "anthony": ["tony"],
+    "edward": ["ed", "eddie", "ted", "teddy"], "ronald": ["ron", "ronnie"],
+    "nicholas": ["nick", "nicky"], "daniel": ["dan", "danny"], "benjamin": ["ben", "benny"],
+    "samuel": ["sam", "sammy"], "matthew": ["matt"], "gregory": ["greg"],
+    "jeffrey": ["jeff"], "geoffrey": ["geoff", "jeff"], "andrew": ["andy", "drew"],
+    "thomas": ["tom", "tommy"], "patrick": ["pat", "paddy"], "patricia": ["pat", "patty", "trish"],
+    "elizabeth": ["liz", "beth", "betsy", "eliza"], "katherine": ["kate", "kathy", "katie"],
+    "catherine": ["cate", "cathy", "kate"], "margaret": ["maggie", "peggy", "meg"],
+    "jennifer": ["jen", "jenny"], "deborah": ["deb", "debbie"], "rebecca": ["becky", "becca"],
+    "susan": ["sue", "susie"], "charles": ["charlie", "chuck"], "lawrence": ["larry"],
+    "kenneth": ["ken", "kenny"], "donald": ["don", "donnie"], "ronald ": ["ron"],
+    "alexander": ["alex", "xander"], "alexandra": ["alex", "sandra"], "nathaniel": ["nate", "nathan"],
+    "zachary": ["zach"], "joshua": ["josh"], "jonathan": ["jon", "jonny"],
+    "frederick": ["fred", "freddie"], "raymond": ["ray"], "eugene": ["gene"],
+    "vincent": ["vince"], "peter": ["pete"], "philip": ["phil"], "phillip": ["phil"],
+    "douglas": ["doug"], "russell": ["russ"], "terrence": ["terry"], "gerald": ["jerry"],
+    "harold": ["harry", "hal"], "walter": ["walt"], "albert": ["al", "bert"],
+    "francis": ["frank"], "franklin": ["frank"], "leonard": ["leo", "len"],
+    "victoria": ["vicky", "tori"], "veronica": ["ronnie"], "cynthia": ["cindy"],
+    "barbara": ["barb", "babs"], "pamela": ["pam"], "sandra": ["sandy"], "linda": ["lin"],
+    "theodore": ["ted", "teddy", "theo"], "arthur": ["art", "artie"], "eleanor": ["ellie", "nell"],
+}
+
+
+def _nickname_map() -> dict[str, set[str]]:
+    """token -> every other token that can mean the same given name, in BOTH directions."""
+    m: dict[str, set[str]] = {}
+    for formal, shorts in _NICKNAME_GROUPS.items():
+        family = {formal.strip()} | {s.strip() for s in shorts}
+        for t in family:
+            m.setdefault(t, set()).update(family - {t})
+    return m
+
+
+_NICKNAMES = _nickname_map()
+
+
+def _canon_map() -> dict[str, str]:
+    """Every short form of one given name collapsed to a single representative token.
+    Computed as connected components, so families that share a short form merge:
+    steve belongs to both Stephen and Steven, so all three canonicalize together and
+    "Steve" still matches "Steven"."""
+    canon, seen = {}, set()
+    for start in _NICKNAMES:
+        if start in seen:
+            continue
+        comp, stack = set(), [start]
+        while stack:
+            t = stack.pop()
+            if t in comp:
+                continue
+            comp.add(t)
+            seen.add(t)
+            stack.extend(_NICKNAMES.get(t, ()))
+        rep = min(comp)
+        for t in comp:
+            canon[t] = rep
+    return canon
+
+
+_CANON = _canon_map()
+
+
+def _canon_tok(t: str) -> str:
+    return _CANON.get(t, t)
+
+
+def _identity_key(r) -> str:
+    """One human, one key. The directory can carry the same person more than once (imported
+    from different sources, or listed as both staff and advisor); keying on email when present
+    collapses those rows so a student is never asked to choose between a person and themselves."""
+    email = (getattr(r, "email", "") or "").strip().lower()
+    if email:
+        return email
+    return " ".join(sorted(re.findall(r"[a-z]+", (getattr(r, "name", "") or "").lower())))
+
+
 def find_people_fuzzy(db, query: str, threshold: float = 0.82, limit: int = 5):
     """Speech-robust people lookup. Tolerant of imperfect spelling/pronunciation
     (e.g. 'vander pool' -> Vanderpool, 'changi lee' -> Changzhi Li, 'carp' -> Karp) and a
@@ -414,19 +501,31 @@ def find_people_fuzzy(db, query: str, threshold: float = 0.82, limit: int = 5):
     def score(name: str, email: str) -> float:
         # Drop title prefixes/suffixes and lone initials ("Dr.", "P.") so they don't
         # cause spurious substring hits ("dr" is inside "andrew", "p" inside "pool").
-        ntoks = [_phon(t) for t in re.findall(r"[a-z]+", (name or "").lower())
+        nraws = [t for t in re.findall(r"[a-z]+", (name or "").lower())
                  if len(t) >= 2 and t not in _NAME_NOISE]
+        ntoks = [_phon(t) for t in nraws]
         if not ntoks:
-            return 0.0
+            return 0.0, 0.0
         njoin = "".join(ntoks)
         per = []
-        for qt in qphon:
+        for qt, qraw in zip(qphon, qtoks):
             b = 0.0
-            for nt in ntoks:
+            nick = _NICKNAMES.get(qraw, ())
+            for nt, nraw in zip(ntoks, nraws):
                 if qt == nt:
                     b = max(b, 1.0)
-                elif min(len(qt), len(nt)) >= 3 and (qt in nt or nt in qt):
+                elif nraw in nick or qraw in _NICKNAMES.get(nraw, ()):
+                    # "tim" IS "timothy" — treat a known short form as the name itself, not as a
+                    # near-miss, so Tim Dallas and Timothy Dallas are one person and not two.
+                    b = max(b, 1.0)
+                elif nt.startswith(qt) or qt.startswith(nt):
+                    # A clipped name: der->derek, vander->vanderpool. Still a strong signal.
                     b = max(b, 0.93)
+                elif min(len(qt), len(nt)) >= 4 and (qt in nt or nt in qt):
+                    # Overlap buried in the MIDDLE of a name is much weaker evidence, and it is
+                    # how short misheard fragments used to score 0.93 against strangers:
+                    # "man" sat inside Erdmann, "art" inside Tarter, "kok" inside Woodcock.
+                    b = max(b, 0.88)
                 else:
                     b = max(b, difflib.SequenceMatcher(None, qt, nt).ratio())
             per.append(b)
@@ -436,8 +535,13 @@ def find_people_fuzzy(db, query: str, threshold: float = 0.82, limit: int = 5):
         k = min(len(ntoks), len(per)) or len(per)
         tok_score = sum(sorted(per, reverse=True)[:k]) / k
         whole = difflib.SequenceMatcher(None, qjoin, njoin).ratio()
-        if len(qjoin) >= 3 and qjoin in njoin:
+        # A query that STARTS the name is a person being named ("dylan" -> Dylan Tarter).
+        # A query buried inside the middle of one is far weaker evidence and needs more letters
+        # before it counts — otherwise three stray syllables become a confident identification.
+        if len(qjoin) >= 3 and njoin.startswith(qjoin):
             whole = max(whole, 0.95)
+        elif len(qjoin) >= 5 and qjoin in njoin:
+            whole = max(whole, 0.88)
         elocal = _phon("".join(re.findall(r"[a-z]+", (email or "").lower())))
         if len(qjoin) >= 4 and elocal and qjoin in elocal:
             whole = max(whole, 0.95)
@@ -464,7 +568,7 @@ def _name_key(name: str):
     """Alpha name tokens, lowercased, minus honorifics — for tolerant matching of a
     professor against the registrar's instructor field, which may read "Derek Johnston",
     "Johnston, Derek", or "Derek A Johnston"."""
-    return {t for t in re.findall(r"[a-z]+", (name or "").lower())
+    return {_canon_tok(t) for t in re.findall(r"[a-z]+", (name or "").lower())
             if len(t) >= 2 and t not in _NAME_NOISE}
 
 
@@ -916,16 +1020,22 @@ def office_occupant_answer(db, query: str):
     return f"{room} has {len(lines)} people listed:\n" + "\n".join(lines)
 
 
+def _person_query_tokens(query: str) -> list[str]:
+    """The content words of a name question, with the filler stripped. One definition, shared —
+    find_people_fuzzy, _person_scope and person_answer must agree on what "the name" is, or a
+    query can be in scope by one rule and scored by another."""
+    return [t for t in re.findall(r"[a-z]+", (query or "").lower())
+            if len(t) >= 2 and t not in _STOP_TOKENS and t not in _NAME_NOISE
+            and t not in _PERSON_QUERY_NOISE]
+
+
 def _person_scope(query: str) -> bool:
     """The person fast-path may only claim a query that is either a near-bare name
     ("Derek Johnston", "yo, who's derek") or free of reasoning cues. Long sentences
     with _NEEDS_LLM words must reach the model: a phonetic hit inside a common word
     (phon("zhou") = "shou" ⊂ "should") would otherwise turn "what should I study
     here?" into a random professor's contact card before the LLM ever runs."""
-    toks = [t for t in re.findall(r"[a-z]+", (query or "").lower())
-            if len(t) >= 2 and t not in _STOP_TOKENS and t not in _NAME_NOISE
-            and t not in _PERSON_QUERY_NOISE]
-    return len(toks) <= 3 or not _NEEDS_LLM.search(query or "")
+    return len(_person_query_tokens(query)) <= 3 or not _NEEDS_LLM.search(query or "")
 
 
 def person_answer(db, query: str):
@@ -941,19 +1051,34 @@ def person_answer(db, query: str):
         return None
     top = matches[0][2]
     CONFIDENT = 0.80
-    # Only offer a "which one did you mean?" disambiguation among confident near-ties.
-    if top >= CONFIDENT:
-        seen = {}
-        for kind, r, sc in matches:
-            if sc >= top - 0.04:
-                seen.setdefault(r.name, (kind, r))
-        if len(seen) > 1:
-            lines = ["A few people match that name — which one did you mean?"]
-            for kind, r in list(seen.values())[:4]:
-                t = getattr(r, "title", "") or kind
-                office = f"{r.office_building} {r.office_number}".strip()
-                lines.append(f"{r.name} ({t})" + (f", office {office}" if office else ""))
-            return "\n".join(lines)
+    # A single short fragment is not an identification. Whisper emits short clean English words
+    # for syllables it cannot place, and those used to land on a specific stranger with total
+    # confidence — "who is that man?" reduces to ["man"] and named an advisor, with her photo.
+    # Unless the fragment actually BEGINS one of the winner's names, treat it as a mishearing.
+    winner_toks = re.findall(r"[a-z]+", (getattr(matches[0][1], "name", "") or "").lower())
+    qtoks = _person_query_tokens(query)
+    if len(qtoks) == 1 and len(qtoks[0]) < 4:
+        if not any(t.startswith(qtoks[0]) for t in winner_toks):
+            top = min(top, 0.79)
+
+    # ASK, DON'T GUESS. This check used to run only when the match was already confident, which
+    # is backwards: the moment a student most needs to be asked "which one?" is when Summer is
+    # least sure. It now runs always, and the window WIDENS as confidence falls — near-ties in
+    # the shaky band are exactly the ones that used to be answered as flat fact about a stranger.
+    band = 0.04 if top >= CONFIDENT else 0.10
+    seen = {}
+    for kind, r, sc in matches:
+        if sc >= top - band:
+            seen.setdefault(_identity_key(r), (kind, r))   # one row per human, not per record
+    if len(seen) > 1:
+        opener = ("A few people match that name — which one did you mean?" if top >= CONFIDENT
+                  else "I am not sure I heard the name right. Did you mean one of these?")
+        lines = [opener]
+        for kind, r in list(seen.values())[:4]:
+            t = getattr(r, "title", "") or kind
+            office = f"{r.office_building} {r.office_number}".strip()
+            lines.append(f"{r.name} ({t})" + (f", office {office}" if office else ""))
+        return "\n".join(lines)
     kind, r, _ = matches[0]
     # DIRECT ANSWER: if the question asks for one specific fact ("what's Derek's office number?"),
     # give that fact and stop. This is an information desk — a profile card in reply to a
@@ -1230,14 +1355,36 @@ def speech_hint(db) -> str:
                 courses.append(code)
     except Exception:
         courses = []
-    parts = ["Texas Tech University ECE department."]
-    uniq = list(dict.fromkeys(names))  # de-dupe, keep order; names matter most
-    if uniq:
-        parts.append("People: " + ", ".join(uniq) + ".")
-    if courses:
-        parts.append("Courses: " + ", ".join(courses[:40]) + ".")
-    # Whisper's prompt is bounded (~224 tokens); cap so names aren't crowded out.
-    hint = " ".join(parts)[:850]
+    # NEVER end this prompt inside a list of names.
+    #
+    # Whisper's `prompt` is prefix-conditioning, not a glossary: the decoder continues the text
+    # it is given. This used to be built by joining everything and then slicing to 850 characters,
+    # which almost always cut INSIDE the comma-separated faculty list — sometimes mid-name. The
+    # most likely continuation of "...People: Derek Johnston, Changzhi Li, Timo" is another
+    # faculty name, so on low-information audio (room tone, a door, a passing conversation)
+    # Whisper would emit a real professor's name. That name then scores 1.0 against the directory
+    # and Summer answers with a stranger's office, hours and photograph, unprompted. It looks
+    # exactly like a hallucination and it is invisible to the provenance gate, because every
+    # field in the reply really did come from the database.
+    #
+    # So: whole items only, never a partial one, and close with a sentence that is not a list.
+    BUDGET = 850                                  # Whisper's prompt is roughly 224 tokens
+    head = "Texas Tech University ECE department."
+    tail = "A student question follows."
+
+    def _fit(label: str, items: list[str], share: int) -> str:
+        out, used = [], 0
+        for it in items:
+            if used + len(it) + 2 > share:
+                break                             # stop on a whole item, never mid-name
+            out.append(it)
+            used += len(it) + 2
+        return f"{label}: " + ", ".join(out) + "." if out else ""
+
+    room = BUDGET - len(head) - len(tail) - 2
+    people = _fit("People", list(dict.fromkeys(names))[:60], int(room * 0.7))
+    crs = _fit("Courses", courses[:40], max(0, room - len(people) - 1))
+    hint = " ".join(x for x in (head, people, crs, tail) if x)
     _HINT_CACHE["text"] = hint
     _HINT_CACHE["exp"] = now + _HINT_TTL
     return hint

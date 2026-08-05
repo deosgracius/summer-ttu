@@ -321,7 +321,9 @@ export default function KioskPage() {
         </div>
         {!conversing && (
           <>
-            <h1 className="mt-6 text-5xl font-semibold tracking-tight text-white">Hi, I'm Summer.</h1>
+            <h1 className="mt-6 text-5xl font-semibold tracking-tight text-white">
+              Hi, I'm ECE, your campus kiosk assistant.
+            </h1>
             {/* Subtitle. One measure (max-w-2xl) shared with the prompts below, text-balance so
                 the lines break evenly, and a lighter, larger face than the old text-lg body copy:
                 against a 5xl semibold heading, a light xl subtitle reads as considered hierarchy

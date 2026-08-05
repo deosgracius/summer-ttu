@@ -225,6 +225,16 @@ export function useSpeech() {
   // True while a back-and-forth is actively going: a follow-up may skip the wake word only now.
   const inFollowup = () => Date.now() - Math.max(lastTurn.current, spokeEndAt.current) < FOLLOWUP_GRACE_MS
 
+  // Set when somebody says "Summer" WITHOUT a question and she answers "Go ahead, I'm listening".
+  // She has just invited a question, so she has to be willing to wait for one — noticeably longer
+  // than the gap allowed between turns of a conversation already in flight. Without this the
+  // kiosk asked to be spoken to and then ignored the reply: observed live, wake at :15,
+  // acknowledgement, question at :24, dropped.
+  const awaitingQ = useRef(0)
+  const AWAIT_QUESTION_MS = 20000
+  const awaitingQuestion = () =>
+    awaitingQ.current > 0 && Date.now() - awaitingQ.current < AWAIT_QUESTION_MS
+
   // ---- TTS: ElevenLabs first, browser fallback ----
   // Split a reply into sentence chunks so we can start speaking the first one
   // while the rest are still being synthesized (streamed speech).
@@ -503,6 +513,7 @@ export function useSpeech() {
   // it ignores everything except the "Hey Summer" / "Summer" wake word.
   function disengage() {
     engaged.current = false
+    awaitingQ.current = 0     // no longer waiting on a question
     vstate.current = "ambient"
     clearConvoTimer()
     setHeard("")
@@ -513,7 +524,12 @@ export function useSpeech() {
   function resetConvoTimer() {
     clearConvoTimer()
     if (!engaged.current || speaking.current || VOICE.speaking) return
-    convoTimer.current = window.setTimeout(disengage, CONVO_IDLE_MS)
+    // 7s ends a conversation that has actually had an exchange. But when she has just said
+    // "Go ahead, I'm listening" and nobody has asked anything yet, 7s means she invites a
+    // question and hangs up before it arrives — which is exactly what happened on the kiosk.
+    // While awaiting that first question she waits AWAIT_QUESTION_MS instead.
+    const ms = awaitingQ.current > 0 ? AWAIT_QUESTION_MS : CONVO_IDLE_MS
+    convoTimer.current = window.setTimeout(disengage, ms)
   }
   // Enter / stay in an ENGAGED conversation: after the wake word, Summer listens for
   // follow-ups without needing it again, until an end phrase or CONVO_IDLE_MS of silence
@@ -742,18 +758,27 @@ export function useSpeech() {
       engage()
       const after = raw.replace(WAKE_LEAD, "").trim()
       if (after.length < 2 || (ENDRE.test(after) && after.split(/\s+/).length <= 4)) {
+        // "Summer" on its own. She answers "Go ahead, I'm listening" and now has to WAIT while
+        // the person decides what to ask — which routinely takes longer than the follow-up
+        // window used between turns of an existing conversation. Observed on the kiosk: wake at
+        // :15, acknowledgement, question at :24 — ignored, because the 7s window measured from
+        // when she stopped speaking had just closed. She had said "I'm listening" and then
+        // ignored the very question she asked for.
+        awaitingQ.current = Date.now()
         const a = pickAck(); setHeard(a); speak(a); resetConvoTimer(); return
       }
+      awaitingQ.current = 0
       resetConvoTimer(); lastTurn.current = Date.now(); onCmd.current(after); return
     }
     // ENGAGED: a follow-up skips the wake word only while a back-and-forth is actively going
     // (within FOLLOWUP_GRACE_MS of the last turn / reply); after that lull the wake word is
     // required again, so nearby talk during a pause is heard but not answered.
-    if (!WAKE.test(raw) && !inFollowup()) return
+    if (!WAKE.test(raw) && !inFollowup() && !awaitingQuestion()) return
     const cmd = raw.replace(WAKE_LEAD, "").trim()
     if (cmd.length < 2) return
-    if (FILLER.test(cmd)) { resetConvoTimer(); return }
+    if (FILLER.test(cmd)) { resetConvoTimer(); return }   // "uh", a cough — keep waiting
     if (ENDRE.test(cmd) && cmd.split(/\s+/).length <= 4) { disengage(); return }
+    awaitingQ.current = 0                                  // the awaited question arrived
     resetConvoTimer(); lastTurn.current = Date.now(); onCmd.current(cmd)
   }
 

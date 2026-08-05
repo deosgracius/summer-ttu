@@ -197,7 +197,10 @@ export default function KioskPage() {
     // bg-[#060a12] is pinned explicitly rather than relying on the theme token: this screen runs
     // for days, and if a WebGL layer or the theme class ever fails the wall must still show the
     // dark backdrop, never a bare grey page.
-    <div className="summer-bg min-h-svh bg-[#060a12] text-foreground flex flex-col items-center px-4 py-8">
+    // h-svh + overflow-hidden, NOT min-h-svh: this runs on a wall with no mouse and no keyboard,
+    // so a page scrollbar is unreachable and anything below the fold may as well not exist.
+    // The height is pinned to the viewport and content is composed to fit inside it.
+    <div className="summer-bg h-svh overflow-hidden bg-[#060a12] text-foreground flex flex-col items-center px-4 py-8">
       <SpaceBackground />
       {/* Wave galaxy: a vast disc of blue/cyan points rippling outward, behind the robot. */}
       {/* Galaxy OFF on the kiosk. 57,500 animated points behind every page was the largest single
@@ -301,7 +304,9 @@ export default function KioskPage() {
             answer (animated as she speaks) with closed captions beneath it; while idle the
             examples stay centered. Earlier turns are kept in state for follow-up context
             (sent to the backend) but not displayed. */}
-        <div className={`flex flex-1 flex-col overflow-auto ${turns.length || loading ? "justify-center pb-24" : "justify-center py-2"}`}>
+        {/* overflow-hidden, not auto — see the container above. Nothing here may hide behind a
+            scrollbar; the caption box shrinks its own text to fit instead. */}
+        <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${turns.length || loading ? "justify-center pb-24" : "justify-center py-2"}`}>
           {turns.length === 0 && !loading && (
             /* A fixed 2x2 grid of equal-width cells, not a ragged flex-wrap: the four prompts
                used to break 3 + 1 because their text lengths differ, which read as lopsided.

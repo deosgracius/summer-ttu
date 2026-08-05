@@ -97,6 +97,29 @@ def test_ambiguous_name_asks_instead_of_guessing(db):
     assert "@" not in ans
 
 
+def test_production_dallas_duplicate_collapses_to_the_richer_row():
+    """The exact rows in the live directory: one human entered twice, once under a nickname with
+    real contact details and once under the formal name with none at all. Summer must answer as
+    one person, and must answer from the row that actually has the office and the email."""
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine)()
+    s.add_all([
+        models.Professor(name="Tim Dallas", email="tim.dallas@ttu.edu",
+                         office_number="ECE 240", title="Professor"),
+        models.Professor(name="Timothy Dallas", email="", office_number="",
+                         title="Instructor of record (from course file)"),
+    ])
+    s.commit()
+    for q in ("who is tim dallas", "who is timothy dallas", "who is dallas"):
+        m = cs.find_people_fuzzy(s, q, threshold=0.68)
+        assert len(m) == 1, f"{q!r} still looks like {len(m)} people"
+        assert m[0][1].office_number == "ECE 240"     # the row with the real data won
+    ans = cs.person_answer(s, "who is timothy dallas") or ""
+    assert "ECE 240" in ans and "did you mean" not in ans.lower()
+    s.close()
+
+
 def test_one_person_listed_twice_is_not_offered_as_a_choice(db):
     """The directory can hold the same human more than once. Asking a student to choose
     between a person and themselves is worse than useless."""

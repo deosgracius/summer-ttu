@@ -179,12 +179,26 @@ export default function KioskPage() {
 
   // Speech mode is the DEFAULT: start listening on load. Audio output unlocks on
   // the first click/keypress anywhere (browser requirement) — no button needed.
+  //
+  // HANDS-FREE IS THE DEFAULT TOO. This is a wall kiosk: there is no mouse, no keyboard, and
+  // nobody standing by to press a button after a reboot or a deploy. If server-side listening
+  // has to be switched on by hand then every restart leaves Summer deaf until someone notices,
+  // which is exactly what kept happening during bring-up. The browser's own recognizer is
+  // started first and immediately replaced, because on this hardware it fails with a network
+  // error and only the server path actually works.
   useEffect(() => {
-    if (voiceIn) startWakeWord((cmd) => askRef.current(cmd))
+    let armTimer: number | undefined
+    if (voiceIn) {
+      startWakeWord((cmd) => askRef.current(cmd))
+      // Give the browser recognizer a moment to declare itself, then take over server-side.
+      // startServerWake() aborts the browser recognizer itself and is a no-op if already on.
+      armTimer = window.setTimeout(() => { startServerWake((cmd) => askRef.current(cmd)) }, 1200)
+    }
     const prime = () => { primeAudio(); goFullscreen() }
     window.addEventListener("pointerdown", prime, { once: true })
     window.addEventListener("keydown", prime, { once: true })
     return () => {
+      if (armTimer) window.clearTimeout(armTimer)  // never arm a listener after unmount
       stopWakeWord()
       window.removeEventListener("pointerdown", prime)
       window.removeEventListener("keydown", prime)

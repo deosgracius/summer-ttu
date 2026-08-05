@@ -14,6 +14,26 @@ import { officeHoursStatus } from "@/lib/officeHours"
  * Source: depts.ttu.edu/ece/faculty.
  */
 interface Member { id: string; name: string; photo?: string; office?: string; role?: string; office_hours?: string; office_hours_policy?: string }
+
+// PHOTO EXPOSURE. Directory headshots come from many sources and some are noticeably brighter
+// and harder than the rest, which on a large wall display reads as glare and pulls the eye off
+// the names. They are softened a little — except for the people below, whose photographs are
+// already darker or lower in contrast, where the same treatment loses the face.
+const FULL_EXPOSURE_NAMES = ["bilbao", "emily", "monica", "barbra"]
+function fullExposure(m: Member): boolean {
+  if ((m.role || "").toLowerCase().includes("instructor")) return true   // all instructors
+  const name = (m.name || "").toLowerCase()
+  return FULL_EXPOSURE_NAMES.some((n) => name.includes(n))
+}
+
+// FACE FRAMING. The square crop takes the middle of the photo, which sits too low on a few
+// portraits — the subject is framed high in the original, so "center" cuts the forehead and
+// fills the box with shoulders. These are pulled up so the face lands in the square.
+const FACE_HIGH = ["tarter", "sari-sarraf", "neuber"]
+function facePosition(m: Member): string {
+  const name = (m.name || "").toLowerCase()
+  return FACE_HIGH.some((n) => name.includes(n)) ? "center 22%" : "center"
+}
 interface Section { key: string; title: string; subtitle?: string; office: boolean; doctor?: boolean; members: Member[] }
 interface Dir { sections: Section[] }
 interface Page { key: string; title: string; subtitle?: string; office: boolean; doctor?: boolean; members: Member[]; page: number; pages: number; total: number; cols: number }
@@ -100,7 +120,9 @@ function Card({ m, w, showOffice, doctor, accent }: { m: Member; w: number; show
     <div style={{ width: w }} className="flex flex-col items-center">
       <div style={{ width: w, height: w }} className="overflow-hidden rounded-2xl bg-[#0f1626] shadow-lg shadow-black/40 ring-1 ring-white/10">
         {m.photo && !broken ? (
-          <img src={sized(m.photo)} alt={display} onError={() => setBroken(true)} className="h-full w-full object-cover" style={{ objectPosition: "center" }} />
+          <img src={sized(m.photo)} alt={display} onError={() => setBroken(true)} className="h-full w-full object-cover"
+            style={{ objectPosition: facePosition(m),
+                     filter: fullExposure(m) ? undefined : "brightness(0.92) contrast(0.94)" }} />
         ) : (
           <div className="grid h-full w-full place-items-center font-semibold text-white/70" style={{ fontSize: w * 0.28 }}>{initials(m.name)}</div>
         )}

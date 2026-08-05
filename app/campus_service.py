@@ -476,13 +476,32 @@ def _canon_tok(t: str) -> str:
 
 
 def _identity_key(r) -> str:
-    """One human, one key. The directory can carry the same person more than once (imported
-    from different sources, or listed as both staff and advisor); keying on email when present
-    collapses those rows so a student is never asked to choose between a person and themselves."""
-    email = (getattr(r, "email", "") or "").strip().lower()
-    if email:
-        return email
-    return " ".join(sorted(re.findall(r"[a-z]+", (getattr(r, "name", "") or "").lower())))
+    """One human, one key.
+
+    The directory really does carry the same person more than once — imported from different
+    sources, or listed as both staff and advisor. Production holds exactly this:
+
+        id  6  "Tim Dallas"      tim.dallas@ttu.edu   ECE 240
+        id 59  "Timothy Dallas"  (no email)           (no office)
+
+    Keying on email alone does not merge those, because one row has none; the two then look like
+    two people and Summer asks a student to choose between a man and himself. So the key is the
+    CANONICAL NAME — nicknames folded, so Tim and Timothy collapse — and email is not consulted
+    at all. Two different humans who share a full name are indistinguishable to a directory
+    lookup anyway; merging them is better than offering a choice that means nothing.
+    """
+    toks = {_canon_tok(t) for t in re.findall(r"[a-z]+", (getattr(r, "name", "") or "").lower())
+            if len(t) >= 2 and t not in _NAME_NOISE}
+    return " ".join(sorted(toks))
+
+
+def _row_richness(r) -> int:
+    """How much of a person's record is actually filled in. When duplicate rows collapse, the
+    fuller one must be the one Summer answers from — otherwise merging "Tim Dallas" (office and
+    email on file) with an empty "Timothy Dallas" row could answer with the empty one."""
+    return sum(1 for f in ("email", "office_building", "office_number", "title", "office_hours",
+                           "photo_url", "bio")
+               if (getattr(r, f, "") or "").strip())
 
 
 def find_people_fuzzy(db, query: str, threshold: float = 0.82, limit: int = 5):
@@ -561,7 +580,23 @@ def find_people_fuzzy(db, query: str, threshold: float = 0.82, limit: int = 5):
             if sc >= threshold or best >= 0.90:
                 out.append((kind, r, sc))
     out.sort(key=lambda x: -x[2])
-    return out[:limit]
+    # Collapse duplicate rows for the SAME human before any caller sees them, so nothing
+    # downstream has to know the directory contains a person twice. Keep the richest record —
+    # production has "Tim Dallas" with an office and email alongside an empty "Timothy Dallas",
+    # and answering from the empty one would be worse than not answering at all — and keep the
+    # best score either row earned.
+    merged: dict[str, tuple] = {}
+    for kind, r, sc in out:
+        k = _identity_key(r)
+        cur = merged.get(k)
+        if cur is None:
+            merged[k] = (kind, r, sc)
+        elif (_row_richness(r), sc) > (_row_richness(cur[1]), cur[2]):
+            merged[k] = (kind, r, max(sc, cur[2]))
+        elif sc > cur[2]:
+            merged[k] = (cur[0], cur[1], sc)
+    ranked = sorted(merged.values(), key=lambda x: -x[2])
+    return ranked[:limit]
 
 
 def _name_key(name: str):

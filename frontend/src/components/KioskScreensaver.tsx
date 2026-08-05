@@ -20,10 +20,23 @@ interface Member { id: string; name: string; photo?: string; office?: string; ro
 // the names. They are softened a little — except for the people below, whose photographs are
 // already darker or lower in contrast, where the same treatment loses the face.
 const FULL_EXPOSURE_NAMES = ["bilbao", "emily", "monica", "barbra"]
+// Photographs that read as noticeably brighter or harder than the rest and were called out by
+// name, so they take a stronger reduction than the general softening. Instructors are in this
+// group as a role: their headshots come from the course file rather than the department
+// photographer and are consistently hotter.
+const EXTRA_DIM_NAMES = ["johnston", "donald lie", "hieu nguyen", "jing li"]
+
 function fullExposure(m: Member): boolean {
-  if ((m.role || "").toLowerCase().includes("instructor")) return true   // all instructors
   const name = (m.name || "").toLowerCase()
   return FULL_EXPOSURE_NAMES.some((n) => name.includes(n))
+}
+
+function photoFilter(m: Member): string | undefined {
+  if (fullExposure(m)) return undefined                     // already dark or low contrast
+  const name = (m.name || "").toLowerCase()
+  const strong = (m.role || "").toLowerCase().includes("instructor")
+    || EXTRA_DIM_NAMES.some((n) => name.includes(n))
+  return strong ? "brightness(0.84) contrast(0.90)" : "brightness(0.92) contrast(0.94)"
 }
 
 // FACE FRAMING. The square crop takes the middle of the photo, which sits too low on a few
@@ -121,8 +134,7 @@ function Card({ m, w, showOffice, doctor, accent }: { m: Member; w: number; show
       <div style={{ width: w, height: w }} className="overflow-hidden rounded-2xl bg-[#0f1626] shadow-lg shadow-black/40 ring-1 ring-white/10">
         {m.photo && !broken ? (
           <img src={sized(m.photo)} alt={display} onError={() => setBroken(true)} className="h-full w-full object-cover"
-            style={{ objectPosition: facePosition(m),
-                     filter: fullExposure(m) ? undefined : "brightness(0.92) contrast(0.94)" }} />
+            style={{ objectPosition: facePosition(m), filter: photoFilter(m) }} />
         ) : (
           <div className="grid h-full w-full place-items-center font-semibold text-white/70" style={{ fontSize: w * 0.28 }}>{initials(m.name)}</div>
         )}

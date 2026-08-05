@@ -912,13 +912,18 @@ export function useSpeech() {
   // then matched the directory perfectly and made Summer volunteer a stranger's office, hours
   // and photograph in answer to nothing at all. The old guard was a byte count, and every capture
   // carries a WebM header plus ~1.6s of pre-roll, so a door slam always cleared it comfortably.
-  // Dormant, the ONLY utterance worth sending is one that could contain "Summer" — so it has to
-  // be long enough to hold a wake word and a question. Measured on the live kiosk, a 300ms floor
-  // let corridor noise through at about five uploads a minute with nobody speaking: every one was
-  // correctly discarded, but each cost a Whisper call and each was a chance for Whisper to invent
-  // a name. Mid-conversation the floor stays low, because a real follow-up can be two words
-  // ("his office?") and must not be dropped.
-  const MIN_VOICED_DORMANT_MS = 550
+  // How much genuinely VOICED audio a capture must contain before it is worth uploading.
+  //
+  // This counts only frames whose energy is ABOVE the detection threshold, not wall-clock speech
+  // duration — and the two are very different, because speech is mostly gaps. "Hey Summer" takes
+  // about 700ms to say but contains far less than that in above-threshold frames. Raising the
+  // dormant floor to 550ms to save on idle uploads therefore silenced the wake word outright,
+  // and because the wake never landed the conversation never engaged, so end phrases were held to
+  // the same floor and "thank you" was dropped as well. One number, both failures.
+  //
+  // 300ms is the value measured working on the kiosk. It stays. Idle uploads are a cost problem
+  // and must be solved somewhere that cannot cost us the wake word — see the note below.
+  const MIN_VOICED_DORMANT_MS = 300
   const MIN_VOICED_ENGAGED_MS = 250
   const voicedFrames = useRef(0)
 

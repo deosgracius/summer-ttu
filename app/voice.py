@@ -29,13 +29,21 @@ _blocked_until = 0.0
 # environment (ELEVENLABS_VOICE_ID) and this literal is the same id, so a missing or
 # mistyped env var cannot silently fall back to a stranger's voice.
 DEFAULT_VOICE = os.getenv("ELEVENLABS_VOICE_ID", "uYXf8XasLslADfZ2MB4u").strip()
-# Flash, not Multilingual v2. The provider's own latency export for this workspace measured
-# Multilingual v2 at 6.75s median, 9.36s at the 95th percentile — SLOWER than the OpenAI fallback
-# it exists to improve on, and the single largest component of the "she thinks for a long time"
-# complaint from the kiosk. Flash is built for real-time use and still covers the same languages
-# with the same voice; it also costs half as many credits per character, which matters when every
-# answer is read aloud. Override with ELEVENLABS_MODEL if the richer model is ever wanted back.
-DEFAULT_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_flash_v2_5").strip()
+# Turbo, not Multilingual v2 and not Flash.
+#
+# The provider's own latency export for this workspace measured Multilingual v2 at 6.75s median
+# and 9.36s at p95 — slower than the OpenAI fallback it exists to improve on, and the largest
+# single component of "she thinks for a long time" on the kiosk.
+#
+# Flash fixed the speed and cost half the credits, but a model is not neutral about a voice: the
+# SAME voice id rendered by Flash came back noticeably flatter, and was heard on the wall as
+# Summer having been given somebody else's voice. The voice is chosen deliberately here, so
+# losing its character is a real regression even when the id is untouched.
+#
+# Turbo is the honest middle: close to Flash on latency, close to Multilingual v2 on how the
+# voice actually sounds. Override with ELEVENLABS_MODEL — eleven_multilingual_v2 for maximum
+# fidelity at ~6.75s, eleven_flash_v2_5 for maximum speed at half the credits.
+DEFAULT_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_turbo_v2_5").strip()
 
 # NOTE ON LANGUAGE SWITCHING (removed deliberately — do not reintroduce).
 # This module used to hold a pool of extra voice ids and swap to one of them whenever

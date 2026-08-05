@@ -152,5 +152,9 @@ async def kiosk_tts(data: KioskTTS, request: Request, db: Session = Depends(get_
         logging.getLogger("summer").warning("kiosk TTS failed: %s", e)
         from .. import failures
         failures.record("kiosk_tts", "Kiosk text-to-speech (ElevenLabs) failed", detail=str(e))
-        raise HTTPException(502, "TTS failed")
+        # Surface the upstream reason. This endpoint is public, so the message is deliberately
+        # limited to what the upstream API said about the REQUEST (bad voice id, unknown model,
+        # rejected key) — never a credential, which is only ever sent in a request header.
+        # Without this a kiosk that has gone silent is undiagnosable without server log access.
+        raise HTTPException(502, f"TTS failed: {str(e)[:200]}")
     return Response(content=audio, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})

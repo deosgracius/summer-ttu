@@ -161,5 +161,16 @@ async def tts(text: str, voice_id: str | None = None, model: str | None = None) 
             except Exception:  # noqa
                 pass
             raise TTSUnavailable("ElevenLabs quota/rate-limited (429)")
-        r.raise_for_status()
+        if r.status_code >= 400:
+            # raise_for_status() throws away the RESPONSE BODY, which is the only place
+            # ElevenLabs says what actually went wrong — "voice not found", "invalid api key",
+            # "model not available on your plan". Without it every failure looks identical and
+            # is undiagnosable from outside. Include the status and a short snippet.
+            # The body carries no credentials; the api key is only ever sent in a header.
+            snippet = ""
+            try:
+                snippet = r.text[:300].replace("\n", " ").strip()
+            except Exception:  # noqa
+                pass
+            raise RuntimeError(f"ElevenLabs {r.status_code} for voice {vid}: {snippet}")
         return r.content

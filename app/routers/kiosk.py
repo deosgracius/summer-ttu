@@ -143,9 +143,18 @@ async def kiosk_tts(data: KioskTTS, request: Request, db: Session = Depends(get_
     try:
         audio = await voice.tts(text, appsettings.get(db, "voice_id", voice.DEFAULT_VOICE))
     except voice.TTSUnavailable:
-        # Quota / rate-limited — expected degradation (voice.tts already noted it once). Tell the
-        # client there's no audio (204) so it uses its free browser voice, instead of logging an
-        # error on every call and returning a 502.
+        # ElevenLabs is out of quota / rate-limited. Do NOT go straight to 204: the browser
+        # fallback that 204 assumes does not exist on the kiosk hardware — Debian's Chromium
+        # reports zero speechSynthesis voices even with speech-dispatcher installed — so 204
+        # means SILENCE, for the 900 seconds the breaker stays latched.
+        if voice.tts_openai_enabled():
+            try:
+                audio = await run_in_threadpool(voice.tts_openai, text)
+                return Response(content=audio, media_type="audio/mpeg",
+                                headers={"Cache-Control": "no-store"})
+            except Exception as e:  # noqa
+                import logging
+                logging.getLogger("summer").warning("openai tts fallback failed: %s", e)
         return Response(status_code=204)
     except Exception as e:  # noqa
         import logging

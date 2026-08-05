@@ -110,8 +110,36 @@ def transcribe(audio: bytes, filename: str = "audio.webm", prompt: str | None = 
     return (getattr(resp, "text", "") or "").strip()
 
 
+def tts_openai(text: str) -> bytes:
+    """Fallback voice, via OpenAI. Synchronous — call it through run_in_threadpool.
+
+    Why this exists: ElevenLabs' free tier cannot sustain a kiosk. Measured on this deployment,
+    it produced audio once and was then exhausted, and a 429 latches a 900-second breaker — so
+    the wall goes SILENT for fifteen minutes at a time. Debian's Chromium reports zero
+    speechSynthesis voices even with speech-dispatcher installed and running, so the browser
+    fallback is not reachable either; without this the kiosk simply has no voice.
+
+    OpenAI TTS is about $15 per million characters — cents a month at kiosk volume — and reuses
+    the key already configured for Whisper, so it adds no new account or credential.
+    """
+    import openai
+    key = os.getenv("OPENAI_API_KEY")
+    if not key:
+        raise RuntimeError("OpenAI not configured for TTS")
+    client = openai.OpenAI(api_key=key)
+    model = os.getenv("OPENAI_TTS_MODEL", "tts-1")
+    voice_name = os.getenv("OPENAI_TTS_VOICE", "nova")
+    r = client.audio.speech.create(model=model, voice=voice_name, input=text[:4000])
+    return r.content
+
+
+def tts_openai_enabled() -> bool:
+    return bool(os.getenv("OPENAI_API_KEY"))
+
+
 def enabled() -> bool:
-    return bool(_key())
+    # The kiosk can speak if EITHER provider is configured.
+    return bool(_key()) or tts_openai_enabled()
 
 
 async def list_voices() -> list[dict]:

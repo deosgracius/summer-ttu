@@ -7,6 +7,7 @@ import SummerOrb from "@/components/SummerOrb"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
+import { photoSuppressed } from "@/lib/photoPolicy"
 
 interface Props {
   onChanged?: () => void
@@ -138,7 +139,7 @@ export default function AgentChat({ onChanged, pendingAsk, onAsked }: Props) {
 
         {reply && (
           <div className="mt-3 rounded-lg border bg-muted/40 p-4 text-sm whitespace-pre-wrap leading-relaxed">
-            {person?.photo && /^(https?:\/\/|\/)/.test(person.photo) && (
+            {person?.photo && /^(https?:\/\/|\/)/.test(person.photo) && !photoSuppressed(person.name) && (
               <div className="flex items-center gap-4 mb-3 pb-3 border-b">
                 <img
                   src={person.photo}

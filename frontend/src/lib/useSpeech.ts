@@ -718,6 +718,11 @@ export function useSpeech() {
   const serverRaf = useRef<number | undefined>(undefined)
   const serverRec = useRef<MediaRecorder | null>(null)
   const serverChunks = useRef<BlobPart[]>([])
+  // The first timeslice, kept forever: WebM puts its header only in that slice, so later ones
+  // will not decode on their own. Everything uploaded is header + ring + captured.
+  const serverHeader = useRef<BlobPart | null>(null)
+  // Rolling window of the most recent slices, so the upload can start BEFORE the trigger.
+  const serverRing = useRef<BlobPart[]>([])
   const serverRecording = useRef(false)
   const serverSilence = useRef<number | undefined>(undefined)
 
@@ -749,8 +754,21 @@ export function useSpeech() {
     resetConvoTimer(); lastTurn.current = Date.now(); onCmd.current(cmd)
   }
 
-  function serverStartRec() {
-    if (serverRecording.current || !serverStream.current) return
+  // PRE-ROLL. The recorder used to be CREATED at the moment the detector fired, so everything
+  // said before that instant was gone — and that is exactly where the wake word lives. Measured
+  // on the kiosk: saying "Hey Summer, who is Derek Johnston?" uploaded the single word
+  // "Johnston.", which of course contains no wake word and was correctly ignored, so nothing
+  // ever happened.
+  //
+  // Now ONE recorder runs continuously in timeslice mode and the most recent slices are kept in
+  // a ring. When speech is detected we prepend that ring, so the upload starts ~1.6s BEFORE the
+  // detector noticed. The very first slice is retained separately and always prepended, because
+  // WebM carries its header only in that first slice — later slices alone will not decode.
+  const SLICE_MS = 200
+  const PREROLL_SLICES = 8            // ~1.6s of audio before the trigger
+
+  function serverStartContinuous() {
+    if (!serverStream.current || serverRec.current) return
     let mime = ""
     for (const m of ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"]) {
       if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(m)) { mime = m; break }
@@ -758,26 +776,45 @@ export function useSpeech() {
     const rec = mime ? new MediaRecorder(serverStream.current, { mimeType: mime })
       : new MediaRecorder(serverStream.current)
     serverRec.current = rec
+    serverHeader.current = null
+    serverRing.current = []
     serverChunks.current = []
-    rec.ondataavailable = (e) => { if (e.data && e.data.size) serverChunks.current.push(e.data) }
-    rec.onstop = async () => {
-      serverRecording.current = false
-      const blob = new Blob(serverChunks.current, { type: rec.mimeType || "audio/webm" })
-      if (blob.size >= 1600) {
-        try {
-          const text = (await transcribeBlob(blob)).trim()
-          // Final self-reply guard: drop anything that is Summer's OWN voice leaking through.
-          if (text && !isEcho(text)) handleTranscript(text)
-        } catch { /* transient — keep listening */ }
+    rec.ondataavailable = (e) => {
+      if (!e.data || !e.data.size) return
+      if (!serverHeader.current) { serverHeader.current = e.data; return }  // keep the WebM header
+      if (serverRecording.current) serverChunks.current.push(e.data)
+      else {
+        serverRing.current.push(e.data)
+        if (serverRing.current.length > PREROLL_SLICES) serverRing.current.shift()
       }
     }
-    serverRecording.current = true
-    try { rec.start() } catch { serverRecording.current = false }
+    try { rec.start(SLICE_MS) } catch { serverRec.current = null }
   }
 
-  function serverStopRec() {
+  function serverStartRec() {
+    if (serverRecording.current) return
+    serverChunks.current = []
+    serverRecording.current = true     // subsequent slices now accumulate instead of ringing
+  }
+
+  async function serverStopRec() {
     if (serverSilence.current) { clearTimeout(serverSilence.current); serverSilence.current = undefined }
-    try { if (serverRec.current && serverRec.current.state !== "inactive") serverRec.current.stop() } catch { /* ignore */ }
+    if (!serverRecording.current) return
+    serverRecording.current = false
+    const type = serverRec.current?.mimeType || "audio/webm"
+    // header + the ~1.6s before the trigger + everything since
+    const parts: BlobPart[] = []
+    if (serverHeader.current) parts.push(serverHeader.current)
+    parts.push(...serverRing.current, ...serverChunks.current)
+    serverRing.current = []
+    serverChunks.current = []
+    const blob = new Blob(parts, { type })
+    if (blob.size < 1600) return
+    try {
+      const text = (await transcribeBlob(blob)).trim()
+      // Final self-reply guard: drop anything that is Summer's OWN voice leaking through.
+      if (text && !isEcho(text)) handleTranscript(text)
+    } catch { /* transient — keep listening */ }
   }
 
   // Continuous listener for the server-side wake path. ONE echo-cancelled mic stream + an
@@ -853,6 +890,7 @@ export function useSpeech() {
     setWakeActive(true)
     setWakeBlocked(false)                         // hands-free is on now — drop the "blocked" notice
     setHeard('Listening — say "Summer"')
+    serverStartContinuous()   // recorder runs from now on, so the pre-roll always exists
     serverListen(stream)
   }
 
@@ -865,6 +903,13 @@ export function useSpeech() {
     if (serverRaf.current) cancelAnimationFrame(serverRaf.current)
     serverRaf.current = undefined
     serverStopRec()
+    // The recorder now runs continuously, so it has to be stopped explicitly here — otherwise
+    // it keeps holding the mic (and slicing) after hands-free is switched off.
+    try { if (serverRec.current && serverRec.current.state !== "inactive") serverRec.current.stop() } catch { /* ignore */ }
+    serverRec.current = null
+    serverHeader.current = null
+    serverRing.current = []
+    serverChunks.current = []
     try { serverStream.current?.getTracks().forEach((t) => t.stop()) } catch { /* ignore */ }
     try { serverCtx.current?.close() } catch { /* ignore */ }
     serverStream.current = null

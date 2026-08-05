@@ -27,12 +27,16 @@ router = APIRouter(prefix="/campus", tags=["campus"])
 # handful of pictures that never change. A photo id is immutable (a replacement upload writes a
 # NEW row and repoints photo_url), so caching by id can never go stale.
 _PHOTO_CACHE: dict[int, tuple[str, bytes]] = {}
+# Downscaled variants, keyed by (photo_id, width). Small and bounded: a handful of ids times the
+# one or two widths the kiosk actually asks for. Resizing is pure CPU on a warm container, so the
+# cache matters — without it every kiosk that reconnects would re-encode the whole directory.
+_PHOTO_RESIZE_CACHE: dict[tuple[int, int], tuple[str, bytes]] = {}
 _PHOTO_CACHE_MAX_BYTES = 48 * 1024 * 1024  # far above the real set; a ceiling, not a target
 _photo_cache_bytes = 0
 
 
 @router.get("/photo/{photo_id}", include_in_schema=False)
-def campus_photo(photo_id: int, db: Session = Depends(get_db)):
+def campus_photo(photo_id: int, w: int | None = None, db: Session = Depends(get_db)):
     """Serve a headshot (public — the anonymous kiosk loads these via <img>, so no auth).
     Immutable per id, so it's cached in-process and cached hard by the browser. Sends CORS +
     CORP headers so the 3D knowledge graph — which loads the image with crossOrigin so it
@@ -58,12 +62,41 @@ def campus_photo(photo_id: int, db: Session = Depends(get_db)):
             _PHOTO_CACHE[photo_id] = hit
             _photo_cache_bytes += len(hit[1])
     ctype, data = hit
+
+    # OPTIONAL SERVER-SIDE DOWNSCALE (?w=). Measured on the Pi kiosk: the faculty directory
+    # pages cost ~170% of a core against ~125% for the greeting page that runs a full 3D robot.
+    # The difference is the photos — 12-13 of them, stored at 600x600 but DRAWN at about 250px,
+    # so the browser decodes and rescales roughly 5.8x more pixels than it paints, repeatedly.
+    # Serving the size actually needed removes that work at the source.
+    if w and 32 <= w <= 1024:
+        key = (photo_id, w)
+        rs = _PHOTO_RESIZE_CACHE.get(key)
+        if rs is None:
+            try:
+                from PIL import Image
+                import io
+                im = Image.open(io.BytesIO(data))
+                if im.width > w:
+                    im = im.convert("RGB")
+                    im.thumbnail((w, w), Image.LANCZOS)
+                    buf = io.BytesIO()
+                    im.save(buf, "JPEG", quality=86, optimize=True)
+                    rs = ("image/jpeg", buf.getvalue())
+                else:
+                    rs = (ctype, data)   # already small enough; don't upscale
+            except Exception:
+                rs = (ctype, data)       # never fail a face over an optimisation
+            _PHOTO_RESIZE_CACHE[key] = rs
+        ctype, data = rs
+
     return Response(content=data, media_type=ctype,
                     # immutable: a photo id's bytes never change, so browsers must not
                     # re-validate at all. 1 year + an ETag, so a kiosk left running for weeks
                     # stops asking the server for faces it already has.
                     headers={"Cache-Control": "public, max-age=31536000, immutable",
-                             "ETag": f'"photo-{photo_id}"',
+                             # width is part of the identity: without it a browser that cached
+                             # the full-size face would serve it for a ?w=320 request too.
+                             "ETag": f'"photo-{photo_id}-{w or 0}"',
                              "Access-Control-Allow-Origin": "*",
                              "Cross-Origin-Resource-Policy": "cross-origin",
                              # Uploaded headshots are validated to be real images, but never let a

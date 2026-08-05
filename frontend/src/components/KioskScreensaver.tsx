@@ -39,6 +39,15 @@ const GRAPH_MS = 72000   // the 3D "second brain" finale after Staff (1.2 min)
 // Flip to true to restore it — but fix the remount first: hoist the robot out of this branch, or
 // drive the page's existing one via onGraphChange, so no context is created per cycle.
 const SHOW_GRAPH: boolean = false
+
+// Headshots are stored at 600x600 but these cards draw them at roughly 250px, so the browser was
+// decoding and rescaling ~5.8x more pixels than it painted, 12-13 at a time, on every page.
+// Measured on the Pi: directory pages cost ~170% of a core against ~125% for the greeting page
+// that runs a full 3D robot — the photos, not the 3D, were the expensive part. Asking the server
+// for the size actually drawn removes that work at the source.
+// Requests stay keyed by the ORIGINAL url in DECODED, so the ready-tracking is unaffected.
+const PHOTO_W = 320
+const sized = (u: string) => (u.includes("?") ? `${u}&w=${PHOTO_W}` : `${u}?w=${PHOTO_W}`)
 let CACHE: Dir | null = null
 // Photos that have finished decoding, kept across screensaver mounts so a page's whole grid can be
 // revealed at once (all photos live at the same time) instead of popping in one by one.
@@ -91,7 +100,7 @@ function Card({ m, w, showOffice, doctor, accent }: { m: Member; w: number; show
     <div style={{ width: w }} className="flex flex-col items-center">
       <div style={{ width: w, height: w }} className="overflow-hidden rounded-2xl bg-[#0f1626] shadow-lg shadow-black/40 ring-1 ring-white/10">
         {m.photo && !broken ? (
-          <img src={m.photo} alt={display} onError={() => setBroken(true)} className="h-full w-full object-cover" style={{ objectPosition: "center" }} />
+          <img src={sized(m.photo)} alt={display} onError={() => setBroken(true)} className="h-full w-full object-cover" style={{ objectPosition: "center" }} />
         ) : (
           <div className="grid h-full w-full place-items-center font-semibold text-white/70" style={{ fontSize: w * 0.28 }}>{initials(m.name)}</div>
         )}
@@ -140,7 +149,7 @@ export default function KioskScreensaver({ onCycleEnd, onGraphChange }: { onCycl
     const load = (u: string) => {
       if (DECODED.has(u)) return
       const im = new Image()
-      im.src = u
+      im.src = sized(u)   // fetch the drawn size; DECODED still keys on the original url
       const settle = () => mark(u) // mark on success OR error, so one bad photo never blocks a page
       if (im.decode) im.decode().then(settle).catch(settle)
       else { im.onload = settle; im.onerror = settle }

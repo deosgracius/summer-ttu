@@ -495,6 +495,10 @@ export function useSpeech() {
     // Keep the echo text for a short tail so the just-played audio isn't transcribed
     // back into a command, then clear it unconditionally.
     scheduleEchoClear()
+    // Restart the idle countdown. Cutting Summer off bumps speakSeq, which makes speak() treat
+    // itself as cancelled and skip the cleanup that would normally restart it — so without this
+    // a barge-in leaves the conversation running with no way to ever end.
+    if (engaged.current) resetConvoTimer()
   }
 
   // ---- conversational state ----
@@ -505,6 +509,12 @@ export function useSpeech() {
   function isEcho(txt: string) {
     const cs = VOICE.text || currentSpeech.current
     if (!cs) return false
+    // A short goodbye is never Summer talking to herself. "thank you" reduces to two words, and
+    // if her answer happened to contain "you" or "your" — which answers about a person very often
+    // do — the overlap hits the 0.5 bar exactly and the whole utterance was thrown away as echo.
+    // So a student saying "thank you" in the natural moment, right after she finished, was
+    // silently ignored and the conversation never ended. She never says these phrases herself.
+    if (ENDRE.test(txt) && txt.trim().split(/\s+/).length <= 4) return false
     const w = txt.toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter((x) => x.length > 2)
     if (!w.length) return false
     const hit = w.filter((x) => cs.includes(x)).length
@@ -558,7 +568,17 @@ export function useSpeech() {
   function afterSpeak() {
     // Summer just finished talking; if we're mid-conversation, restart the idle
     // countdown so a follow-up keeps it alive but silence ends it.
-    if (micOn.current && engaged.current) resetConvoTimer()
+    //
+    // This used to also require micOn.current, which quietly disabled the entire idle timeout on
+    // the kiosk. micOn tracks the BROWSER recognizer, and startServerWake() sets it false on
+    // purpose ("release the failed browser recognizer") and never restores it — and the kiosk
+    // runs on the server path, because the browser recognizer fails outright on this hardware.
+    // speak() kills the countdown the moment Summer opens her mouth and afterSpeak is the ONLY
+    // thing that restarts it, so once she had said anything at all the countdown was gone for
+    // good: no disengage, no setAwake(false), and page 2 unreachable by ANY route, including the
+    // 60-second idle reset. engaged.current alone is the right signal — it means a conversation
+    // is live, whichever microphone path is carrying it, and both stop paths already clear it.
+    if (engaged.current) resetConvoTimer()
   }
 
   function startWakeWord(onCommand: (cmd: string) => void) {

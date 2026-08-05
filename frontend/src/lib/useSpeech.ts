@@ -27,7 +27,15 @@ const SILENT_AUDIO =
 const WAKE = /\b(?:hey|hay|ey|eh|aye|okay|ok|hi|yo|a|uh)?\s*(?:summer|summers|summah|sumer|sumah|suma|summa|somer|somers|sommer|sammer|samma|sama|soma|zuma)\b/i
 // Only a LEADING wake phrase is stripped from the command (so "summer courses"
 // mid-sentence stays intact).
-const WAKE_LEAD = /^\s*(?:(?:hey|hay|ey|eh|aye|okay|ok|hi|yo|a|uh)[\s,]+)?(?:summer|summers|summah|sumer|sumah|suma|summa|somer|somers|sommer|sammer|samma|sama|soma|zuma)\b[\s,.:!?-]*/i
+// Two changes driven by what Whisper actually returns from the kiosk mic, captured live:
+// saying "Hey Summer, who is Derek" came back as "A. Sommer who is Derek".
+//   1. `[\s,.]+` not `[\s,]+` after the greeting. Whisper punctuates it — "A." , "Ok." , "Hey," —
+//      and a period is not whitespace or a comma, so the greeting never matched and NOTHING was
+//      stripped. The wake word was still DETECTED, so Summer engaged and then received
+//      "A. Sommer who is Derek" as the question instead of "who is Derek".
+//   2. The whole phrase repeats (`(?:...)+`), because people say it more than once when nothing
+//      seems to happen: "A. Sommer, A. Sommer, Derek Johnson" now yields "Derek Johnson".
+const WAKE_LEAD = /^(?:\s*(?:(?:hey|hay|ey|eh|aye|okay|ok|hi|yo|a|uh)[\s,.]+)?(?:summer|summers|summah|sumer|sumah|suma|summa|somer|somers|sommer|sammer|samma|sama|soma|zuma)\b[\s,.:!?-]*)+/i
 const ENDRE = /\b(thank you|thanks summer|thank you summer|we'?re done|that'?s all|that'?s it|i'?m done|stop|goodbye|good bye|bye summer|never ?mind|sleep|go to sleep|goodnight|good night|go to bed)\b/i
 // Pure filler / noise utterances (a lone "uh", "hmm", "okay", a cough) — while engaged
 // these are treated as thinking/background, NOT a question: ignored but they keep the

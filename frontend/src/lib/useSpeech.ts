@@ -858,7 +858,12 @@ export function useSpeech() {
       } else {
         loudRun = 0
         if (serverRecording.current && serverSilence.current === undefined) {
-          serverSilence.current = window.setTimeout(serverStopRec, 1100)  // ~1.1s pause = end of turn
+          // End-of-turn pause. This sits directly in the felt latency: nothing is uploaded until
+          // it expires, so every millisecond here is a millisecond the person waits AFTER they
+          // have finished speaking. 1100ms was noticeably sluggish on the kiosk. 650ms still
+          // comfortably clears the natural gaps inside a sentence ("who is... Derek Johnston")
+          // while cutting roughly half a second off every single reply.
+          serverSilence.current = window.setTimeout(serverStopRec, 650)
         }
       }
       serverRaf.current = requestAnimationFrame(tick)

@@ -129,6 +129,22 @@ export const api = {
   /** Step 3 (if a passkey is registered): the verified assertion. */
   loginPasskey: (email: string, password: string, credential: unknown) =>
     api.post<LoginResult>("/auth/login/passkey", { email, password, credential }),
+
+  /** Single-user admin: log in with a password only (no email). */
+  adminLogin: (password: string) =>
+    api.post<LoginResult>("/auth/admin-login", { password }),
+  /** True if the typed value is the central passcode (used to reveal the set-password fields). */
+  passcodeOk: async (passcode: string) => {
+    try {
+      await api.post("/auth/central/start", { passcode })
+      return true
+    } catch {
+      return false
+    }
+  },
+  /** Passcode-gated: set the admin password and log in. */
+  adminSetPassword: (passcode: string, new_password: string) =>
+    api.post<LoginResult>("/auth/admin-set-password", { passcode, new_password }),
 }
 
 export interface LoginResult {

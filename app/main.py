@@ -96,16 +96,23 @@ def _seed_central_admin():
     default. A production deploy must set CENTRAL_ADMIN_PASSWORD to provision the root admin.
     If the email already exists, it's promoted instead."""
     import os
+    import secrets
     from .auth import hash_password
     # WEB_DIST (baked React build) / RENDER / FLY_APP_NAME are only set on a real deploy.
     prod = bool(os.getenv("WEB_DIST") or os.getenv("RENDER") or os.getenv("FLY_APP_NAME"))
-    pw = os.getenv("CENTRAL_ADMIN_PASSWORD")
-    if prod and not pw:
+    code = os.getenv("CENTRAL_ADMIN_PASSWORD")
+    if prod and not code:
         logging.warning("central_admin NOT seeded: set CENTRAL_ADMIN_PASSWORD in the "
                         "environment to provision the root admin — refusing to create an "
                         "account with a known default password in production.")
         return
-    pw = pw or "changeme123"  # dev-only fallback; never reached in production (guarded above)
+    # SINGLE-USER DESIGN: the setup code (CENTRAL_ADMIN_PASSWORD) must only TRIGGER a
+    # set-password, never BE the login password. So when a code is configured, seed the admin
+    # with a random, unguessable password nobody knows — the operator sets their real password
+    # via the code on first sign-in (POST /auth/admin-set-password). Only the dev fallback (no
+    # code set, and dev only — prod already returned above) uses a known password so a local
+    # developer can log straight in without configuring anything.
+    seed_pw = secrets.token_urlsafe(24) if code else "changeme123"
     db = SessionLocal()
     try:
         if db.query(models.User).filter_by(role="central_admin").count() == 0:
@@ -114,7 +121,7 @@ def _seed_central_admin():
             if existing:
                 existing.role = "central_admin"
             else:
-                db.add(models.User(email=email, password_hash=hash_password(pw),
+                db.add(models.User(email=email, password_hash=hash_password(seed_pw),
                                    role="central_admin", timezone="UTC"))
             db.commit()
     finally:

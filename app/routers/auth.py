@@ -322,6 +322,84 @@ def central_reset_link(data: CentralResetLink, request: Request, db: Session = D
     return {"ok": True, "reset_link": _reset_link(token)}
 
 
+# ---- Single-user admin (the model the owner asked for) ---------------------------
+# There is ONE admin. They sign in with a password only (no email). If they forget it,
+# typing the CENTRAL_ADMIN_PASSWORD passcode on the login screen reveals new/retype
+# fields that call /auth/admin-set-password. The passcode is the only reset path.
+def _single_admin(db):
+    """The one admin account: the central_admin row. Falls back to the sole User row if
+    the role was never set (transition safety). Returns None if there is no clear admin."""
+    a = db.query(models.User).filter_by(role="central_admin").order_by(models.User.id).first()
+    if a:
+        return a
+    users = db.query(models.User).order_by(models.User.id).limit(2).all()
+    return users[0] if len(users) == 1 else None
+
+
+class AdminLogin(BaseModel):
+    password: str
+
+
+@router.post("/admin-login")
+def admin_login(data: AdminLogin, request: Request, response: Response, db: Session = Depends(get_db)):
+    """Single-user admin login — password only, no email. Deliberately does NOT do the
+    multi-factor dance: one admin, one password, straight in. (Reset is the passcode path.)"""
+    ratelimit.check(f"login:{ratelimit.client_ip(request)}", LOGIN_MAX)
+    admin = _single_admin(db)
+    if not admin or not auth.verify_password(data.password, admin.password_hash):
+        _log_login(db, request, False, email=getattr(admin, "email", ""), reason="bad admin password")
+        raise HTTPException(401, "Incorrect password")
+    _log_login(db, request, True, user=admin)
+    tok = auth.create_token(admin.id)
+    auth.set_session_cookie(response, tok)
+    return {"ok": True, "access_token": tok, "token_type": "bearer"}
+
+
+class AdminSetPassword(BaseModel):
+    passcode: str
+    new_password: str
+
+
+@router.post("/admin-set-password")
+def admin_set_password(data: AdminSetPassword, request: Request, response: Response, db: Session = Depends(get_db)):
+    """Passcode-gated: set (or reset) the single admin's password and log in immediately.
+    SECURITY: a correct passcode can seize the admin account, which controls everything the
+    public kiosk shows — so CENTRAL_ADMIN_PASSWORD must be a strong secret (rotate it off any
+    default before going live), the check is constant-time and never logged, the endpoint is
+    rate-limited, and EVERY use is written to the audit log below."""
+    ratelimit.check(f"central:{ratelimit.client_ip(request)}", CENTRAL_MAX)
+    if not _central_passcode_ok(data.passcode):
+        raise HTTPException(401, "Incorrect passcode")
+    if len(data.new_password or "") < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+    admin = _single_admin(db)
+    created = False
+    if admin:
+        admin.password_hash = auth.hash_password(data.new_password)
+        admin.approved = True
+        if admin.role != "central_admin":
+            admin.role = "central_admin"
+    else:
+        email = os.getenv("ADMIN_EMAIL", "admin@ttu.edu").strip().lower()
+        admin = models.User(email=email, password_hash=auth.hash_password(data.new_password),
+                            role="central_admin", approved=True,
+                            timezone="America/Chicago", location="")
+        db.add(admin)
+        created = True
+    db.commit(); db.refresh(admin)
+    try:
+        ip = ratelimit.client_ip(request)
+        audit.log(db, None, "admin_password_reset",
+                  f"Admin password {'set' if created else 'reset'} via passcode from {ip}",
+                  {"ip": ip, "created": created, "admin_email": admin.email})
+        db.commit()
+    except Exception:
+        db.rollback()
+    tok = auth.create_token(admin.id)
+    auth.set_session_cookie(response, tok)
+    return {"ok": True, "access_token": tok, "token_type": "bearer"}
+
+
 class PwChange(BaseModel):
     current_password: str
     new_password: str

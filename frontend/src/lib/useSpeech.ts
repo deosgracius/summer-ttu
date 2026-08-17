@@ -1052,12 +1052,25 @@ export function useSpeech() {
         else floorRun = Math.min(floorRun + 0.05, max)   // ~2 units/sec, so a raised room settles in seconds
         thresh = Math.max(8, Math.round(floorRun) + 7)
       }
-      // While Summer is speaking, demand clearly-louder energy so a bit of echo leaking past
-      // the canceller doesn't make her interrupt herself; a real barge-in is louder than leak.
-      // The same bar applies while she is still WORKING on an answer: that wait is several
-      // seconds long, and quiet room noise captured in it used to be transcribed into an
-      // invented question and answered.
-      const bar = (speaking.current || VOICE.speaking || isAwaitingAnswer()) ? thresh + 14 : thresh
+      // Three sensitivity levels, by state:
+      //  - Summer speaking / still working on an answer: thresh + 14. Demand clearly-louder energy
+      //    so leaked echo can't make her interrupt herself, and quiet room noise during the wait
+      //    isn't captured and transcribed into an invented question.
+      //  - DORMANT (waiting for a wake word, no conversation): thresh + DORMANT_MARGIN. Room noise
+      //    that merely clears the ambient floor used to trigger a Whisper upload several times a
+      //    minute — a real running cost for audio nobody addressed to the kiosk. Requiring the wake
+      //    word to be clearly louder than ambient (a person speaking up near the mic, which is how
+      //    you address a kiosk) drops most of those. Measured close-mic speech peaks ~40-100 while
+      //    the floor sits ~15-22, so this margin is well below real speech. The real fix is
+      //    on-device wake-word spotting (planned on the mini PC); this is the safe, reversible
+      //    interim — set DORMANT_MARGIN to 0 to restore the old behavior.
+      //  - ENGAGED (mid-conversation, waiting for a follow-up): plain thresh, full sensitivity, so
+      //    a quiet follow-up is never missed.
+      const DORMANT_MARGIN = 6
+      const dormant = !engaged.current && !speaking.current && !VOICE.speaking && !isAwaitingAnswer()
+      const bar = (speaking.current || VOICE.speaking || isAwaitingAnswer())
+        ? thresh + 14
+        : (dormant ? thresh + DORMANT_MARGIN : thresh)
       if (max > bar) {
         loudRun++
         if (serverRecording.current) voicedFrames.current++   // real energy INSIDE the capture

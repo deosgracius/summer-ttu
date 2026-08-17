@@ -70,3 +70,25 @@ def test_directory_manage_requires_auth():
     fresh = TestClient(app)  # no session cookie
     assert fresh.post("/campus/staff", json={"name": "x"}).status_code == 401
     assert fresh.delete("/campus/staff/1").status_code == 401
+
+
+def test_import_add_people_creates_directory_professors():
+    _login()
+    rows = [{"name": "New Prof", "title": "Assistant Professor", "email": "np@ttu.edu", "office": "ECE 300"}]
+    r = client.post("/admin/import/apply", json={"kind": "add_people", "rows": rows})
+    assert r.status_code == 200, r.text
+    assert r.json()["applied"]
+    got = [m for s in client.get("/campus/directory-admin").json()["sections"]
+           for m in s["members"] if m["name"] == "New Prof"]
+    assert got, "imported professor is not in the directory feed"
+    assert got[0]["email"] == "np@ttu.edu"
+
+
+def test_rows_from_text_parses_a_simple_table():
+    from app import file_import
+    txt = "Name, Title, Email\nJane Doe, Professor, jane@ttu.edu\nJohn Roe, Instructor, john@ttu.edu"
+    rows = file_import._rows_from_text(txt)
+    assert len(rows) == 2
+    assert rows[0]["name"] == "Jane Doe" and rows[0]["email"] == "jane@ttu.edu"
+    # Not-a-table text yields no rows, so analyze() reports it instead of guessing.
+    assert file_import._rows_from_text("just one blob of prose with no structure") == []

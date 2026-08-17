@@ -43,12 +43,12 @@ export default function FileImportPanel() {
     }
   }
 
-  async function apply() {
-    if (!prop?.kind || !prop.rows) return
+  async function apply(kind: string) {
+    if (!prop?.rows) return
     setBusy(true)
     try {
       const res = await api.post<{ applied: boolean; summary?: string; error?: string }>(
-        "/admin/import/apply", { kind: prop.kind, rows: prop.rows })
+        "/admin/import/apply", { kind, rows: prop.rows })
       setResult(res.applied ? (res.summary || "Applied.") : (res.error || "Couldn't apply."))
       if (res.applied) setProp(null)
     } catch {
@@ -58,20 +58,18 @@ export default function FileImportPanel() {
     }
   }
 
-  const canApply = prop?.ok && prop.kind === "office_hours"
-
   return (
     <PanelCard title="Import a file">
       <p className="text-sm text-muted-foreground">
-        Upload a CSV, XLSX, JSON, or text file (e.g. professors' office hours). Summer
-        checks it for safety, tells you what it found, and proposes what to do — nothing
-        is saved until you confirm.
+        Upload a spreadsheet (CSV or XLSX), JSON, text, or PDF — for example a list of professors
+        and their classes, or office hours. Summer checks it for safety, tells you what it found,
+        and proposes what to do — nothing is saved until you confirm.
       </p>
       <div className="mt-3 flex items-center gap-2">
         <input
           ref={fileRef}
           type="file"
-          accept=".csv,.tsv,.txt,.json,.xlsx"
+          accept=".csv,.tsv,.txt,.json,.xlsx,.pdf"
           className="block w-full cursor-pointer text-sm text-muted-foreground file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary-foreground hover:file:bg-primary/90"
           onChange={(e) => {
             const f = e.target.files?.[0]
@@ -111,15 +109,29 @@ export default function FileImportPanel() {
               </table>
             </div>
           )}
-          {canApply ? (
-            <Button size="sm" className="mt-2" disabled={busy} onClick={apply}>
-              Apply — update office hours
-            </Button>
-          ) : (
-            <p className="mt-2 text-xs text-muted-foreground">
-              Preview only — this type isn't auto-applied yet. Tell me what you'd like done with it.
-            </p>
-          )}
+          <div className="mt-2 flex flex-wrap gap-2">
+            {prop.kind === "people" && (
+              <Button size="sm" disabled={busy} onClick={() => apply("add_people")}>
+                Add these {prop.count} people to the directory
+              </Button>
+            )}
+            {prop.kind === "office_hours" && (
+              <Button size="sm" disabled={busy} onClick={() => apply("office_hours")}>
+                Update office hours
+              </Button>
+            )}
+            {prop.kind === "courses" && (
+              <Button size="sm" disabled={busy} onClick={() => apply("courses")}>
+                Import these courses
+              </Button>
+            )}
+            {prop.kind === "unknown" && (
+              <p className="text-xs text-muted-foreground">
+                I couldn't tell what this file is. Make sure the first row has column names like
+                Name, Title, Email, Office — or upload a spreadsheet if this was a PDF.
+              </p>
+            )}
+          </div>
         </div>
       )}
 

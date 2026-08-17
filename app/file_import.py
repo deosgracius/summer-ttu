@@ -17,7 +17,7 @@ import json
 from . import models
 
 MAX_BYTES = 5 * 1024 * 1024  # 5 MB
-ALLOWED_EXT = {".csv", ".tsv", ".txt", ".json", ".xlsx"}
+ALLOWED_EXT = {".csv", ".tsv", ".txt", ".json", ".xlsx", ".pdf"}
 # Executable / macro-bearing types are refused outright.
 BLOCKED_EXT = {".exe", ".bat", ".cmd", ".com", ".js", ".vbs", ".ps1", ".sh",
                ".xlsm", ".xltm", ".docm", ".dll", ".jar", ".msi", ".scr", ".app"}
@@ -37,7 +37,7 @@ def security_check(filename: str, data: bytes):
     if ext in BLOCKED_EXT:
         return False, f"{ext or 'this'} files are not allowed (executable or macro content)."
     if ext not in ALLOWED_EXT:
-        return False, f"Unsupported type '{ext or '?'}'. Use CSV, TSV, TXT, JSON, or XLSX."
+        return False, f"Unsupported type '{ext or '?'}'. Use a spreadsheet (CSV, XLSX), JSON, text, or PDF."
     if data[:2] == b"MZ" or data[:4] == b"\x7fELF":
         return False, "That looks like an executable, not a data file."
     if ext == ".xlsx" and b"vbaProject.bin" in data[:500000]:
@@ -66,6 +66,13 @@ def _norm_rows(filename: str, data: bytes):
             if any(v for v in d.values()):
                 out.append(d)
         return out
+    if ext == ".pdf":
+        # Best-effort: pull the text out of the PDF and try to read table-like rows from it.
+        # PDF has no reliable table structure, so this works when the file is genuinely a simple
+        # table and returns nothing otherwise — in which case analyze() tells the admin to use a
+        # spreadsheet. The admin always confirms the parsed preview before anything is written.
+        from . import docs_rag
+        return _rows_from_text(docs_rag.extract_text(filename, data) or "")
     # csv / tsv / txt
     text = data.decode("utf-8", "ignore")
     first = text.splitlines()[0] if text.splitlines() else ""
@@ -73,6 +80,36 @@ def _norm_rows(filename: str, data: bytes):
     reader = csv.DictReader(io.StringIO(text), delimiter=delim)
     return [{(k or "").strip().lower(): (v or "").strip() for k, v in row.items() if k}
             for row in reader]
+
+
+def _rows_from_text(text: str):
+    """Parse plain text (e.g. extracted from a PDF) into header+row dicts, best-effort. Detects the
+    delimiter per line (comma, tab, or 2+ spaces) and uses the first line as headers. Returns []
+    when the text doesn't look like a table, so the caller reports 'no rows' rather than guessing."""
+    import re
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    if len(lines) < 2:
+        return []
+
+    def split(ln):
+        if "\t" in ln:
+            return [c.strip() for c in ln.split("\t")]
+        if ln.count(",") >= 1:
+            return [c.strip() for c in ln.split(",")]
+        return [c.strip() for c in re.split(r"\s{2,}", ln)]
+
+    header = [h.lower() for h in split(lines[0])]
+    if len(header) < 2:
+        return []
+    out = []
+    for ln in lines[1:]:
+        cells = split(ln)
+        if len(cells) < 2:
+            continue
+        d = {header[i]: cells[i] for i in range(min(len(header), len(cells))) if header[i]}
+        if any(d.values()):
+            out.append(d)
+    return out
 
 
 def _detect(cols) -> str:
@@ -294,12 +331,57 @@ def _apply_courses(db, rows) -> dict:
             "new_instructors": new_instructors, "summary": "; ".join(bits) + "."}
 
 
+def _apply_add_people(db, rows) -> dict:
+    """ADD people to the kiosk directory (or update them if already there) from a roster file.
+
+    Unlike the 'people' update path, this CREATES a directory Professor from name + title / email /
+    office when the person isn't found — so importing a list of professors actually puts them on the
+    kiosk. It uses the file's own title (a REAL title, never the AUTO_INSTRUCTOR sentinel that hides
+    a person), so a new person shows on the directory pages. The admin can fine-tune anyone
+    afterward in the Directory manager."""
+    added, updated = [], []
+    for r in rows or []:
+        nm = _get(r, "name", "full name", "professor", "instructor", "faculty", "staff")
+        em = _get(r, "email", "e-mail")
+        if not nm and not em:
+            continue
+        person = _find_person(db, nm, em)
+        if person:
+            changed = _set_people_fields(db, person, r)
+            if changed:
+                updated.append(f"{person.name} ({', '.join(changed)})")
+            continue
+        title = _get(r, "title", "role", "position", "jobtitle", "job title")
+        bld = _get(r, "office_building", "building")
+        num = _get(r, "office_number", "office number", "room number", "room_number", "room")
+        office = _get(r, "office")
+        if office and not (bld or num):
+            parts = office.split()
+            bld, num = (parts[0], " ".join(parts[1:])) if len(parts) >= 2 else ("", office)
+        hrs = _get(r, "office_hours", "office hours", "hours", "schedule", "availability")
+        db.add(models.Professor(
+            name=nm or em, title=title, email=em,
+            department=_get(r, "department", "dept") or "ECE",
+            office_building=bld, office_number=num, office_hours=hrs))
+        added.append(nm or em)
+    db.commit()
+    parts = []
+    if added:
+        parts.append(f"added {len(added)} to the directory: {', '.join(added)}")
+    if updated:
+        parts.append(f"updated {len(updated)}")
+    return {"applied": True, "added": added, "updated": updated,
+            "summary": ("; ".join(parts) + ".") if parts else "No names found to add."}
+
+
 def apply(db, kind: str, rows) -> dict:
     """Apply a CONFIRMED proposal. Supports 'courses' (schedule + new instructors),
-    'office_hours' (hours only) and 'people' (office/email/title/phone/hours). The people paths
-    UPDATE existing directory entries only — never create — and report anyone they couldn't match."""
+    'add_people' (create/update directory people), 'office_hours' (hours only) and 'people'
+    (update office/email/title/phone/hours of existing people, reporting anyone unmatched)."""
     if kind == "courses":
         return _apply_courses(db, rows)
+    if kind == "add_people":
+        return _apply_add_people(db, rows)
     if kind not in ("office_hours", "people"):
         return {"applied": False,
                 "error": f"Applying '{kind}' isn't supported — office hours and people updates only."}

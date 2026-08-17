@@ -4,7 +4,7 @@ wrong passcode is rejected. Calls the endpoint functions directly against an in-
 DB (no app.main import, so the boot seed never interferes)."""
 import pytest
 from types import SimpleNamespace
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -41,14 +41,14 @@ def test_wrong_passcode_rejected(db):
 def test_start_reports_no_account_then_account(db):
     assert A.central_start(A.CentralStart(passcode="passcode-xyz"), _req(), db)["has_account"] is False
     A.central_register(A.CentralRegister(passcode="passcode-xyz", email="boss@ttu.edu",
-                                         password="supersecret1"), _req(), db)
+                                         password="supersecret1"), _req(), Response(), db)
     assert A.central_start(A.CentralStart(passcode="passcode-xyz"), _req(), db)["has_account"] is True
 
 
 def test_register_makes_central_and_passcode_is_not_login(db):
     out = A.central_register(A.CentralRegister(passcode="passcode-xyz", email="boss@ttu.edu",
                                                password="supersecret1", location="Lubbock, TX"),
-                             _req(), db)
+                             _req(), Response(), db)
     assert out["access_token"]
     u = db.query(models.User).filter_by(email="boss@ttu.edu").first()
     assert u.role == "central_admin" and u.approved is True
@@ -59,16 +59,16 @@ def test_register_makes_central_and_passcode_is_not_login(db):
 
 def test_register_blocks_second_central_under_other_email(db):
     A.central_register(A.CentralRegister(passcode="passcode-xyz", email="boss@ttu.edu",
-                                         password="supersecret1"), _req(), db)
+                                         password="supersecret1"), _req(), Response(), db)
     with pytest.raises(HTTPException) as e:
         A.central_register(A.CentralRegister(passcode="passcode-xyz", email="other@ttu.edu",
-                                             password="supersecret1"), _req(), db)
+                                             password="supersecret1"), _req(), Response(), db)
     assert e.value.status_code == 409
 
 
 def test_reset_link_is_single_use(db):
     A.central_register(A.CentralRegister(passcode="passcode-xyz", email="boss@ttu.edu",
-                                         password="supersecret1"), _req(), db)
+                                         password="supersecret1"), _req(), Response(), db)
     link = A.central_reset_link(A.CentralResetLink(passcode="passcode-xyz", email="boss@ttu.edu"),
                                 _req(), db)["reset_link"]
     token = link.split("reset=")[1]

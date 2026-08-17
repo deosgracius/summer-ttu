@@ -4,7 +4,6 @@ import { useAuth } from "@/lib/auth"
 import { Button } from "@/components/ui/button"
 import MemoriesPanel from "@/components/panels/MemoriesPanel"
 import CampusPanel from "@/components/panels/CampusPanel"
-import PeoplePanel from "@/components/panels/PeoplePanel"
 import SecurityPanel from "@/components/panels/SecurityPanel"
 import VoiceSettingsPanel from "@/components/panels/VoiceSettingsPanel"
 import QuickLinksPanel from "@/components/panels/QuickLinksPanel"
@@ -94,9 +93,8 @@ export default function DashboardPage() {
         <main className="relative z-10 mx-auto w-full max-w-5xl px-4 sm:px-6 py-8 space-y-6">
           {tab === "directory" && (
             <div className="space-y-4">
-              <PeoplePanel reloadKey={reloadKey} />
-              <OfficeHoursPanel />
               <DirectoryPhotosPanel />
+              <OfficeHoursPanel />
             </div>
           )}
 

@@ -106,6 +106,26 @@ class AdvisorOut(AdvisorIn):
     updated_at: datetime | None = None
 
 
+class StaffIn(BaseModel):
+    name: str
+    title: str = ""
+    email: str = ""
+    phone: str = ""
+    department: str = ""
+    office_building: str = ""
+    office_number: str = ""
+    photo_url: str = ""
+    cv_url: str = ""
+    bio: str = ""
+    semester: str = ""
+
+
+class StaffOut(StaffIn):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    updated_at: datetime | None = None
+
+
 class CourseSectionIn(BaseModel):
     crn: str = ""
     subject: str = ""

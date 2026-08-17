@@ -8,11 +8,15 @@ import os
 
 os.environ["DATABASE_URL"] = "sqlite:///./test_admin_single.db"
 os.environ["CENTRAL_ADMIN_PASSWORD"] = "the-setup-code"
+# Raise the auth rate limits so a full-suite run (shared in-process limiter) doesn't 429 us.
+os.environ["CENTRAL_PASSCODE_PER_MIN"] = "10000"
+os.environ["LOGIN_PER_MIN"] = "10000"
 os.environ.pop("ANTHROPIC_API_KEY", None)
 os.environ.pop("OPENAI_API_KEY", None)
 if os.path.exists("test_admin_single.db"):
     os.remove("test_admin_single.db")
 
+import pytest
 from fastapi.testclient import TestClient
 from app.main import app, _db_init
 
@@ -21,6 +25,14 @@ from app.main import app, _db_init
 _db_init()
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _fix_code():
+    # Other test files set CENTRAL_ADMIN_PASSWORD at module level; the last-collected one would
+    # otherwise win process-wide. The passcode is read at request time, so re-set it per test.
+    os.environ["CENTRAL_ADMIN_PASSWORD"] = "the-setup-code"
+    yield
 
 
 def test_first_setup_via_code_then_login():

@@ -313,6 +313,12 @@ def directory_admin(db: Session = Depends(get_db),
         return {"resource": resource, "id": x.id, "name": (x.name or "").strip(),
                 "title": (getattr(x, "title", "") or "").strip(), "office": office_of(x),
                 "photo_url": getattr(x, "photo_url", "") or "",
+                # Every editable field, so the Directory manager can edit a person in place and
+                # write it straight back to this same row (which the kiosk reads).
+                "email": (getattr(x, "email", "") or "").strip(),
+                "office_building": (getattr(x, "office_building", "") or "").strip(),
+                "office_number": (getattr(x, "office_number", "") or "").strip(),
+                "bio": (getattr(x, "bio", "") or "").strip(),
                 # Office hours + the fallback preference, so the admin can edit them in place.
                 "office_hours": (getattr(x, "office_hours", "") or "").strip(),
                 "office_hours_policy": (getattr(x, "office_hours_policy", "") or "").strip()}
@@ -487,6 +493,10 @@ _crud("professors", models.Professor, schemas.ProfessorIn, schemas.ProfessorOut,
       ["name", "department", "office_building", "office_number"])
 _crud("advisors", models.Advisor, schemas.AdvisorIn, schemas.AdvisorOut,
       ["name", "department", "office_building"])
+# Staff had photo upload but no create/edit/delete — so a staff member could never be added or
+# removed from the directory the admin manages. Register the same CRUD the others have.
+_crud("staff", models.Staff, schemas.StaffIn, schemas.StaffOut,
+      ["name", "title", "email", "office_building"])
 _crud("courses", models.CourseSection, schemas.CourseSectionIn, schemas.CourseSectionOut,
       ["crn", "subject", "course", "title", "instructor", "building", "room_number"])
 _crud("services", models.ServiceHours, schemas.ServiceHoursIn, schemas.ServiceHoursOut,

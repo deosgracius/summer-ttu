@@ -172,8 +172,10 @@ export default function KioskScreensaver({ onCycleEnd, onGraphChange }: { onCycl
     if (!CACHE) fetchDir()
     // Re-fetch on a timer so admin edits — office hours, photos, someone leaving — reach the wall
     // display on their own. The kiosk can run for days without anyone reloading it, and before this
-    // the directory was fetched once into a module-level cache and never refreshed.
-    const id = window.setInterval(fetchDir, 5 * 60 * 1000)
+    // the directory was fetched once into a module-level cache and never refreshed. 45s (was 5 min)
+    // so an admin change shows on the wall almost immediately; /campus/directory is a cheap read and
+    // headshots are immutably cached, so polling this often costs little.
+    const id = window.setInterval(fetchDir, 45 * 1000)
     return () => window.clearInterval(id)
   }, [])
 

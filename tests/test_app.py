@@ -8,9 +8,13 @@ if os.path.exists("test_summer.db"):
     os.remove("test_summer.db")
 
 from fastapi.testclient import TestClient
-from app.main import app
+from app.main import app, _db_init
 from app.research import web_research
 from app.extra_service import music_link
+
+# Schema + seeds normally run in a background daemon thread; run it synchronously here so the first
+# DB-writing test doesn't race table creation (idempotent — safe to run twice).
+_db_init()
 
 client = TestClient(app)
 
@@ -32,6 +36,11 @@ def auth_headers(email="a@b.com", role="customer"):
         db.commit()
     db.close()
     r = client.post("/auth/login", data={"username": email, "password": "pw12345"})
+    # Login also sets the httpOnly session cookie, which the shared TestClient keeps and which
+    # get_current_user reads BEFORE the Bearer header. Across two simulated users that cookie would
+    # otherwise make every request authenticate as whoever logged in LAST — breaking per-user tests
+    # (e.g. task isolation). Clear it so the returned Bearer header is the only credential.
+    client.cookies.clear()
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 

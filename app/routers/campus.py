@@ -256,8 +256,9 @@ def directory(db: Session = Depends(get_db)):
             buckets[b].append(person(p))
     staff = [person(s) for s in db.query(models.Staff).all()]
 
-    # sort each section by last name; the [-1:] guard keeps a blank name from raising IndexError.
-    key = lambda m: (m["name"].split()[-1:] or [m["name"]])[0].lower()
+    # Sort each section by FIRST name (per the ECE coordinator); the [:1] guard keeps a blank name
+    # from raising IndexError.
+    key = lambda m: (m["name"].split()[:1] or [m["name"]])[0].lower()
     # Per the ECE coordinator: Assistant Professors are FACULTY, so they belong in the one Faculty
     # Directory alongside the full/associate professors, all in a single alphabetical list — only
     # Instructors keep their own page. `doctor` prefixes "Dr." to each name; assistant professors
@@ -332,7 +333,7 @@ def directory_admin(db: Session = Depends(get_db),
         if b:
             buckets[b].append(entry("professors", p))
     staff = [entry("staff", s) for s in db.query(models.Staff).all()]
-    key = lambda m: (m["name"].split()[-1:] or [m["name"]])[0].lower()
+    key = lambda m: (m["name"].split()[:1] or [m["name"]])[0].lower()  # FIRST name (matches /directory)
     # Assistant Professors live in the one Faculty group (see /directory) — Instructors stay
     # separate — so the admin manager mirrors exactly what the kiosk shows.
     return {"sections": [

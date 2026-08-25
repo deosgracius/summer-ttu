@@ -258,12 +258,15 @@ def directory(db: Session = Depends(get_db)):
 
     # sort each section by last name; the [-1:] guard keeps a blank name from raising IndexError.
     key = lambda m: (m["name"].split()[-1:] or [m["name"]])[0].lower()
-    # `doctor` prefixes "Dr." to each name. Assistant Professors: the section title already
-    # states the rank, so no per-name "Dr." prefix (keeps Ben Esser without one, per the owner).
+    # Per the ECE coordinator: Assistant Professors are FACULTY, so they belong in the one Faculty
+    # Directory alongside the full/associate professors, all in a single alphabetical list — only
+    # Instructors keep their own page. `doctor` prefixes "Dr." to each name; assistant professors
+    # hold PhDs, so they get it too, while role_of still shows "Assistant Professor" as their rank
+    # under the name.
+    faculty_all = sorted(faculty + assistant, key=key)
     sections = [
-        {"key": "faculty", "title": "Faculty Directory", "subtitle": "Ph.D. Faculty", "office": True, "doctor": True, "members": sorted(faculty, key=key)},
+        {"key": "faculty", "title": "Faculty Directory", "subtitle": "Faculty", "office": True, "doctor": True, "members": faculty_all},
         {"key": "instructors", "title": "Instructors", "subtitle": "Teaching Faculty", "office": True, "doctor": False, "members": sorted(instructors, key=key)},
-        {"key": "assistant", "title": "Assistant Professors", "subtitle": "Faculty", "office": True, "doctor": False, "members": sorted(assistant, key=key)},
         {"key": "staff", "title": "Staff Directory", "subtitle": "Department Staff", "office": True, "doctor": False, "members": sorted(staff, key=key)},
     ]
     # Attach the short rank shown under each name (Professor / Assistant Professor / Instructor / job title).
@@ -330,10 +333,11 @@ def directory_admin(db: Session = Depends(get_db),
             buckets[b].append(entry("professors", p))
     staff = [entry("staff", s) for s in db.query(models.Staff).all()]
     key = lambda m: (m["name"].split()[-1:] or [m["name"]])[0].lower()
+    # Assistant Professors live in the one Faculty group (see /directory) — Instructors stay
+    # separate — so the admin manager mirrors exactly what the kiosk shows.
     return {"sections": [
-        {"key": "faculty", "title": "Faculty", "members": sorted(buckets["faculty"], key=key)},
+        {"key": "faculty", "title": "Faculty", "members": sorted(buckets["faculty"] + buckets["assistant"], key=key)},
         {"key": "instructors", "title": "Instructors", "members": sorted(buckets["instructors"], key=key)},
-        {"key": "assistant", "title": "Assistant Professors", "members": sorted(buckets["assistant"], key=key)},
         {"key": "staff", "title": "Staff", "members": sorted(staff, key=key)},
     ]}
 

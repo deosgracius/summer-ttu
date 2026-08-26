@@ -1052,42 +1052,26 @@ export function useSpeech() {
         else floorRun = Math.min(floorRun + 0.05, max)   // ~2 units/sec, so a raised room settles in seconds
         thresh = Math.max(8, Math.round(floorRun) + 7)
       }
-      // Three sensitivity levels, by state:
-      //  - Summer speaking / still working on an answer: thresh + 14. Demand clearly-louder energy
-      //    so leaked echo can't make her interrupt herself, and quiet room noise during the wait
-      //    isn't captured and transcribed into an invented question.
-      //  - DORMANT (waiting for a wake word, no conversation): thresh + DORMANT_MARGIN. A margin
-      //    here was meant to cut idle Whisper uploads (room murmur that merely clears the ambient
-      //    floor) — but it silently broke the wake word. voicedFrames were counted only ABOVE this
-      //    bar (see below), and serverStopRec discards any capture under MIN_VOICED_DORMANT_MS of
-      //    voiced audio BEFORE it is ever transcribed. "Hey Summer" is ~700ms of mostly-gaps; with
-      //    the bar raised, too few of its frames cleared it, the blob was thrown away, and Summer
-      //    never woke. That is the exact "one number, both failures" trap the MIN_VOICED note warns
-      //    about. The fix was to DECOUPLE voiced counting from this bar (it is counted against plain
-      //    thresh below) — so a trigger margin can now filter ambient WITHOUT starving the voiced
-      //    floor. With that decoupling in place a small margin is safe: it only makes the mic wait
-      //    for someone speaking UP near it (how you address a kiosk, peaks ~40-100) rather than
-      //    firing on room murmur that merely clears the +7 ambient bar. 0 was over-eager on the
-      //    wall; 4 (bar = floor + 11) cuts the false wakes while staying far below real speech, and
-      //    a wake word that clears it still passes the voiced floor. The real, cost-free fix remains
-      //    on-device wake-word spotting on the mini PC.
-      //  - ENGAGED (mid-conversation, waiting for a follow-up): plain thresh, full sensitivity, so
-      //    a quiet follow-up is never missed.
-      const DORMANT_MARGIN = 4
-      const dormant = !engaged.current && !speaking.current && !VOICE.speaking && !isAwaitingAnswer()
-      const bar = (speaking.current || VOICE.speaking || isAwaitingAnswer())
-        ? thresh + 14
-        : (dormant ? thresh + DORMANT_MARGIN : thresh)
-      // Voiced-frame count for the MIN_VOICED floor. Measured against plain `thresh`, NOT the
-      // (higher) trigger `bar`: once a capture has started, every frame of genuine speech should
-      // count toward "was this real?", or a raised trigger bar starves the floor and the wake word
-      // is discarded before transcription (the regression this replaced). More permissive than the
-      // old placement, never less — it can only help a real utterance clear the floor.
+      // SENSITIVITY. Summer only ever listens in two states — dormant (waiting for the wake word)
+      // and engaged (waiting for a follow-up) — and BOTH now use the plain room-calibrated
+      // threshold, so a normal-volume "Hey Summer" / "Summer" wakes her without anyone raising
+      // their voice. DORMANT_MARGIN stays as a knob (0 = as sensitive as the ambient floor allows);
+      // raise it only if idle room noise starts waking her. voicedFrames are still counted against
+      // plain thresh (below), so the MIN_VOICED floor is never starved.
+      const DORMANT_MARGIN = 0
+      const bar = thresh + DORMANT_MARGIN
+      // ONE CONVERSATION AT A TIME — NO BARGE-IN. While Summer is speaking OR still fetching an
+      // answer she owns the turn: we neither capture nor cut her off. She finishes, THEN listens for
+      // the next thing, and the reply keeps the thread (ask() sends recent turns as history). This
+      // replaces the old barge-in, which stopped her the instant the room got loud — including her
+      // OWN audio leaking back through the TV — so she talked over herself and lost the line.
+      const busy = speaking.current || VOICE.speaking || isAwaitingAnswer()
+      // Voiced-frame count for the MIN_VOICED floor, against plain `thresh` (see the regression note
+      // this replaced): every frame of genuine speech in a capture counts toward "was this real?".
       if (serverRecording.current && max > thresh) voicedFrames.current++
-      if (max > bar) {
+      if (max > bar && !busy) {
         loudRun++
-        if (loudRun >= 3) {                            // sustained → it's really the user
-          if (speaking.current || VOICE.speaking) stopSpeaking()   // BARGE-IN: stop and listen
+        if (loudRun >= 3) {                            // sustained → it's really someone speaking
           if (!serverRecording.current) serverStartRec()
           if (serverSilence.current) { clearTimeout(serverSilence.current); serverSilence.current = undefined }
         }

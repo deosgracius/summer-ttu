@@ -120,30 +120,105 @@ def knowledge_graph(db: Session = Depends(get_db)):
     return campus_service.knowledge_graph(db)
 
 
+# ---------------------------------------------------------------------------
+# Research Network node data — AUTHORITATIVE, verified against the TTU ECE website
+# (retrieved 2026-08-25). Every current faculty member's PRIMARY research thrust,
+# taken from their own faculty page at depts.ttu.edu/ece/faculty/<name>/ and the
+# department's official research-thrust list at depts.ttu.edu/ece/research/.
+#
+# This REPLACES the old keyword-guessing, which mis-clustered people (it put ABET
+# lecturer Derek Johnston in Photonics), invented its own area names, pulled in
+# adjuncts and an instructor (Chalamala, Laity, Molly Dickens), and silently DROPPED
+# real faculty whose bios lacked the right keywords (Bilbao, Esser, Sari-Sarraf,
+# Taewoo Kim). Area labels are concise forms of the nine official thrusts.
+#
+# Only research-active faculty appear — lecturers (Derek Johnston), adjuncts, and
+# emeritus are intentionally omitted; the graph is a research map, not the directory.
+#
+# A handful are judgment calls where a person genuinely spans thrusts (marked CONFIRM);
+# these are the ones worth a second look with the department:
+#   Nutter (biomedical imaging vs image analysis), Pal (genomic ML vs biomedical),
+#   Joshi (semiconductors/nanotech vs bioelectrics), Zhou (semiconductor packaging vs
+#   nanophotonics), Miao He (cyber-physical vs power systems), Karp (signal processing
+#   vs comms). Bilbao & Esser list no research on their pages — placed in Pulsed Power
+#   by department affiliation.
+_FACULTY_RESEARCH_AREA = {
+    # Pulsed Power & Power Electronics (P3E)
+    "Andreas Neuber": "Pulsed Power & Power Electronics",
+    "James Dickens": "Pulsed Power & Power Electronics",
+    "John Mankowski": "Pulsed Power & Power Electronics",
+    "Stephen Bayne": "Pulsed Power & Power Electronics",
+    "Jacob Stephens": "Pulsed Power & Power Electronics",
+    "Michael Giesselmann": "Pulsed Power & Power Electronics",
+    "Argenis Bilbao": "Pulsed Power & Power Electronics",   # CONFIRM — no research listed on page
+    "Ben Esser": "Pulsed Power & Power Electronics",        # CONFIRM — no research listed on page
+    # Nanophotonics & Nanotech
+    "Ayrton Bernussi": "Nanophotonics & Nanotech",
+    "Hongxing Jiang": "Nanophotonics & Nanotech",
+    "Jingyu Lin": "Nanophotonics & Nanotech",
+    "Jing Li": "Nanophotonics & Nanotech",
+    "Hieu P. Nguyen": "Nanophotonics & Nanotech",
+    "Hieu Nguyen": "Nanophotonics & Nanotech",
+    # RF & Microwave
+    "Changzhi Li": "RF & Microwave",
+    "Mohammad Saed": "RF & Microwave",
+    "Mohammed Saed": "RF & Microwave",
+    "Donald Lie": "RF & Microwave",
+    # Image & Signal Analysis
+    "Hamed Sari-Sarraf": "Image & Signal Analysis",
+    "Tanja Karp": "Image & Signal Analysis",               # CONFIRM — signal processing / comms
+    # Biomedical Engineering
+    "Mary Baker": "Biomedical Engineering",
+    "Brian Nutter": "Biomedical Engineering",              # CONFIRM — biomedical imaging
+    "Ranadip Pal": "Biomedical Engineering",               # CONFIRM — genomic ML / computational biology
+    # Microelectronics & MEMS
+    "Tim Dallas": "Microelectronics & MEMS",
+    "Timothy Dallas": "Microelectronics & MEMS",
+    # Advanced Semiconductors
+    "Taewoo Kim": "Advanced Semiconductors",
+    "Ravindra Joshi": "Advanced Semiconductors",           # CONFIRM — also bioelectrics
+    "Lyu Zhou": "Advanced Semiconductors",                 # CONFIRM — packaging / metamaterials
+    # Cyber-Physical Systems
+    "Brenda Connor": "Cyber-Physical Systems",
+    "Emily Pereira": "Cyber-Physical Systems",
+    "Miao He": "Cyber-Physical Systems",                   # CONFIRM — power systems / smart grid
+}
+
+
+def _research_area_of(name: str):
+    """A professor's official research thrust by name, tolerant of the small
+    middle-initial / spelling differences between the DB and the ECE site. Returns
+    None for anyone off the verified research roster (lecturers, adjuncts, emeritus)."""
+    import re
+    def norm(n: str) -> str:
+        return re.sub(r"\s+", " ", re.sub(r"[^a-z ]+", " ", (n or "").lower())).strip()
+    table = getattr(_research_area_of, "_table", None)
+    if table is None:
+        table = {norm(k): v for k, v in _FACULTY_RESEARCH_AREA.items()}
+        _research_area_of._table = table
+    return table.get(norm(name))
+
+
 @router.get("/faculty-graph")
 def faculty_graph(db: Session = Depends(get_db)):
-    """Public, lean feed for the kiosk sleep-mode screensaver: FACULTY ONLY (incl. emeritus),
-    each with photo + title, clustered by research area. No staff/advisors/courses. Read-only
-    public directory data (names, photos, research areas — same as the public knowledge graph)."""
-    from .. import campus_service, models
+    """Public, lean feed for the kiosk Research Network finale: research-active FACULTY,
+    each with photo + title, clustered under their official ECE research thrust. Node data is
+    the AUTHORITATIVE verified mapping above (from each professor's TTU faculty page and the
+    department's research-thrust list) — never a keyword guess. Read-only public directory data."""
+    from .. import models
     profs, areas, researches = [], set(), []
     for p in db.query(models.Professor).all():
-        if "emerit" in (getattr(p, "title", "") or "").lower():
-            continue  # Research Network shows active faculty only
-        ar = [a for a in campus_service._areas_for(
-            f"{getattr(p, 'bio', '') or ''} {getattr(p, 'title', '') or ''}")
-            if a not in ("Staff", "Advising")]
-        if not ar:
-            continue  # only faculty linked to a real research area appear in the network
+        area = _research_area_of(p.name)
+        if not area:
+            continue  # lecturers, adjuncts, emeritus, and anyone off the verified roster are out
         profs.append({
             "id": "p:" + p.name, "name": p.name,
             "photo": getattr(p, "photo_url", "") or "",
             "title": getattr(p, "title", "") or "",
-            "areas": ar,
+            "areas": [area],
         })
-        for a in ar:
-            areas.add(a)
-            researches.append({"s": "p:" + p.name, "t": "a:" + a})
+        areas.add(area)
+        researches.append({"s": "p:" + p.name, "t": "a:" + area})
     return {
         "profs": profs,
         "areas": [{"id": "a:" + a, "name": a} for a in sorted(areas)],

@@ -20,10 +20,13 @@ import { FRAME_MS, LINK_PARTICLES, LOW_POWER } from "@/lib/device"
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any
 
+// Colours keyed to the official ECE research thrusts (concise labels) the backend now returns.
 const AREA_COLORS: Record<string, string> = {
-  "Power & Energy": "#f59e0b", "RF & Microwave": "#8b5cf6", "Comms & DSP": "#06b6d4",
-  "Circuits & Micro": "#ec4899", "Photonics & Nano": "#22c55e",
-  "Computing & Security": "#3b82f6", "Bio & Sensors": "#ef4444", "ECE Faculty": "#7c8aa5",
+  "Pulsed Power & Power Electronics": "#f59e0b", "Nanophotonics & Nanotech": "#22c55e",
+  "RF & Microwave": "#8b5cf6", "Image & Signal Analysis": "#06b6d4",
+  "Biomedical Engineering": "#ef4444", "Microelectronics & MEMS": "#ec4899",
+  "Advanced Semiconductors": "#14b8a6", "Cyber-Physical Systems": "#3b82f6",
+  "ECE Faculty": "#7c8aa5",
 }
 const PALETTE = ["#f59e0b", "#8b5cf6", "#06b6d4", "#ec4899", "#22c55e", "#3b82f6", "#ef4444", "#14b8a6"]
 function hashN(s: string) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h }

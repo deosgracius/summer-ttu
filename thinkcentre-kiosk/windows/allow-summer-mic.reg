@@ -1,0 +1,22 @@
+Windows Registry Editor Version 5.00
+
+; Summer kiosk -- grant the microphone to summer-ttu.onrender.com in Microsoft Edge,
+; silently and permanently, so the wall's wake word works after an unattended 7am boot
+; with NO "Allow microphone?" prompt. This is a machine-wide Edge policy.
+;
+; HOW TO USE:
+;   1. Double-click this file on the ThinkCentre.
+;   2. Accept the UAC prompt and the "add to registry?" prompt (needs admin rights).
+;   3. Fully close Edge and reopen it (or just reboot).
+;   4. Verify: open Edge, go to  edge://policy  -- you should see
+;      "AudioCaptureAllowedUrls" listed with the Summer URL.
+;
+; Also make sure Windows itself allows it (one-time, separate from this file):
+;   Settings > Privacy & security > Microphone > turn ON "Microphone access",
+;   "Let apps access your microphone", and "Let desktop apps access your microphone".
+;
+; This grants ONLY the microphone, and ONLY to Summer's site (least privilege) --
+; not the camera, and no other website.
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\AudioCaptureAllowedUrls]
+"1"="https://summer-ttu.onrender.com"

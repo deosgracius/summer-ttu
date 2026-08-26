@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react"
+import { lazy, Suspense, useEffect, useState } from "react"
 import { Cpu, Settings as SettingsIcon, Users, Database, BarChart3, Activity, type LucideIcon } from "lucide-react"
 import { useAuth } from "@/lib/auth"
 import { Button } from "@/components/ui/button"
@@ -26,6 +26,22 @@ export default function DashboardPage() {
   const [reloadKey] = useState(0)
   const [tab, setTab] = useState<TabId>("directory")
 
+  // The header status is a REAL check, not decoration: the old badge was hardcoded "Online"
+  // and stayed green even with the server down — exactly what would mislead a non-technical
+  // operator. Poll /health once a minute; null = still checking on first load.
+  const [online, setOnline] = useState<boolean | null>(null)
+  useEffect(() => {
+    let alive = true
+    const ping = () => {
+      fetch("/health", { cache: "no-store" })
+        .then((r) => { if (alive) setOnline(r.ok) })
+        .catch(() => { if (alive) setOnline(false) })
+    }
+    ping()
+    const id = window.setInterval(ping, 60 * 1000)
+    return () => { alive = false; window.clearInterval(id) }
+  }, [])
+
   const tabs: { id: TabId; label: string; icon: LucideIcon }[] = [
     { id: "directory", label: "Directory", icon: Users },
     { id: "campus", label: "Campus Data", icon: Database },
@@ -50,7 +66,8 @@ export default function DashboardPage() {
         </div>
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="inline-block size-2 rounded-full bg-emerald-400" /> Online
+            <span className={`inline-block size-2 rounded-full ${online === false ? "bg-rose-500" : online ? "bg-emerald-400" : "bg-muted-foreground/50"}`} />
+            {online === false ? "Summer can't be reached" : online ? "Summer is online" : "Checking…"}
           </span>
           <Button variant="outline" size="sm" onClick={logout}>
             Log out

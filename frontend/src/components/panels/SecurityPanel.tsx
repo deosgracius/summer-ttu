@@ -59,15 +59,25 @@ export default function SecurityPanel({ reloadKey }: { reloadKey?: number }) {
     }
   }
 
+  // Turning the authenticator off asks for a code in the app's own styled section below —
+  // not window.prompt, whose bare grey box looked broken next to the rest of the dashboard.
+  const [disabling, setDisabling] = useState(false)
+  const [disableCode, setDisableCode] = useState("")
+
   async function disableTotp() {
-    const c = window.prompt("To turn off extra sign-in security, enter the 6-digit code from your authenticator app (or one of your backup codes):")
+    const c = disableCode.trim()
     if (!c) return
+    setBusy(true)
     try {
       await api.post("/security/totp/disable", { code: c })
-      toast.success("Authenticator disabled")
+      toast.success("Extra sign-in security is now off")
+      setDisabling(false)
+      setDisableCode("")
       loadStatus()
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "We couldn't turn it off. Please try again.")
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -149,12 +159,37 @@ export default function SecurityPanel({ reloadKey }: { reloadKey?: number }) {
             Add fingerprint / face sign-in (Windows Hello / Touch ID)
           </Button>
         )}
-        {status?.totp_enabled && (
-          <Button size="sm" variant="ghost" onClick={disableTotp}>
+        {status?.totp_enabled && !disabling && (
+          <Button size="sm" variant="ghost" onClick={() => setDisabling(true)}>
             Turn off authenticator
           </Button>
         )}
       </div>
+
+      {/* Turn-off flow: the app's own styled section, matching the setup flow above. */}
+      {disabling && (
+        <div className="mt-3 space-y-2 rounded-md border p-3">
+          <div className="text-xs text-muted-foreground">
+            To turn off extra sign-in security, enter the 6-digit code from your authenticator
+            app (or one of your backup codes).
+          </div>
+          <div className="flex gap-2">
+            <Input
+              value={disableCode}
+              onChange={(e) => setDisableCode(e.target.value)}
+              placeholder="6-digit code or backup code"
+              onKeyDown={(e) => e.key === "Enter" && disableTotp()}
+              autoFocus
+            />
+            <Button size="sm" onClick={disableTotp} disabled={busy || !disableCode.trim()}>
+              Turn it off
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setDisabling(false); setDisableCode("") }} disabled={busy}>
+              Keep it on
+            </Button>
+          </div>
+        </div>
+      )}
     </PanelCard>
   )
 }

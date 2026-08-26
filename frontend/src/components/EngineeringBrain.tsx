@@ -101,6 +101,19 @@ function StatusWord({ s }: { s: string }) {
   return <span className={`font-medium ${STATUS_PILL[s] || "text-muted-foreground"}`}>{statusLabel(s)}</span>
 }
 
+// Friendly names for the raw node `kind` keys shown in the detail panel, so the operator
+// reads "Faculty member", never an internal value. Unknown kinds are prettified; a kind that
+// merely repeats the category is dropped.
+const KIND_LABEL: Record<string, string> = {
+  faculty: "Faculty member", staff: "Staff member", advisor: "Advisor", course: "Course",
+  hub: "Group", root: "", area: "Research area",
+}
+function kindLabel(kind: string, category?: string) {
+  const label = KIND_LABEL[kind] ?? (kind ? kind.charAt(0).toUpperCase() + kind.slice(1).replace(/_/g, " ") : "")
+  if (!label || label.toLowerCase() === (category || "").toLowerCase()) return ""
+  return label
+}
+
 // A compact segmented toggle (iOS-style) for the two-option switches in the toolbar.
 function Seg({ value, onChange, options }: {
   value: string; onChange: (v: string) => void; options: { id: string; label: string; icon: LucideIcon }[]
@@ -530,7 +543,9 @@ export default function EngineeringBrain() {
                 <span className="inline-block size-3 rounded-full" style={{ background: nodeColor(selected) }} />
                 <span className="truncate font-semibold leading-tight">{selected.name}</span>
               </div>
-              <div className="mt-0.5 text-xs text-muted-foreground">{selected.category} · {selected.kind}</div>
+              <div className="mt-0.5 text-xs text-muted-foreground">
+                {selected.category}{kindLabel(selected.kind, selected.category) ? ` · ${kindLabel(selected.kind, selected.category)}` : ""}
+              </div>
             </div>
             <button onClick={() => setSelected(null)} className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
           </div>

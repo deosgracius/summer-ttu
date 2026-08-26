@@ -1484,8 +1484,13 @@ def speech_hint(db) -> str:
     #
     # So: whole items only, never a partial one, and close with a sentence that is not a list.
     BUDGET = 850                                  # Whisper's prompt is roughly 224 tokens
-    head = "Texas Tech University ECE department."
-    tail = "A student question follows."
+    # Name the assistant and the wake phrase FIRST. Whisper's prompt is prefix-conditioning, and the
+    # old prompt listed 60 faculty names but never "Summer" — so it biased a short "Hey Summer" wake
+    # clip TOWARD a faculty name and away from the wake word, which is a big part of why waking landed
+    # only intermittently. "Summer" now appears in both the head and the tail so the decoder is primed
+    # to hear it. (The wake-word matcher strips a leading "Hey Summer" from the command anyway.)
+    head = 'Texas Tech University ECE department. The campus assistant is named Summer; visitors wake her by saying "Hey Summer".'
+    tail = "A student question to Summer follows."
 
     def _fit(label: str, items: list[str], share: int) -> str:
         out, used = [], 0

@@ -181,6 +181,19 @@ app.add_middleware(CORSMiddleware, allow_origins=_origins,
 WEB_DIST = os.getenv("WEB_DIST", "")
 _HAS_WEB = bool(WEB_DIST) and os.path.isdir(WEB_DIST)
 
+# Build identity, exposed at /health so a long-running kiosk can notice a new deploy and
+# reload itself. The wall runs Edge for days on one page and never picks up a deploy on its
+# own; the frontend polls /health and reloads when this value changes. index.html embeds the
+# hashed JS/CSS filenames, so its hash changes on every build — a stable per-deploy id.
+import hashlib as _hashlib
+_BUILD_ID = "dev"
+try:
+    if _HAS_WEB:
+        with open(os.path.join(WEB_DIST, "index.html"), "rb") as _bf:
+            _BUILD_ID = _hashlib.sha1(_bf.read()).hexdigest()[:12]
+except Exception:
+    _BUILD_ID = "dev"
+
 
 # Baseline security headers on every response — cheap defense-in-depth.
 #  - nosniff: browsers must not MIME-sniff a response into an executable type.
@@ -273,7 +286,8 @@ def root():
 
 @app.get("/health", tags=["meta"])
 def health():
-    return {"status": "ok"}
+    # `build` lets the kiosk auto-reload on a new deploy (see KioskPage's health poll).
+    return {"status": "ok", "build": _BUILD_ID}
 
 
 @app.websocket("/ws/tasks")

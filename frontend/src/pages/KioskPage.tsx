@@ -134,14 +134,31 @@ export default function KioskPage() {
     }
   }, [enterAttract])
 
-  // Keep the free host awake while a kiosk is on screen. Render's free tier spins down after
-  // ~15 min with no inbound traffic; the screensaver renders locally and makes no requests, so
-  // without this the host would still sleep. A tiny /health ping every few minutes counts as
-  // traffic → no spin-down, no cold start for the next visitor. /health touches no database.
+  // Two jobs, one poll:
+  //  1. Keep the free host awake. Render's free tier spins down after ~15 min with no inbound
+  //     traffic; the screensaver renders locally and makes no requests, so a tiny /health ping
+  //     counts as traffic → no spin-down, no cold start for the next visitor.
+  //  2. AUTO-UPDATE THE WALL ON DEPLOY. The kiosk runs one browser page for DAYS and never picks
+  //     up a deploy on its own — which is exactly why the wall kept showing a stale build while a
+  //     freshly-opened browser showed the new one. /health now carries a build id; when it changes
+  //     we reload — but only while idle (activityRef), so a student mid-question is never cut off;
+  //     it simply reloads on the next poll once the conversation ends.
+  const activityRef = useRef(false)
+  useEffect(() => { activityRef.current = awake || turns.length > 0 || loading }, [awake, turns.length, loading])
   useEffect(() => {
-    const ping = () => { fetch("/health", { cache: "no-store" }).catch(() => {}) }
+    let known: string | null = null
+    const ping = () => {
+      fetch("/health", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => {
+          if (!j || !j.build) return
+          if (known === null) { known = j.build; return }        // remember the build we loaded with
+          if (j.build !== known && !activityRef.current) window.location.reload()
+        })
+        .catch(() => {})
+    }
     ping()
-    const id = window.setInterval(ping, 4 * 60 * 1000) // every 4 min, well under the 15-min cutoff
+    const id = window.setInterval(ping, 2 * 60 * 1000) // every 2 min: keeps the host warm AND catches deploys
     return () => window.clearInterval(id)
   }, [])
   useEffect(() => {

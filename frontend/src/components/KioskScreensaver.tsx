@@ -88,15 +88,17 @@ let CACHE: Dir | null = null
 // revealed at once (all photos live at the same time) instead of popping in one by one.
 const DECODED = new Set<string>()
 
-// Cards per row for a section. Assistants and instructors sit on ONE full row (like the roomy
-// Assistant page); faculty and staff use two. IMPORTANT: this is fed the section's PER-PAGE size,
-// not the count on the page being drawn — so every faculty page shares one column count and fills
-// the screen identically. Before, faculty page 2 (14 people) used 7 columns and page 1 (15) used
-// 8, so page 2's grid was narrower and looked half-empty next to page 1. Now both pages use 8
-// columns (page 2's short last row simply centers), so the two pages read as one consistent layout.
+// Cards per row for a section. Instructors (and any assistants) sit on ONE full row — their pages
+// are short and the larger photos read well, and the coordinator asked to leave the instructor
+// page alone. Faculty and staff use a FIXED 8-column grid — the exact count faculty page 1 uses —
+// so every faculty AND staff page shows photos at the IDENTICAL size and fills the screen the same
+// way. Before, each page auto-sized its own columns from its member count (faculty p2 used 7, staff
+// used 7), so their photos came out bigger and the grids looked sparse next to faculty page 1. Now
+// they all match page 1; a short last row simply centers under the full one.
+const STD_COLS = 8
 function colsOf(key: string, count: number): number {
-  const oneRow = key === "assistant" || key === "instructors"
-  return Math.max(1, Math.ceil(count / (oneRow ? 1 : 2)))
+  if (key === "assistant" || key === "instructors") return Math.max(1, count)  // one full row, larger photos
+  return STD_COLS                                                               // faculty + staff: match faculty page 1
 }
 
 function initials(n: string) {

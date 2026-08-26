@@ -195,10 +195,10 @@ export default function FacultyGraph3D() {
       })
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      // antialias off: MSAA does nothing for the interiors of the ~35 alpha-blended photo
-      // billboards that dominate the shaded area — it only smooths the thin link cylinders.
-      // alpha MUST stay true, or the canvas turns opaque and hides the robot behind it.
-      const G = (new ForceGraph3D(elRef.current, { rendererConfig: { antialias: false, alpha: true } }) as any)
+      // antialias ON for capable hardware (smooths the link cylinders and sprite edges); the Pi
+      // kept it off to save fill. alpha MUST stay true, or the canvas turns opaque and hides the
+      // robot behind it.
+      const G = (new ForceGraph3D(elRef.current, { rendererConfig: { antialias: !LOW_POWER, alpha: true } }) as any)
         // Transparent canvas so a backdrop (the robot) shows through behind the graph; the
         // dark base is painted by the finale container's bg-[#060a12].
         .backgroundColor("rgba(6,10,18,0)")
@@ -235,9 +235,11 @@ export default function FacultyGraph3D() {
         .linkDirectionalParticleWidth(4)
         .linkDirectionalParticleSpeed(0.005)
       gRef.current = G
-      // The graph is a slowly orbiting field of photo billboards; rendering it above 1x adds
-      // pixels nobody can resolve at hallway viewing distance.
-      try { G.renderer().setPixelRatio(1) } catch { /* ignore */ }
+      // Render at the display's REAL pixel density (capped at 2x) on capable hardware. Forcing 1x
+      // was a Raspberry Pi economy — but on a scaled or high-DPI display it renders the 3D canvas
+      // below native resolution and the browser upscales it, which is the "blurry as crazy" the
+      // wall showed while the directory's <img> photos beside it stayed sharp. The Pi keeps 1x.
+      try { G.renderer().setPixelRatio(LOW_POWER ? 1 : Math.min(window.devicePixelRatio || 1, 2)) } catch { /* ignore */ }
       try { const ctl = G.controls(); if (ctl) ctl.enabled = false } catch { /* ignore */ }
       // Fog fades distant faces into the background for depth.
       try { G.scene().fog = new THREE.Fog(0x060a12, 2400, 5200) } catch { /* ignore */ }

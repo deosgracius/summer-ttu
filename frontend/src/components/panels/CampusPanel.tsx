@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { api, getToken, type CampusRow } from "@/lib/api"
+import { api, getToken, ApiError, type CampusRow } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -29,7 +29,7 @@ const RESOURCES: Resource[] = [
       { key: "section", label: "Section" },
       { key: "title", label: "Title" },
       { key: "prerequisites", label: "Prerequisites" },
-      { key: "permit_required", label: "Permit required?" },
+      { key: "permit_required", label: "Permit required?", hint: "Type Yes or No" },
       { key: "days", label: "Days" },
       { key: "times", label: "Times" },
       { key: "building", label: "Building" },
@@ -53,7 +53,7 @@ const RESOURCES: Resource[] = [
         key: "office_hours_policy",
         label: "When not in office hours",
         options: [
-          { value: "", label: "— Infer from the hours text —" },
+          { value: "", label: "— Decide automatically from the hours above —" },
           { value: "walk-in", label: "Walk-in / open door" },
           { value: "by appointment", label: "By appointment" },
           { value: "closed", label: "Closed outside hours" },
@@ -140,6 +140,12 @@ function heading(res: Resource, row: CampusRow): string {
 
 // ---- Admin import widget -------------------------------------------------
 
+/** Plain-language labels for spreadsheet sheet types shown in the import summary. */
+const SHEET_TYPE_LABELS: Record<string, string> = {
+  offerings: "course rows",
+  catalog: "catalog rows",
+}
+
 interface ImportResult {
   preview?: boolean
   pending?: boolean
@@ -179,8 +185,10 @@ function ImportWidget({ onDone }: { onDone: () => void }) {
         toast.success(data.pending ? "Import submitted for approval" : "Imported")
         onDone()
       }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Import failed")
+    } catch {
+      toast.error(
+        "We couldn't import that file. Make sure it's the registrar Excel export (.xlsx) and try again. If it keeps failing, contact DG at Demwala@ttu.edu.",
+      )
     } finally {
       setBusy(false)
     }
@@ -189,7 +197,7 @@ function ImportWidget({ onDone }: { onDone: () => void }) {
   return (
     <div className="rounded-md border p-3">
       <div className="text-xs text-muted-foreground mb-2">
-        Import a registrar spreadsheet (.xlsx) — preview first, then commit.
+        Import a registrar spreadsheet (.xlsx) — Preview first to check it, then Save to kiosk to make it live.
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <input
@@ -206,7 +214,7 @@ function ImportWidget({ onDone }: { onDone: () => void }) {
           Preview
         </Button>
         <Button size="sm" disabled={busy || !result?.preview} onClick={() => send(true)}>
-          Commit
+          Save to kiosk
         </Button>
       </div>
 
@@ -215,22 +223,23 @@ function ImportWidget({ onDone }: { onDone: () => void }) {
           {result.preview ? (
             <div className="text-muted-foreground">
               Found <b>{result.offerings_found}</b> course sections and{" "}
-              <b>{result.catalog_found}</b> catalog entries. Review below, then Commit.
+              <b>{result.catalog_found}</b> catalog entries. Review below, then press Save to kiosk.
             </div>
           ) : result.pending ? (
             <div className="text-amber-400">
-              Submitted for approval — a central admin must approve before it goes
-              live on the kiosk.
+              Sent for approval. The department's lead administrator must approve
+              it before it appears on the kiosk.
             </div>
           ) : (
             <div className="text-emerald-400">
-              Saved — courses +{result.offerings?.added}/~{result.offerings?.updated} updated,
-              catalog +{result.catalog?.added}/~{result.catalog?.updated} updated.
+              Saved. Courses: {result.offerings?.added ?? 0} added, {result.offerings?.updated ?? 0} updated.{" "}
+              Catalog: {result.catalog?.added ?? 0} added, {result.catalog?.updated ?? 0} updated.
             </div>
           )}
           {result.sheets?.map((s) => (
             <div key={s.name} className="text-muted-foreground">
-              · {s.name} ({s.type}): {s.count} rows
+              · {s.name} — {s.count}{" "}
+              {SHEET_TYPE_LABELS[s.type] ?? "rows"}
               {s.skipped ? `, ${s.skipped} non-data rows skipped` : ""}
             </div>
           ))}
@@ -307,7 +316,11 @@ export default function CampusPanel({ reloadKey }: { reloadKey?: number }) {
       setEditingId(null)
       load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Save failed")
+      toast.error(
+        e instanceof ApiError
+          ? e.message
+          : "Couldn't save your changes. Check your connection and try again.",
+      )
     }
   }
 
@@ -324,7 +337,11 @@ export default function CampusPanel({ reloadKey }: { reloadKey?: number }) {
       toast.success(res?.pending ? "Delete submitted for approval" : "Deleted")
       load()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Delete failed")
+      toast.error(
+        e instanceof ApiError
+          ? e.message
+          : "Couldn't delete that entry. Please try again.",
+      )
     }
   }
 
@@ -444,7 +461,20 @@ export default function CampusPanel({ reloadKey }: { reloadKey?: number }) {
                           <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => startEdit(row)}>
                             Edit
                           </Button>
-                          <Button variant="ghost" size="icon" className="size-7" onClick={() => remove(row.id)}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-7"
+                            title="Delete"
+                            onClick={() => {
+                              const name = heading(active, row)
+                              const msg =
+                                name && name !== "(untitled)"
+                                  ? `Delete “${name}”? It will be removed from the kiosk. This can't be undone.`
+                                  : "Delete this entry? It will be removed from the kiosk. This can't be undone."
+                              if (window.confirm(msg)) remove(row.id)
+                            }}
+                          >
                             ×
                           </Button>
                         </div>
@@ -469,7 +499,9 @@ export default function CampusPanel({ reloadKey }: { reloadKey?: number }) {
               </div>
             ))}
             {filtered.length === 0 && (
-              <div className="py-2 text-sm text-muted-foreground">No entries.</div>
+              <div className="py-2 text-sm text-muted-foreground">
+                No {active.label.toLowerCase()} yet. Use the “Add new entry” form above, or import a file.
+              </div>
             )}
           </div>
         </div>

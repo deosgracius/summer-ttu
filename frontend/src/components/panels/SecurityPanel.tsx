@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import QRCode from "qrcode"
-import { api, type SecurityStatus } from "@/lib/api"
+import { api, ApiError, type SecurityStatus } from "@/lib/api"
 import { registerPasskey, supportsPasskey } from "@/lib/webauthn"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -37,7 +37,7 @@ export default function SecurityPanel({ reloadKey }: { reloadKey?: number }) {
       setRecovery(null)
       setSetup(await api.post<{ secret: string; otpauth_uri: string }>("/security/totp/setup"))
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not start setup")
+      toast.error(e instanceof ApiError ? e.message : "We couldn't start setup. Please try again in a minute.")
     } finally {
       setBusy(false)
     }
@@ -53,21 +53,21 @@ export default function SecurityPanel({ reloadKey }: { reloadKey?: number }) {
       toast.success("Authenticator enabled")
       loadStatus()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Verification failed")
+      toast.error(e instanceof ApiError ? e.message : "That code didn't match. Check your authenticator app and enter the current 6-digit code.")
     } finally {
       setBusy(false)
     }
   }
 
   async function disableTotp() {
-    const c = window.prompt("Enter a current authenticator or recovery code to turn off MFA:")
+    const c = window.prompt("To turn off extra sign-in security, enter the 6-digit code from your authenticator app (or one of your backup codes):")
     if (!c) return
     try {
       await api.post("/security/totp/disable", { code: c })
       toast.success("Authenticator disabled")
       loadStatus()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not disable")
+      toast.error(e instanceof ApiError ? e.message : "We couldn't turn it off. Please try again.")
     }
   }
 
@@ -78,20 +78,20 @@ export default function SecurityPanel({ reloadKey }: { reloadKey?: number }) {
       toast.success("Passkey added")
       loadStatus()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Passkey registration failed")
+      toast.error(e instanceof ApiError ? e.message : "We couldn't add this sign-in. Make sure Windows Hello or your fingerprint is set up on this computer, then try again.")
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <PanelCard title="Security (MFA)">
+    <PanelCard title="Extra sign-in security">
       {status && (
         <div className="text-xs text-muted-foreground">
-          Authenticator: <b className={status.totp_enabled ? "text-emerald-400" : ""}>
-            {status.totp_enabled ? "on" : "off"}</b>
-          {" · "}Passkeys: <b>{status.passkeys}</b>
-          {status.totp_enabled && <> · Recovery codes left: <b>{status.recovery_remaining}</b></>}
+          Authenticator app: <b className={status.totp_enabled ? "text-emerald-400" : ""}>
+            {status.totp_enabled ? "On" : "Off"}</b>
+          {" · "}Sign-in keys saved: <b>{status.passkeys}</b>
+          {status.totp_enabled && <> · Backup codes left: <b>{status.recovery_remaining}</b></>}
         </div>
       )}
 
@@ -109,7 +109,7 @@ export default function SecurityPanel({ reloadKey }: { reloadKey?: number }) {
           </div>
           {qr && <img src={qr} alt="Authenticator QR" className="size-40 rounded bg-white p-2" />}
           <div className="text-xs">
-            Can't scan? Key: <code className="text-foreground">{setup.secret}</code>
+            Can't scan the square? Type this setup key into your authenticator app instead: <code className="text-foreground">{setup.secret}</code>
           </div>
           <div className="flex gap-2">
             <Input
@@ -146,7 +146,7 @@ export default function SecurityPanel({ reloadKey }: { reloadKey?: number }) {
       <div className="mt-4 flex flex-wrap gap-2">
         {supportsPasskey() && (
           <Button size="sm" variant="secondary" onClick={addPasskey} disabled={busy}>
-            Add passkey (Windows Hello / Touch ID)
+            Add fingerprint / face sign-in (Windows Hello / Touch ID)
           </Button>
         )}
         {status?.totp_enabled && (

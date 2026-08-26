@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { api } from "@/lib/api"
+import { api, ApiError } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -39,18 +39,27 @@ export default function QuickLinksPanel() {
       setUrl("")
       toast.success("Quick link saved")
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not save link")
+      toast.error(
+        e instanceof ApiError
+          ? e.message
+          : "Couldn't save that link. Check the web address and your connection, then try again.",
+      )
     } finally {
       setSaving(false)
     }
   }
 
   async function remove(n: string) {
+    if (!window.confirm(`Remove “${n}”? Summer will no longer open it by voice.`)) return
     try {
       setLinks(await api.del<Record<string, string>>(`/admin/links/${encodeURIComponent(n)}`))
       toast.success(`Removed "${n}"`)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not remove link")
+      toast.error(
+        e instanceof ApiError
+          ? e.message
+          : "Couldn't remove that link. Please try again.",
+      )
     }
   }
 
@@ -59,7 +68,8 @@ export default function QuickLinksPanel() {
     <PanelCard title="Quick Links">
       <p className="text-xs text-muted-foreground">
         Name a URL so Summer can open it by voice on this dashboard — e.g. name it
-        "gantt chart", then say "Hey Summer, open my gantt chart." http(s) links only.
+        "gantt chart", then say "Hey Summer, open my gantt chart." Only web addresses
+        that start with http:// or https:// work.
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder='name (e.g. "gantt chart")' className="w-52" />

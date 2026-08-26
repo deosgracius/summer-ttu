@@ -86,9 +86,15 @@ export default function FileImportPanel() {
       {prop && prop.ok && (
         <div className="mt-4 space-y-2">
           <div className="text-sm">
-            <span className="font-medium">{prop.filename}</span> — looks like{" "}
-            <span className="font-medium">{prop.kind?.replace("_", " ")}</span> ·{" "}
-            {prop.count} row{prop.count === 1 ? "" : "s"}
+            <span className="font-medium">{prop.filename}</span> —{" "}
+            {prop.kind === "unknown" ? (
+              "We couldn't tell what this file is"
+            ) : (
+              <>
+                looks like <span className="font-medium">{prop.kind?.replace("_", " ")}</span>
+              </>
+            )}{" "}
+            · {prop.count} row{prop.count === 1 ? "" : "s"}
           </div>
           {prop.suggestions?.map((s, i) => (
             <p key={i} className="text-sm text-muted-foreground">• {s}</p>

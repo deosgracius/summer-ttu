@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { api, getToken } from "@/lib/api"
+import { api, getToken, ApiError } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -45,11 +45,11 @@ export default function VoiceSettingsPanel({ reloadKey }: { reloadKey?: number }
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
         body: JSON.stringify({ text: "Hi, I'm Summer. This is how I'll sound.", voice_id: voiceId || undefined }),
       })
-      if (!r.ok) throw new Error("TTS failed (" + r.status + ")")
+      if (!r.ok) throw new Error("sample playback failed")
       const url = URL.createObjectURL(await r.blob())
       await new Audio(url).play()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not play test")
+    } catch {
+      toast.error("Sorry — Summer couldn't play the voice sample right now. Please try again in a moment.")
     } finally {
       setBusy(false)
     }
@@ -60,23 +60,26 @@ export default function VoiceSettingsPanel({ reloadKey }: { reloadKey?: number }
       await api.put("/voice/settings", { voice_id: voiceId.trim() })
       toast.success("Summer's voice updated")
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Save failed")
+      toast.error(
+        e instanceof ApiError
+          ? e.message
+          : "Couldn't save the voice. Please try again. If it keeps happening, contact DG at Demwala@ttu.edu."
+      )
     }
   }
 
   return (
-    <PanelCard title="Summer's Voice (ElevenLabs)">
+    <PanelCard title="Summer's Speaking Voice">
       <div className="text-xs text-muted-foreground">
-        Paste an ElevenLabs Voice ID (from your ElevenLabs dashboard), or pick one of your
-        library voices below. Summer speaks every reply in this voice — and it's multilingual,
-        so it speaks whatever language the reply is in.
+        Pick a voice for Summer from the list below. (Advanced: if you were given a custom
+        voice code, paste it in the box.)
       </div>
 
       <div className="mt-3 flex gap-2">
         <Input
           value={voiceId}
           onChange={(e) => setVoiceId(e.target.value)}
-          placeholder="ElevenLabs Voice ID (e.g. 56bWURjYFHyYyVf490Dp)"
+          placeholder="Optional — paste a custom voice code here"
         />
         <Button variant="secondary" size="sm" disabled={busy} onClick={test}>
           Test
@@ -104,7 +107,7 @@ export default function VoiceSettingsPanel({ reloadKey }: { reloadKey?: number }
         </div>
       ) : (
         <div className="mt-2 text-xs text-muted-foreground">
-          (No voices in your ElevenLabs library yet — add some on elevenlabs.io, or just paste a Voice ID above.)
+          No voices are available yet. To add voice options, contact DG (Demwala@ttu.edu).
         </div>
       )}
     </PanelCard>

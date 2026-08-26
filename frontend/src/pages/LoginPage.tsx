@@ -135,7 +135,7 @@ export default function LoginPage() {
                   value={password}
                   autoFocus
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="password"
+                  placeholder="Enter your password"
                   onKeyDown={(e) => e.key === "Enter" && password && !busy && handleLogin()}
                 />
               </div>
@@ -144,8 +144,8 @@ export default function LoginPage() {
                 Log in
               </Button>
               <p className="text-xs text-muted-foreground pt-1">
-                First time, or forgot the password? Type your admin setup code above and press
-                Log in — you'll then choose a new password.
+                First time here, or forgot the password? Type the one-time admin setup code you
+                were given in the box above and press Log in — you'll then choose your own password.
               </p>
             </CardContent>
           </>

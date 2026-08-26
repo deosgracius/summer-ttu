@@ -137,7 +137,10 @@ def test_speech_hint_never_ends_inside_a_name_list(db):
     that stops partway through a roster invites the decoder to supply the next name, which is
     how room noise became a real professor's contact card."""
     hint = cs.speech_hint(db)
-    assert hint.endswith("A student question follows.")
+    # Ends on a non-list sentence (not mid-roster), and names the assistant so a "Hey Summer"
+    # wake clip is transcribed correctly instead of being pulled toward a faculty name.
+    assert hint.endswith("A student question to Summer follows.")
+    assert "Summer" in hint
     assert not hint.rstrip().endswith(",")
     for name in ("Timothy Dallas", "Dylan Tarter", "Changzhi Li"):
         # every name present must appear WHOLE, never sliced mid-name

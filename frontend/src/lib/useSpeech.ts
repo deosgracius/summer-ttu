@@ -1063,13 +1063,17 @@ export function useSpeech() {
       //    voiced audio BEFORE it is ever transcribed. "Hey Summer" is ~700ms of mostly-gaps; with
       //    the bar raised, too few of its frames cleared it, the blob was thrown away, and Summer
       //    never woke. That is the exact "one number, both failures" trap the MIN_VOICED note warns
-      //    about. So the margin is back to 0 (full wake sensitivity), AND voiced counting is now
-      //    decoupled from this bar (counted against plain thresh below) — so a cost margin can be
-      //    reintroduced for TRIGGERING without ever again starving the voiced floor. The real,
-      //    cost-free fix remains on-device wake-word spotting on the mini PC.
+      //    about. The fix was to DECOUPLE voiced counting from this bar (it is counted against plain
+      //    thresh below) — so a trigger margin can now filter ambient WITHOUT starving the voiced
+      //    floor. With that decoupling in place a small margin is safe: it only makes the mic wait
+      //    for someone speaking UP near it (how you address a kiosk, peaks ~40-100) rather than
+      //    firing on room murmur that merely clears the +7 ambient bar. 0 was over-eager on the
+      //    wall; 4 (bar = floor + 11) cuts the false wakes while staying far below real speech, and
+      //    a wake word that clears it still passes the voiced floor. The real, cost-free fix remains
+      //    on-device wake-word spotting on the mini PC.
       //  - ENGAGED (mid-conversation, waiting for a follow-up): plain thresh, full sensitivity, so
       //    a quiet follow-up is never missed.
-      const DORMANT_MARGIN = 0
+      const DORMANT_MARGIN = 4
       const dormant = !engaged.current && !speaking.current && !VOICE.speaking && !isAwaitingAnswer()
       const bar = (speaking.current || VOICE.speaking || isAwaitingAnswer())
         ? thresh + 14

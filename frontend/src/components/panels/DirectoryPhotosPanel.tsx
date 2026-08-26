@@ -112,7 +112,7 @@ export default function DirectoryPhotosPanel() {
       })
       if (!r.ok) {
         const detail = await r.json().catch(() => null)
-        throw new Error(detail?.detail || `Upload failed (${r.status})`)
+        throw new Error(detail?.detail || "Sorry — that photo couldn't be uploaded. Try a different image (JPG or PNG). If it keeps happening, contact DG at Demwala@ttu.edu.")
       }
       toast.success("Photo updated")
       await load()
@@ -124,6 +124,7 @@ export default function DirectoryPhotosPanel() {
   }
 
   async function removePhoto(p: DirPerson) {
+    if (!window.confirm(`Remove ${p.name}'s photo? Their initials will show on the kiosk instead.`)) return
     const k = keyOf(p)
     setBusy(k)
     try {
@@ -340,17 +341,17 @@ export default function DirectoryPhotosPanel() {
                             </div>
                             {p.resource === "professors" && (
                               <div className="space-y-1">
-                                <Label className="text-xs text-muted-foreground">Research Network node</Label>
+                                <Label className="text-xs text-muted-foreground">Research area on the kiosk map</Label>
                                 <select
                                   value={form.research_area}
                                   onChange={(e) => setForm((f) => f && { ...f, research_area: e.target.value })}
                                   className="h-8 w-full rounded border bg-background px-2 text-sm"
                                 >
-                                  <option value="">Use verified default{p.research_area_effective ? ` (${p.research_area_effective})` : " — not shown in graph"}</option>
+                                  <option value="">Automatic{p.research_area_effective ? ` (currently: ${p.research_area_effective})` : " — not shown on the map yet"}</option>
                                   {thrusts.map((t) => <option key={t} value={t}>{t}</option>)}
-                                  <option value={hiddenVal}>Hide from Research Network</option>
+                                  <option value={hiddenVal}>Don't show on the research map</option>
                                 </select>
-                                <p className="text-[11px] text-muted-foreground">Which cluster this person appears in on the kiosk Research Network graph.</p>
+                                <p className="text-[11px] text-muted-foreground">This decides where the person appears on the kiosk's research map.</p>
                               </div>
                             )}
                             <div className="flex gap-2">
@@ -371,7 +372,7 @@ export default function DirectoryPhotosPanel() {
             ))}
             {total === 0 && (
               <div className="py-2 text-sm text-muted-foreground">
-                No directory people yet — add one above, or import campus data.
+                No people in the directory yet. Click “+ Add a person” above to add the first one.
               </div>
             )}
           </div>

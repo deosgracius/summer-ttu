@@ -50,7 +50,7 @@ export default function DashboardPage() {
         </div>
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="inline-block size-2 rounded-full bg-emerald-400" /> online
+            <span className="inline-block size-2 rounded-full bg-emerald-400" /> Online
           </span>
           <Button variant="outline" size="sm" onClick={logout}>
             Log out
@@ -85,7 +85,7 @@ export default function DashboardPage() {
       {tab === "brain" ? (
         // Full-bleed: the brain uses the entire area below the header/nav, edge to edge.
         <div className="relative z-10">
-          <Suspense fallback={<p className="p-4 text-sm text-muted-foreground">Loading the brain…</p>}>
+          <Suspense fallback={<p className="p-4 text-sm text-muted-foreground">Loading…</p>}>
             <EngineeringBrain />
           </Suspense>
         </div>

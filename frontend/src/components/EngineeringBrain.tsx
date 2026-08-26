@@ -91,8 +91,14 @@ const STATUS_PILL: Record<string, string> = {
   live: "text-emerald-400", ready: "text-violet-400", degraded: "text-amber-400",
   unconfigured: "text-amber-400", offline: "text-red-400", down: "text-red-400",
 }
+// Plain-English display names for internal status keys — never show the raw key on screen.
+const STATUS_LABEL: Record<string, string> = {
+  live: "Working", ready: "Ready", degraded: "Having trouble",
+  unconfigured: "Not set up", offline: "Offline", down: "Not working",
+}
+function statusLabel(s: string) { return STATUS_LABEL[s] || s }
 function StatusWord({ s }: { s: string }) {
-  return <span className={`font-medium ${STATUS_PILL[s] || "text-muted-foreground"}`}>{s}</span>
+  return <span className={`font-medium ${STATUS_PILL[s] || "text-muted-foreground"}`}>{statusLabel(s)}</span>
 }
 
 // A compact segmented toggle (iOS-style) for the two-option switches in the toolbar.
@@ -116,7 +122,7 @@ function Seg({ value, onChange, options }: {
 }
 
 // Readiness pipeline (mirrors the video's Ownership→…→Deployment), derived from live status.
-const STAGES = ["Designed", "Built", "Tested", "Deployed", "Monitored"]
+const STAGES = ["Designed", "Built", "Tested", "Live", "Watched"]
 function readinessDone(status: string) {
   if (status === "live") return 5
   if (status === "ready") return 4
@@ -258,7 +264,7 @@ export default function EngineeringBrain() {
       .nodeLabel((n: Node) =>
         n.kind === "root" ? `<b>${esc(n.name)}</b>` :
           n.kind === "hub" ? `<b>${esc(n.name)}</b>` :
-            `<b>${esc(n.name)}</b> · ${esc(n.category || "")}` + (n.status && n.status !== "live" ? ` · <span style="color:#fbbf24">${esc(n.status)}</span>` : ""))
+            `<b>${esc(n.name)}</b> · ${esc(n.category || "")}` + (n.status && n.status !== "live" ? ` · <span style="color:#fbbf24">${esc(statusLabel(n.status))}</span>` : ""))
       .nodeThreeObjectExtend(false)
       .nodeThreeObject((n: Node) => {
         const g = new THREE.Group()
@@ -387,7 +393,7 @@ export default function EngineeringBrain() {
     <div className="relative w-full overflow-hidden bg-[#0a0e18]" style={{ height: "calc(100svh - 122px)" }}>
       <div ref={elRef} className="absolute inset-0" style={{ display: current && view === "graph" ? "block" : "none" }} />
       {err && <p className="absolute inset-0 grid place-items-center p-4 text-sm text-muted-foreground">{err}</p>}
-      {!err && !data && <p className="absolute inset-0 grid place-items-center p-4 text-sm text-muted-foreground">Loading the brain…</p>}
+      {!err && !data && <p className="absolute inset-0 grid place-items-center p-4 text-sm text-muted-foreground">Loading…</p>}
 
       {/* Board view */}
       {current && view === "board" && (
@@ -405,7 +411,7 @@ export default function EngineeringBrain() {
                     <button key={m.id} onClick={() => setSelected(m)} className="flex w-full items-center gap-2 rounded-lg border border-border/40 px-2.5 py-1.5 text-left text-sm hover:bg-muted/50">
                       <span className="inline-block size-2 shrink-0 rounded-full" style={{ background: nodeColor(m) }} />
                       <span className="min-w-0 flex-1 truncate">{m.name}</span>
-                      <span className={`shrink-0 text-[11px] ${STATUS_PILL[m.status] || "text-muted-foreground"}`}>{m.status}</span>
+                      <span className={`shrink-0 text-[11px] ${STATUS_PILL[m.status] || "text-muted-foreground"}`}>{statusLabel(m.status)}</span>
                     </button>
                   ))}
                 </div>
@@ -419,7 +425,7 @@ export default function EngineeringBrain() {
       <div className="pointer-events-none absolute left-3 top-3 z-10 flex max-w-[min(96vw,640px)] flex-col gap-2">
         <div className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-xl border border-border/60 bg-background/80 p-1 shadow-lg backdrop-blur">
           <Seg value={layer} onChange={(v) => setLayer(v as "system" | "organization")}
-            options={[{ id: "system", label: "System", icon: Cpu }, { id: "organization", label: "Organization", icon: Building2 }]} />
+            options={[{ id: "system", label: "Summer's system", icon: Cpu }, { id: "organization", label: "People & courses", icon: Building2 }]} />
           <span className="mx-0.5 h-6 w-px bg-border/60" />
           <Seg value={view} onChange={(v) => setView(v as "graph" | "board")}
             options={[{ id: "graph", label: "Graph", icon: Network }, { id: "board", label: "Board", icon: LayoutGrid }]} />
@@ -475,11 +481,11 @@ export default function EngineeringBrain() {
         {showHealth && h && (
           <div className="pointer-events-auto w-[min(96vw,440px)] rounded-xl border border-border/60 bg-background/90 p-3 shadow-xl backdrop-blur">
             <div className="grid grid-cols-3 gap-2">
-              <Tile label="AI brain" value={<StatusWord s={h.brain.status} />} sub={h.brain.provider !== "none" ? h.brain.provider : "not set"} />
-              <Tile label="Graph store" value={<StatusWord s={h.neo4j.status} />} sub="Neo4j" />
-              <Tile label="Vectors" value={<StatusWord s={h.pgvector.status} />} sub="pgvector" />
-              <Tile label="Deterministic" value={`${h.coverage.deterministic_pct}%`} sub="answered free" tone="text-emerald-400" />
-              <Tile label="Hallucination" value={`${h.quality.hallucination_pct}%`} sub="of AI answers" tone="text-amber-400" />
+              <Tile label="AI brain" value={<StatusWord s={h.brain.status} />} sub={h.brain.provider && h.brain.provider !== "none" ? "Connected" : "Not set up"} />
+              <Tile label="Knowledge map" value={<StatusWord s={h.neo4j.status} />} />
+              <Tile label="Smart search" value={<StatusWord s={h.pgvector.status} />} />
+              <Tile label="Answered without AI" value={`${h.coverage.deterministic_pct}%`} sub="no AI cost" tone="text-emerald-400" />
+              <Tile label="Made-up facts blocked" value={`${h.quality.hallucination_pct}%`} sub="in AI replies" tone="text-amber-400" />
               <Tile label="Open failures" value={h.quality.open_failures} sub="unresolved" tone={h.quality.open_failures ? "text-red-400" : ""} />
             </div>
             {h.flags?.length ? (
@@ -503,9 +509,9 @@ export default function EngineeringBrain() {
                 {grouped.cats.map((c) => (
                   <span key={c} className="inline-flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full" style={{ background: catColor(c) }} /> {c}</span>
                 ))}
-                <span className="inline-flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full bg-red-500" /> offline/down</span>
+                <span className="inline-flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full bg-red-500" /> offline / not working</span>
               </div>
-              <div className="text-[9px] opacity-70">Wires are colored by the category of the node they connect to.</div>
+              <div className="text-[9px] opacity-70">Each line is colored to match the group of the item it connects to.</div>
             </div>
           )}
           <button onClick={() => setShowLegend((v) => !v)} aria-pressed={showLegend}
@@ -531,7 +537,7 @@ export default function EngineeringBrain() {
           <div className="mt-3 space-y-2.5 text-sm">
             <div>Status: <StatusWord s={selected.status} /></div>
             {selected.purpose && <p className="text-xs leading-relaxed text-muted-foreground">{selected.purpose}</p>}
-            {selected.tools && selected.tools !== "—" && <div className="text-xs text-muted-foreground">Tech: <span className="font-mono text-foreground">{selected.tools}</span></div>}
+            {selected.tools && selected.tools !== "—" && <div className="text-xs text-muted-foreground">Built with: <span className="font-mono text-foreground">{selected.tools}</span></div>}
             {selected.office && <div className="text-xs text-muted-foreground">Office: <span className="text-foreground">{selected.office}</span></div>}
             {selected.room && <div className="text-xs text-muted-foreground">Room: <span className="text-foreground">{selected.room}</span></div>}
             {selected.email && <a href={`mailto:${selected.email}`} className="block break-all text-xs text-primary hover:underline">{selected.email}</a>}

@@ -18,6 +18,7 @@ export default function MemoriesPanel({ reloadKey }: { reloadKey?: number }) {
   }, [reloadKey])
 
   async function forget(id: number) {
+    if (!window.confirm("Remove this memory? Summer will forget it. This can't be undone.")) return
     await api.del(`/memories/${id}`)
     load()
   }
@@ -29,7 +30,7 @@ export default function MemoriesPanel({ reloadKey }: { reloadKey?: number }) {
           <li key={m.id} className="flex items-center gap-2 py-2 text-sm">
             <span className="flex-1">{m.text}</span>
             <Button variant="ghost" size="sm" onClick={() => forget(m.id)}>
-              forget
+              Remove
             </Button>
           </li>
         ))}

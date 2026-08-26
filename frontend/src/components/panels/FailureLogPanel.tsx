@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { RefreshCw, CheckCircle2, AlertTriangle, AlertOctagon, Trash2 } from "lucide-react"
-import { api } from "@/lib/api"
+import { api, ApiError } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { PanelCard } from "@/components/panels/PanelCard"
 import { toast } from "sonner"
@@ -32,6 +32,15 @@ interface FailureReport {
   items: Failure[]
 }
 
+function sourceLabel(s: string): string {
+  const v = s.toLowerCase()
+  if (v === "llm") return "AI brain"
+  if (v.includes("stt") || v.includes("voice")) return "Voice"
+  if (v === "kiosk") return "Kiosk"
+  if (v === "http") return "Website"
+  return s.replace(/_/g, " ")
+}
+
 function ago(iso: string): string {
   if (!iso) return ""
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
@@ -50,13 +59,15 @@ export default function FailureLogPanel() {
   const [d, setD] = useState<FailureReport | null>(null)
   const [showResolved, setShowResolved] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState(false)
 
   async function load() {
     setLoading(true)
+    setLoadError(false)
     try {
       setD(await api.get<FailureReport>(`/admin/failures?resolved=${showResolved ? 1 : 0}`))
     } catch {
-      /* ignore */
+      setLoadError(true)
     } finally {
       setLoading(false)
     }
@@ -70,17 +81,24 @@ export default function FailureLogPanel() {
     try {
       await api.post(`/admin/failures/${id}/resolve`)
       load()
-    } catch {
-      toast.error("Couldn't mark it fixed")
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError ? e.message : "Couldn't mark it fixed. Check your connection and try again."
+      )
     }
   }
   async function clearResolved() {
+    if (!window.confirm("Permanently remove all items you've marked fixed? This can't be undone.")) return
     try {
       await api.del("/admin/failures")
       toast.success("Cleared fixed items")
       load()
-    } catch {
-      toast.error("Couldn't clear")
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError
+          ? e.message
+          : "Couldn't clear the fixed items. Check your connection and try again."
+      )
     }
   }
 
@@ -102,8 +120,8 @@ export default function FailureLogPanel() {
     >
       <p className="text-sm text-muted-foreground">
         Anything that breaks — the AI brain unreachable, voice failing, an unexpected error — is
-        recorded here (deduped with a count) so you can see and fix it. Mark an item fixed once
-        you've handled it.
+        recorded here. If the same problem happens more than once, it's grouped and shows how many
+        times. Mark an item fixed once you've handled it.
       </p>
 
       {d?.rates && (
@@ -112,20 +130,20 @@ export default function FailureLogPanel() {
             <div className="text-2xl font-semibold tabular-nums text-amber-400">
               {d.rates.hallucination_pct}%
             </div>
-            <div className="text-xs font-medium">Hallucination rate</div>
+            <div className="text-xs font-medium">Made-up facts blocked</div>
             <div className="mt-0.5 text-[11px] text-muted-foreground">
-              {d.rates.hallucinations_blocked} caught of {d.rates.llm_turns} AI answers — facts the
-              model asserted that weren’t retrieved, blocked by the provenance gate.
+              Times the AI tried to state a campus fact Summer couldn't confirm from official
+              records, so it wasn't shown. Lower is better.
             </div>
           </div>
           <div className="rounded-lg border border-border/60 p-3">
             <div className="text-2xl font-semibold tabular-nums text-red-400">
               {d.rates.fallback_pct}%
             </div>
-            <div className="text-xs font-medium">AI-fallback rate</div>
+            <div className="text-xs font-medium">Answered offline</div>
             <div className="mt-0.5 text-[11px] text-muted-foreground">
-              {d.rates.fallback_turns} of {d.rates.total_turns} turns where the AI brain was
-              unreachable and Summer answered from the database instead.
+              {d.rates.fallback_turns} of {d.rates.total_turns} questions answered from Summer's
+              own campus records because the AI was unreachable.
             </div>
           </div>
           <div className="rounded-lg border border-border/60 p-3">
@@ -134,17 +152,24 @@ export default function FailureLogPanel() {
             </div>
             <div className="text-xs font-medium">Open failure issues</div>
             <div className="mt-0.5 text-[11px] text-muted-foreground">
-              Distinct unresolved problems (voice/brain/errors) listed below — a count, not a
-              rate; each is deduped with its own hit count.
+              Problems still open, listed below. Repeats are grouped, each showing how many times
+              it happened.
             </div>
           </div>
         </div>
       )}
 
       {!d ? (
-        <p className="mt-3 text-sm text-muted-foreground">Loading…</p>
+        <p className="mt-3 text-sm text-muted-foreground">
+          {loadError
+            ? "Couldn't load the failure list. Check your connection and press Refresh."
+            : "Loading…"}
+        </p>
       ) : !d.enabled ? (
-        <p className="mt-3 text-sm text-muted-foreground">Failure logging is off (FAILURE_LOG=0).</p>
+        <p className="mt-3 text-sm text-muted-foreground">
+          Failure recording is currently turned off. To switch it on, contact DG (Demwala@ttu.edu,
+          217-417-4270).
+        </p>
       ) : d.items.length === 0 ? (
         <p className="mt-3 flex items-center gap-2 text-sm text-emerald-400">
           <CheckCircle2 className="size-4" /> All clear — no {showResolved ? "" : "open "}failures recorded.
@@ -167,13 +192,15 @@ export default function FailureLogPanel() {
                     <div className="min-w-0">
                       <div className="text-sm font-medium">{f.summary}</div>
                       <div className="mt-0.5 text-xs text-muted-foreground">
-                        <span className="rounded bg-muted px-1.5 py-0.5">{f.source}</span>
+                        <span className="rounded bg-muted px-1.5 py-0.5">{sourceLabel(f.source)}</span>
                         {f.count > 1 && <span className="ml-2">×{f.count}</span>}
                         <span className="ml-2">last {ago(f.last_seen)}</span>
                       </div>
                       {f.detail && (
                         <details className="mt-1">
-                          <summary className="cursor-pointer text-xs text-muted-foreground">details</summary>
+                          <summary className="cursor-pointer text-xs text-muted-foreground">
+                            Technical details (for support)
+                          </summary>
                           <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded bg-muted/50 p-2 text-[11px] text-muted-foreground">
                             {f.detail}
                           </pre>

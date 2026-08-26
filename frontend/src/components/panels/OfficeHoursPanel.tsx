@@ -134,7 +134,7 @@ function PersonRow({ p, onSaved }: { p: DirPerson; onSaved: () => void }) {
             <span className="text-xs text-muted-foreground">Kiosk shows now:</span>
             <StatusPill hours={hoursText} />
             <span className="text-xs text-muted-foreground">
-              {hoursText ? `Stored as "${hoursText}"` : "No hours set — no status is shown"}
+              {hoursText ? `The kiosk will list: "${hoursText}"` : "No hours set — no status is shown"}
             </span>
           </div>
 
@@ -142,8 +142,11 @@ function PersonRow({ p, onSaved }: { p: DirPerson; onSaved: () => void }) {
             <Button size="sm" disabled={busy} onClick={() => save(false)}>
               {busy ? "Saving…" : "Save"}
             </Button>
-            <Button size="sm" variant="ghost" disabled={busy} onClick={() => save(true)}>
-              Clear hours
+            <Button size="sm" variant="ghost" disabled={busy}
+              onClick={() => {
+                if (window.confirm(`Clear ${p.name}'s office hours? The kiosk will stop showing an Open/Closed status for them.`)) save(true)
+              }}>
+              Remove all hours
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
           </div>
@@ -216,7 +219,9 @@ export default function OfficeHoursPanel() {
             {people.map((p) => <PersonRow key={`${p.resource}:${p.id}`} p={p} onSaved={load} />)}
           </ul>
           {people.length === 0 && (
-            <div className="py-2 text-sm text-muted-foreground">No professors found.</div>
+            <div className="py-2 text-sm text-muted-foreground">
+              {q.trim() ? "No professors match your search." : "No professors in the directory yet."}
+            </div>
           )}
         </div>
       )}

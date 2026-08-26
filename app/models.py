@@ -236,6 +236,11 @@ class Professor(Base):
     cv_url = Column(String, nullable=False, default="")              # link to their CV / curriculum vitae (PDF)
     bio = Column(String, nullable=False, default="")                 # research interests, education, etc.
     semester = Column(String, nullable=False, default="")
+    # Research Network node override, editable from the admin dashboard. Semantics:
+    #   NULL  -> use the verified default mapping in campus.py (_research_area_of)
+    #   ""    -> hidden from the Research Network graph
+    #   text  -> that research thrust (one of the canonical thrust names)
+    research_area = Column(String, nullable=True)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 

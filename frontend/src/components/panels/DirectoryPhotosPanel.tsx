@@ -21,6 +21,8 @@ interface DirPerson {
   office_building: string
   office_number: string
   office_hours: string
+  research_area: string            // raw override: "" = use default, "__hidden__" = hidden, else a thrust
+  research_area_effective: string  // the node they currently land in (for the "Use default (X)" hint)
 }
 interface DirSection {
   key: string
@@ -35,6 +37,7 @@ type EditForm = {
   office_building: string
   office_number: string
   office_hours: string
+  research_area: string
 }
 
 function initials(name: string) {
@@ -58,17 +61,23 @@ export default function DirectoryPhotosPanel() {
 
   const [editing, setEditing] = useState<string | null>(null) // key currently being edited
   const [form, setForm] = useState<EditForm | null>(null)
+  // Research Network dropdown options, fetched with the directory — one source of truth with the
+  // backend (GET /campus/research-thrusts) so the editor and the graph can never drift apart.
+  const [thrusts, setThrusts] = useState<string[]>([])
+  const [hiddenVal, setHiddenVal] = useState("__hidden__")
 
   const [adding, setAdding] = useState(false)
   const [addForm, setAddForm] = useState<EditForm & { resource: "professors" | "staff" }>({
     resource: "professors", name: "", title: "", email: "",
-    office_building: "", office_number: "", office_hours: "",
+    office_building: "", office_number: "", office_hours: "", research_area: "",
   })
 
   async function load() {
     try {
       const res = await api.get<{ sections: DirSection[] }>("/campus/directory-admin")
       setSections(res.sections || [])
+      const t = await api.get<{ thrusts: string[]; hidden_value: string }>("/campus/research-thrusts").catch(() => null)
+      if (t) { setThrusts(t.thrusts || []); setHiddenVal(t.hidden_value || "__hidden__") }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't load the directory")
     }
@@ -133,7 +142,7 @@ export default function DirectoryPhotosPanel() {
     setForm({
       name: p.name, title: p.title, email: p.email,
       office_building: p.office_building, office_number: p.office_number,
-      office_hours: p.office_hours,
+      office_hours: p.office_hours, research_area: p.research_area,
     })
   }
 
@@ -151,7 +160,10 @@ export default function DirectoryPhotosPanel() {
         name: form.name.trim(), title: form.title.trim(), email: form.email.trim(),
         office_building: form.office_building.trim(), office_number: form.office_number.trim(),
       }
-      if (p.resource === "professors") body.office_hours = form.office_hours.trim()
+      if (p.resource === "professors") {
+        body.office_hours = form.office_hours.trim()
+        body.research_area = form.research_area   // "" = default, "__hidden__" = hidden, else a thrust
+      }
       await api.patch(`/campus/${p.resource}/${p.id}`, body)
       toast.success("Saved")
       setEditing(null)
@@ -194,7 +206,7 @@ export default function DirectoryPhotosPanel() {
       await api.post(`/campus/${addForm.resource}`, body)
       toast.success(`${addForm.name} added`)
       setAdding(false)
-      setAddForm({ resource: "professors", name: "", title: "", email: "", office_building: "", office_number: "", office_hours: "" })
+      setAddForm({ resource: "professors", name: "", title: "", email: "", office_building: "", office_number: "", office_hours: "", research_area: "" })
       await load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't add this person")
@@ -326,6 +338,21 @@ export default function DirectoryPhotosPanel() {
                                 <Field label="Office hours" value={form.office_hours} onChange={(v) => setForm((f) => f && { ...f, office_hours: v })} />
                               )}
                             </div>
+                            {p.resource === "professors" && (
+                              <div className="space-y-1">
+                                <Label className="text-xs text-muted-foreground">Research Network node</Label>
+                                <select
+                                  value={form.research_area}
+                                  onChange={(e) => setForm((f) => f && { ...f, research_area: e.target.value })}
+                                  className="h-8 w-full rounded border bg-background px-2 text-sm"
+                                >
+                                  <option value="">Use verified default{p.research_area_effective ? ` (${p.research_area_effective})` : " — not shown in graph"}</option>
+                                  {thrusts.map((t) => <option key={t} value={t}>{t}</option>)}
+                                  <option value={hiddenVal}>Hide from Research Network</option>
+                                </select>
+                                <p className="text-[11px] text-muted-foreground">Which cluster this person appears in on the kiosk Research Network graph.</p>
+                              </div>
+                            )}
                             <div className="flex gap-2">
                               <Button size="sm" onClick={() => saveEdit(p)} disabled={loading || !form.name.trim()}>
                                 {loading ? "Saving…" : "Save"}

@@ -39,7 +39,8 @@ def _migrate():
                 conn.execute(text(f"ALTER TABLE events ADD COLUMN {col} {ddl}"))
         pcols = [c["name"] for c in inspect(engine).get_columns("professors")]
         for col, ddl in [("title","VARCHAR NOT NULL DEFAULT ''"),("photo_url","VARCHAR NOT NULL DEFAULT ''"),
-                         ("cv_url","VARCHAR NOT NULL DEFAULT ''"),("bio","VARCHAR NOT NULL DEFAULT ''")]:
+                         ("cv_url","VARCHAR NOT NULL DEFAULT ''"),("bio","VARCHAR NOT NULL DEFAULT ''"),
+                         ("research_area","VARCHAR")]:   # nullable: NULL = use the verified default mapping
             if col not in pcols:
                 conn.execute(text(f"ALTER TABLE professors ADD COLUMN {col} {ddl}"))
         bcols = [c["name"] for c in inspect(engine).get_columns("bookings")]

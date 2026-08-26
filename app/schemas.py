@@ -81,6 +81,9 @@ class ProfessorIn(BaseModel):
     cv_url: str = ""
     bio: str = ""
     semester: str = ""
+    # Research Network node override: "" = use the verified default, "__hidden__" = hide from the
+    # graph, or a thrust name. Editable from the admin Directory panel; read by /campus/faculty-graph.
+    research_area: str = ""
 
 
 class ProfessorOut(ProfessorIn):

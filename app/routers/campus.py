@@ -185,6 +185,13 @@ _FACULTY_RESEARCH_AREA = {
 }
 
 
+# The canonical thrust names (the admin dropdown's options), plus the sentinel an admin sets to
+# pull a professor OUT of the Research Network. "" or NULL on the column means "use the verified
+# default mapping above". Those are the only three kinds of value research_area ever holds.
+RESEARCH_THRUSTS = sorted(set(_FACULTY_RESEARCH_AREA.values()))
+_HIDDEN_AREA = "__hidden__"
+
+
 def _research_area_of(name: str):
     """A professor's official research thrust by name, tolerant of the small
     middle-initial / spelling differences between the DB and the ECE site. Returns
@@ -208,9 +215,15 @@ def faculty_graph(db: Session = Depends(get_db)):
     from .. import models
     profs, areas, researches = [], set(), []
     for p in db.query(models.Professor).all():
-        area = _research_area_of(p.name)
+        # research_area column is the admin override (set from the dashboard, no code change):
+        #   "" or NULL -> use the verified default mapping;  _HIDDEN_AREA -> hide from the graph;
+        #   a thrust name -> put them in that node.
+        raw = (getattr(p, "research_area", None) or "").strip()
+        if raw == _HIDDEN_AREA:
+            continue  # an admin explicitly hid this person from the Research Network
+        area = raw or _research_area_of(p.name)
         if not area:
-            continue  # lecturers, adjuncts, emeritus, and anyone off the verified roster are out
+            continue  # lecturers, adjuncts, emeritus, or anyone off the verified roster
         profs.append({
             "id": "p:" + p.name, "name": p.name,
             "photo": getattr(p, "photo_url", "") or "",
@@ -224,6 +237,14 @@ def faculty_graph(db: Session = Depends(get_db)):
         "areas": [{"id": "a:" + a, "name": a} for a in sorted(areas)],
         "researches": researches,
     }
+
+
+@router.get("/research-thrusts")
+def research_thrusts(actor: models.User = Depends(require_roles("admin"))):
+    """Options for the admin Research Network dropdown: the canonical thrust names, plus the two
+    special values — "" (use the verified default) and the hidden sentinel (drop from the graph).
+    One source of truth for both the graph and the editor, so they can never drift apart."""
+    return {"thrusts": RESEARCH_THRUSTS, "default_value": "", "hidden_value": _HIDDEN_AREA}
 
 
 # Manual section overrides for professors whose raw title lands them in the wrong bucket.
@@ -388,6 +409,15 @@ def directory_admin(db: Session = Depends(get_db),
     def office_of(x):
         return f"{(getattr(x, 'office_building', '') or '').strip()} {(getattr(x, 'office_number', '') or '').strip()}".strip()
 
+    def ra_raw(x):
+        return (getattr(x, "research_area", "") or "").strip()
+
+    def ra_effective(x):
+        # What node this person actually lands in right now: the override, else the verified
+        # default; "" when hidden or off the roster. Lets the editor show "Using default: X".
+        raw = ra_raw(x)
+        return "" if raw == _HIDDEN_AREA else (raw or (_research_area_of(x.name) or ""))
+
     def entry(resource, x):
         return {"resource": resource, "id": x.id, "name": (x.name or "").strip(),
                 "title": (getattr(x, "title", "") or "").strip(), "office": office_of(x),
@@ -400,7 +430,11 @@ def directory_admin(db: Session = Depends(get_db),
                 "bio": (getattr(x, "bio", "") or "").strip(),
                 # Office hours + the fallback preference, so the admin can edit them in place.
                 "office_hours": (getattr(x, "office_hours", "") or "").strip(),
-                "office_hours_policy": (getattr(x, "office_hours_policy", "") or "").strip()}
+                "office_hours_policy": (getattr(x, "office_hours_policy", "") or "").strip(),
+                # Research Network node (professors only; staff ignore it): the raw override the
+                # dropdown stores, plus the effective node so the editor can show the current default.
+                "research_area": ra_raw(x),
+                "research_area_effective": ra_effective(x)}
 
     buckets = {"faculty": [], "instructors": [], "assistant": []}
     for p in db.query(models.Professor).all():

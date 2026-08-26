@@ -847,7 +847,15 @@ export function useSpeech() {
       if (NO_RE.test(raw)) { const h = PENDING_YESNO; PENDING_YESNO = null; h.onNo(); return }
     }
     if (!engaged.current) {
-      if (!WAKE.test(raw)) { setHeard('Listening — say "Summer"'); return } // dormant until "Summer"
+      // DORMANT: wake only when the name comes near the START of the utterance — that is how a
+      // person addresses a kiosk ("Hey Summer, ...", "Summer?"). The old anywhere-in-the-sentence
+      // match meant any passing conversation that merely CONTAINED "summer" ("...my summer
+      // classes...") woke her, which with full mic sensitivity became "she triggers anytime,
+      // even when the wake word isn't said". Position is volume-independent, so this cuts the
+      // false wakes without costing the quiet-voice sensitivity. Mid-conversation (engaged),
+      // the anywhere-match below still applies — re-addressing her mid-sentence stays natural.
+      const at = raw.search(WAKE)
+      if (at < 0 || at > 14) { setHeard('Listening — say "Summer"'); return } // dormant until addressed
       engage()
       const after = raw.replace(WAKE_LEAD, "").trim()
       if (after.length < 2 || (ENDRE.test(after) && after.split(/\s+/).length <= 4)) {
@@ -954,13 +962,16 @@ export function useSpeech() {
   // and because the wake never landed the conversation never engaged, so end phrases were held to
   // the same floor and "thank you" was dropped as well. One number, both failures.
   //
-  // Lowered 300 -> 200 for maximum wake sensitivity ("catch Hey Summer no matter the voice"): a
-  // quick or quiet "Hey Summer" / "Summer" holds less than 300ms of above-threshold audio and was
-  // being discarded before it ever reached Whisper. 200ms still clears a door slam or a lone cough.
-  // When DORMANT a non-wake transcript is only shown, never answered (the wake matcher gates it),
-  // so a lower floor here costs extra idle uploads, not a wrong answer.
-  const MIN_VOICED_DORMANT_MS = 200
-  const MIN_VOICED_ENGAGED_MS = 200
+  // Back to the measured-working floors (300 dormant / 250 engaged). The 200ms experiment let
+  // near-noise clips (a door, a chair scrape) reach Whisper — whose prompt now PRIMES the phrase
+  // "Hey Summer" for accuracy on real wakes, so on low-information audio it sometimes returned
+  // exactly that phrase, and Summer woke with nobody speaking. Blocking noise from ever being
+  // transcribed is the guard against that hallucination. Real quiet wakes are safe: voiced frames
+  // are counted against plain `thresh`, which WAKE_SENS lowered to floor+4, so a soft "Hey
+  // Summer" accumulates voiced time faster than under the original calibration that measured
+  // these floors in the first place.
+  const MIN_VOICED_DORMANT_MS = 300
+  const MIN_VOICED_ENGAGED_MS = 250
   const voicedFrames = useRef(0)
 
   function serverStartRec() {

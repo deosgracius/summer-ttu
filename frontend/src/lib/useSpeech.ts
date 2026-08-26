@@ -954,10 +954,13 @@ export function useSpeech() {
   // and because the wake never landed the conversation never engaged, so end phrases were held to
   // the same floor and "thank you" was dropped as well. One number, both failures.
   //
-  // 300ms is the value measured working on the kiosk. It stays. Idle uploads are a cost problem
-  // and must be solved somewhere that cannot cost us the wake word — see the note below.
-  const MIN_VOICED_DORMANT_MS = 300
-  const MIN_VOICED_ENGAGED_MS = 250
+  // Lowered 300 -> 200 for maximum wake sensitivity ("catch Hey Summer no matter the voice"): a
+  // quick or quiet "Hey Summer" / "Summer" holds less than 300ms of above-threshold audio and was
+  // being discarded before it ever reached Whisper. 200ms still clears a door slam or a lone cough.
+  // When DORMANT a non-wake transcript is only shown, never answered (the wake matcher gates it),
+  // so a lower floor here costs extra idle uploads, not a wrong answer.
+  const MIN_VOICED_DORMANT_MS = 200
+  const MIN_VOICED_ENGAGED_MS = 200
   const voicedFrames = useRef(0)
 
   function serverStartRec() {
@@ -1015,6 +1018,13 @@ export function useSpeech() {
   // turn was discarded in silence — roughly five attempts in six. A timer is independent of
   // frame rate, so Summer now hears identically whether the screen draws at 60fps or at 5.
   const VAD_MS = 25
+  // Wake sensitivity: how far ABOVE the room's measured noise floor a sound must reach to count as
+  // speech (and so start a capture / count toward the voiced floor). Lower = more sensitive — a
+  // quieter, more distant, higher- or lower-pitched "Hey Summer" still wakes her — at the cost of
+  // more idle uploads. 7 was still too restrictive on the wall (people had to speak up); 4 catches
+  // a normal speaking voice from across the desk regardless of who is talking. Raise it only if the
+  // room is loud enough that ambient noise starts waking her.
+  const WAKE_SENS = 4
   function serverListen(stream: MediaStream) {
     const ctx = new AudioContext()
     serverCtx.current = ctx
@@ -1035,7 +1045,7 @@ export function useSpeech() {
       frames++
       if (frames <= 18) {                              // calibrate to the room's noise floor first
         floorSum += max
-        if (frames === 18) { floorRun = floorSum / 18; thresh = Math.max(8, Math.round(floorRun) + 7) }
+        if (frames === 18) { floorRun = floorSum / 18; thresh = Math.max(8, Math.round(floorRun) + WAKE_SENS) }
         return
       }
       // ADAPTIVE NOISE FLOOR. The floor used to be measured once, in the first 18 samples after
@@ -1050,7 +1060,7 @@ export function useSpeech() {
       if (!serverRecording.current) {
         if (max < floorRun) floorRun = max
         else floorRun = Math.min(floorRun + 0.05, max)   // ~2 units/sec, so a raised room settles in seconds
-        thresh = Math.max(8, Math.round(floorRun) + 7)
+        thresh = Math.max(8, Math.round(floorRun) + WAKE_SENS)
       }
       // SENSITIVITY. Summer only ever listens in two states — dormant (waiting for the wake word)
       // and engaged (waiting for a follow-up) — and BOTH now use the plain room-calibrated

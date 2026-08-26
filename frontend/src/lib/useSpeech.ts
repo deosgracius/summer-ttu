@@ -1056,24 +1056,32 @@ export function useSpeech() {
       //  - Summer speaking / still working on an answer: thresh + 14. Demand clearly-louder energy
       //    so leaked echo can't make her interrupt herself, and quiet room noise during the wait
       //    isn't captured and transcribed into an invented question.
-      //  - DORMANT (waiting for a wake word, no conversation): thresh + DORMANT_MARGIN. Room noise
-      //    that merely clears the ambient floor used to trigger a Whisper upload several times a
-      //    minute — a real running cost for audio nobody addressed to the kiosk. Requiring the wake
-      //    word to be clearly louder than ambient (a person speaking up near the mic, which is how
-      //    you address a kiosk) drops most of those. Measured close-mic speech peaks ~40-100 while
-      //    the floor sits ~15-22, so this margin is well below real speech. The real fix is
-      //    on-device wake-word spotting (planned on the mini PC); this is the safe, reversible
-      //    interim — set DORMANT_MARGIN to 0 to restore the old behavior.
+      //  - DORMANT (waiting for a wake word, no conversation): thresh + DORMANT_MARGIN. A margin
+      //    here was meant to cut idle Whisper uploads (room murmur that merely clears the ambient
+      //    floor) — but it silently broke the wake word. voicedFrames were counted only ABOVE this
+      //    bar (see below), and serverStopRec discards any capture under MIN_VOICED_DORMANT_MS of
+      //    voiced audio BEFORE it is ever transcribed. "Hey Summer" is ~700ms of mostly-gaps; with
+      //    the bar raised, too few of its frames cleared it, the blob was thrown away, and Summer
+      //    never woke. That is the exact "one number, both failures" trap the MIN_VOICED note warns
+      //    about. So the margin is back to 0 (full wake sensitivity), AND voiced counting is now
+      //    decoupled from this bar (counted against plain thresh below) — so a cost margin can be
+      //    reintroduced for TRIGGERING without ever again starving the voiced floor. The real,
+      //    cost-free fix remains on-device wake-word spotting on the mini PC.
       //  - ENGAGED (mid-conversation, waiting for a follow-up): plain thresh, full sensitivity, so
       //    a quiet follow-up is never missed.
-      const DORMANT_MARGIN = 6
+      const DORMANT_MARGIN = 0
       const dormant = !engaged.current && !speaking.current && !VOICE.speaking && !isAwaitingAnswer()
       const bar = (speaking.current || VOICE.speaking || isAwaitingAnswer())
         ? thresh + 14
         : (dormant ? thresh + DORMANT_MARGIN : thresh)
+      // Voiced-frame count for the MIN_VOICED floor. Measured against plain `thresh`, NOT the
+      // (higher) trigger `bar`: once a capture has started, every frame of genuine speech should
+      // count toward "was this real?", or a raised trigger bar starves the floor and the wake word
+      // is discarded before transcription (the regression this replaced). More permissive than the
+      // old placement, never less — it can only help a real utterance clear the floor.
+      if (serverRecording.current && max > thresh) voicedFrames.current++
       if (max > bar) {
         loudRun++
-        if (serverRecording.current) voicedFrames.current++   // real energy INSIDE the capture
         if (loudRun >= 3) {                            // sustained → it's really the user
           if (speaking.current || VOICE.speaking) stopSpeaking()   // BARGE-IN: stop and listen
           if (!serverRecording.current) serverStartRec()

@@ -56,23 +56,24 @@ const ACCENT: Record<string, string> = { faculty: "#38bdf8", instructors: "#22d3
 const PAGE_MS = 15000
 const GRAPH_MS = 72000   // the 3D "second brain" finale after Staff (1.2 min)
 
-// Master switch for the Research Network finale. OFF, for two measured reasons:
+// Master switch for the Research Network finale (the 3D "second brain" graph of all faculty and
+// their research areas). ON — restored for the x86 ThinkCentre kiosk, which is exactly the
+// hardware this was waiting for. Two things had put it away, and both are resolved:
 //
-// 1. COST. It held 72s of a ~200s cycle (37% of the loop) and carried essentially all of the
-//    load above 3.5 on the Raspberry Pi kiosk — a force-graph with ~35 photo billboards plus a
-//    full-screen Spline robot, both rendering at once. Directory pages bottomed at 3.46 load;
-//    this page pushed it to ~5.5.
+// 1. COST. It held 72s of a ~200s cycle and carried essentially all of the load above 3.5 on the
+//    Raspberry PI kiosk (~35 photo billboards + a full-screen robot at once). The Pi is retired;
+//    the ThinkCentre (i5-7500T, Intel HD 630, real browser GPU acceleration) renders this without
+//    breaking a sweat, which is why it was bought.
 //
-// 2. IT WENT BLANK. This branch mounts a SECOND spline-viewer and unmounts it every cycle, and
-//    a Spline context is not ours to release (renderer.forceContextLoss covers our own three.js
-//    scenes, not a third-party web component). Chromium allows ~16 live WebGL contexts, so after
-//    roughly an hour the kiosk exhausted them and this page rendered EMPTY — no graph, no robot,
-//    only the 2D orb, which is the giveaway. A fresh reload always looked fine, which is why it
-//    was easy to miss.
+// 2. IT WENT BLANK. This branch used to mount a SECOND spline-viewer and unmount it every cycle,
+//    leaking one WebGL context per loop until Chromium refused more and the page rendered EMPTY
+//    after ~an hour. Already fixed: the robot is NO LONGER mounted here (see the onGraph branch
+//    below) — the page's one permanent robot is re-dressed for this page via onGraphChange, so no
+//    context is created per cycle. Safe to run continuously now.
 //
-// Flip to true to restore it — but fix the remount first: hoist the robot out of this branch, or
-// drive the page's existing one via onGraphChange, so no context is created per cycle.
-const SHOW_GRAPH: boolean = false
+// If it ever stutters on this hardware, flip to false — one line — and the loop simply skips the
+// finale. The real cost-free path is on-device rendering headroom, which x86 already provides.
+const SHOW_GRAPH: boolean = true
 
 // Headshots are stored at 600x600 but these cards draw them at roughly 250px, so the browser was
 // decoding and rescaling ~5.8x more pixels than it painted, 12-13 at a time, on every page.
@@ -87,9 +88,12 @@ let CACHE: Dir | null = null
 // revealed at once (all photos live at the same time) instead of popping in one by one.
 const DECODED = new Set<string>()
 
-// Cards per row for a PAGE, from its own member count. Assistants and instructors sit on ONE full
-// row (like the roomy Assistant page); faculty and staff use two. Per-page, so faculty page 2 (14)
-// uses 7 (7+7) and page 1 (15) uses 8 (8+7) — page 2's fewer-per-row cards render a bit bigger.
+// Cards per row for a section. Assistants and instructors sit on ONE full row (like the roomy
+// Assistant page); faculty and staff use two. IMPORTANT: this is fed the section's PER-PAGE size,
+// not the count on the page being drawn — so every faculty page shares one column count and fills
+// the screen identically. Before, faculty page 2 (14 people) used 7 columns and page 1 (15) used
+// 8, so page 2's grid was narrower and looked half-empty next to page 1. Now both pages use 8
+// columns (page 2's short last row simply centers), so the two pages read as one consistent layout.
 function colsOf(key: string, count: number): number {
   const oneRow = key === "assistant" || key === "instructors"
   return Math.max(1, Math.ceil(count / (oneRow ? 1 : 2)))
@@ -236,7 +240,7 @@ export default function KioskScreensaver({ onCycleEnd, onGraphChange }: { onCycl
         out.push({
           key: s.key, title: s.title, subtitle: s.subtitle, office: s.office, doctor: s.doctor,
           members, page: c + 1, pages: n, total: s.members.length,
-          cols: colsOf(s.key, members.length),   // per-page → faculty p2 (14) uses 7, a bit bigger
+          cols: colsOf(s.key, size),   // section page-SIZE, so all faculty pages share a column count and fill alike
         })
       }
     }

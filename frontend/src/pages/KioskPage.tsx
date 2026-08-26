@@ -33,9 +33,12 @@ const EXAMPLES = [
 ]
 
 const IDLE_RESET_MS = 60_000 // clear the screen for the next person after a minute idle
-// Master switch for the wave galaxy backdrop. OFF: on the Raspberry Pi kiosk its 57,500 animated
-// points were the biggest single continuous cost, and the page still needs to fit inside 4 cores
-// alongside the Spline robot and the faculty graph. One word to restore.
+// Master switch for the wave galaxy backdrop. ON — restored for the x86 ThinkCentre. Its 57,500
+// animated points were the biggest single continuous GPU cost and were the first thing cut for the
+// Raspberry Pi, which had no real browser GPU acceleration. The ThinkCentre (Intel HD 630, hardware
+// WebGL) draws this comfortably. This is the heaviest single toggle, so if the wall ever stutters
+// this is the first one to flip back to false — one word, and the backdrop is gone with no other
+// change (the component still supports `paused` to run it on the greeting only).
 /**
  * What Summer SAYS OUT LOUD.
  *
@@ -56,7 +59,7 @@ function speakable(reply: string): string {
   return (stop > 60 ? cut.slice(0, stop + 1) : cut).trim()
 }
 
-const SHOW_GALAXY: boolean = false
+const SHOW_GALAXY: boolean = true
 // The attract loop OPENS on the idle "Hi, I'm Summer" greeting and holds it this long before
 // dropping into the directory screensaver — and returns to it after the Research Network finale.
 // So each cycle reads: greeting (36s) → directory pages → Research Network → back to the greeting.

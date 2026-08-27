@@ -251,12 +251,13 @@ export function useSpeech() {
     awaitingAnswer.current > 0 && Date.now() - awaitingAnswer.current < ANSWER_WAIT_MAX_MS
 
   // Set when somebody says "Summer" WITHOUT a question and she answers "Go ahead, I'm listening".
-  // She has just invited a question, so she has to be willing to wait for one — noticeably longer
-  // than the gap allowed between turns of a conversation already in flight. Without this the
-  // kiosk asked to be spoken to and then ignored the reply: observed live, wake at :15,
-  // acknowledgement, question at :24, dropped.
+  // 7s by the owner's rule: every no-response path returns the wall to the faculty directory after
+  // 7 seconds, this one included — a wake with no question is usually a passer-by or a false
+  // trigger, and the directory is the more useful thing to show. (This window was 20s once,
+  // because of a live observation of a slow asker at 9s — if invited questions start being
+  // dropped again, this is the number to revisit.)
   const awaitingQ = useRef(0)
-  const AWAIT_QUESTION_MS = 20000
+  const AWAIT_QUESTION_MS = 7000
   const awaitingQuestion = () =>
     awaitingQ.current > 0 && Date.now() - awaitingQ.current < AWAIT_QUESTION_MS
 
